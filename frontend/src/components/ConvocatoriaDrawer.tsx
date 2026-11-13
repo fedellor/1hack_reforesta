@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   X,
   ExternalLink,
@@ -20,6 +20,8 @@ import {
   Sparkles,
   Share2,
   Check,
+  Copy,
+  Printer,
 } from 'lucide-react';
 import { Convocatoria, EstadoInterno } from '@/types/convocatoria';
 
@@ -34,8 +36,32 @@ export function ConvocatoriaDrawer({
   onClose,
   onCambiarEstado,
 }: ConvocatoriaDrawerProps) {
+  const [copiado, setCopiado] = useState(false);
+
   if (!convocatoria) return null;
   const c = convocatoria;
+
+  const handleCopiarMarkdown = () => {
+    const md = `📋 FICHA EJECUTIVA: ${c.titulo}
+• Organismo: ${c.organismo} (${c.codigoOficial})
+• Ámbito: ${c.ambitoTerritorial}
+• Cuantía máx: ${new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(c.cuantiaMaximaProyecto)} (${c.porcentajeCofinanciacion === 0 ? '100% financiado' : `${c.porcentajeCofinanciacion}% cofinanciación`})
+• Cierre: ${c.fechaCierre} (${c.diasRestantes} días restantes)
+• Elegibilidad: ${c.motivoElegibilidad}
+• Match Reforesta: ${c.matchingGlobal}% (Restauración: ${c.matchingLineas.restauracionEcosistemas}%, Hábitats: ${c.matchingLineas.conservacionHabitats}%, Educación: ${c.matchingLineas.educacionAmbiental}%)
+
+📌 Resumen Ejecutivo:
+${c.resumenEjecutivo}
+
+🌱 Acciones Financiables:
+${c.accionesSubvencionables.map((a) => ` - ${a}`).join('\n')}
+
+🔗 Enlace Oficial Bases PDF: ${c.urlBasesPdf}`;
+
+    navigator.clipboard.writeText(md);
+    setCopiado(true);
+    setTimeout(() => setCopiado(false), 2500);
+  };
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden">
@@ -51,8 +77,8 @@ export function ConvocatoriaDrawer({
           
           {/* Header del Drawer */}
           <div className="px-6 py-4 border-b border-slate-200 bg-slate-50/80 flex items-start justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2 mb-1 text-xs">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 text-xs">
                 <span className="font-mono px-2 py-0.5 rounded bg-slate-200 text-slate-800 font-semibold">
                   {c.codigoOficial}
                 </span>
@@ -66,15 +92,30 @@ export function ConvocatoriaDrawer({
               <h2 className="text-lg font-bold text-slate-900 leading-snug">
                 {c.titulo}
               </h2>
-              <p className="text-xs text-slate-500 mt-0.5 font-medium">{c.organismo}</p>
+              <p className="text-xs text-slate-500 font-medium">{c.organismo}</p>
             </div>
             
-            <button
-              onClick={onClose}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-colors"
-            >
-              <X className="h-5 w-5" />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={handleCopiarMarkdown}
+                title="Copiar Ficha Resumen para Slack / WhatsApp / Correo"
+                className={`p-2 rounded-lg border transition-all text-xs font-semibold flex items-center gap-1.5 ${
+                  copiado
+                    ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                {copiado ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+                <span className="hidden sm:inline">{copiado ? '¡Copiado!' : 'Copiar'}</span>
+              </button>
+
+              <button
+                onClick={onClose}
+                className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-colors ml-1"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
           </div>
 
           {/* Contenido con Scroll */}
@@ -100,7 +141,7 @@ export function ConvocatoriaDrawer({
                   </h4>
                   <p className="text-xs text-slate-700">{c.motivoElegibilidad}</p>
                   {c.dealbreakers.length > 0 && (
-                    <ul className="mt-2 text-xs space-y-1 text-rose-800 list-disc list-inside">
+                    <ul className="mt-2 text-xs space-y-1 text-rose-800 list-disc list-inside font-medium">
                       {c.dealbreakers.map((d, i) => (
                         <li key={i}>{d}</li>
                       ))}

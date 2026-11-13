@@ -6,8 +6,8 @@ import { Convocatoria } from '@/types/convocatoria';
 
 interface HeaderProps {
   convocatorias: Convocatoria[];
-  vistaActiva: 'tarjetas' | 'tabla' | 'calendario' | 'mapa' | 'rsc';
-  setVistaActiva: (vista: 'tarjetas' | 'tabla' | 'calendario' | 'mapa' | 'rsc') => void;
+  vistaActiva: 'tarjetas' | 'tabla' | 'pipeline' | 'calendario' | 'mapa' | 'rsc';
+  setVistaActiva: (vista: 'tarjetas' | 'tabla' | 'pipeline' | 'calendario' | 'mapa' | 'rsc') => void;
   onRefresh?: () => void;
 }
 
@@ -117,6 +117,16 @@ export function Header({ convocatorias, vistaActiva, setVistaActiva, onRefresh }
               }`}
             >
               📋 Tabla Técnica
+            </button>
+            <button
+              onClick={() => setVistaActiva('pipeline')}
+              className={`px-3 py-1.5 rounded-md font-medium transition-all ${
+                vistaActiva === 'pipeline'
+                  ? 'bg-emerald-500 text-slate-950 font-semibold shadow-sm'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
+              }`}
+            >
+              📌 Pipeline Kanban
             </button>
             <button
               onClick={() => setVistaActiva('calendario')}

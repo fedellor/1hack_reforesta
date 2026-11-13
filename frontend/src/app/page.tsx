@@ -8,6 +8,7 @@ import { FilterBar } from '@/components/FilterBar';
 import { ConvocatoriaRowCard } from '@/components/ConvocatoriaRowCard';
 import { ConvocatoriaDrawer } from '@/components/ConvocatoriaDrawer';
 import { TableView } from '@/components/TableView';
+import { PipelineView } from '@/components/PipelineView';
 import { CalendarView } from '@/components/CalendarView';
 import { MapView } from '@/components/MapView';
 import { RSCView } from '@/components/RSCView';
@@ -16,7 +17,7 @@ import { TreePine, Sparkles, AlertCircle } from 'lucide-react';
 export default function Home() {
   const [convocatorias, setConvocatorias] = useState<Convocatoria[]>(MOCK_CONVOCATORIAS);
   const [convocatoriaSeleccionada, setConvocatoriaSeleccionada] = useState<Convocatoria | null>(null);
-  const [vistaActiva, setVistaActiva] = useState<'tarjetas' | 'tabla' | 'calendario' | 'mapa' | 'rsc'>('tarjetas');
+  const [vistaActiva, setVistaActiva] = useState<'tarjetas' | 'tabla' | 'pipeline' | 'calendario' | 'mapa' | 'rsc'>('tarjetas');
   
   const [ordenarPor, setOrdenarPor] = useState<'matching' | 'cuantia' | 'urgencia'>('matching');
   const [filtros, setFiltros] = useState<FiltrosState>({
@@ -159,6 +160,14 @@ export default function Home() {
           <TableView
             convocatorias={convocatoriasFiltradas}
             onSeleccionar={(c) => setConvocatoriaSeleccionada(c)}
+          />
+        )}
+
+        {vistaActiva === 'pipeline' && (
+          <PipelineView
+            convocatorias={convocatorias}
+            onSeleccionar={(c) => setConvocatoriaSeleccionada(c)}
+            onCambiarEstado={handleCambiarEstado}
           />
         )}
 
