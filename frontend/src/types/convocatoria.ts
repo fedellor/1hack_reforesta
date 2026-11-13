@@ -1,0 +1,65 @@
+export type TipoFuente = 'publica_estatal' | 'publica_autonomica' | 'europea' | 'privada_rsc';
+
+export type UrgenciaPlazo = 'critica' | 'moderada' | 'holgada'; // <7d, <20d, >20d
+
+export type EstadoInterno = 'nueva' | 'priorizada' | 'en_preparacion' | 'presentada' | 'descartada';
+
+export interface MatchingLineas {
+  restauracionEcosistemas: number; // 0 - 100 (charcas, plantación autóctona, desertificación)
+  conservacionHabitats: number;    // 0 - 100 (tritón ibérico, ailanto, Guadarrama)
+  educacionAmbiental: number;      // 0 - 100 (voluntariado, sensibilización)
+}
+
+export interface Convocatoria {
+  id: string;
+  codigoOficial: string;          // Ej: "BDNS 923290" u "Orden 1689/2026"
+  titulo: string;
+  organismo: string;              // Ej: "MITECO", "Comunidad de Madrid", "Fundación Santander"
+  tipoFuente: TipoFuente;
+  ambitoTerritorial: string;      // "Estatal", "Comunidad de Madrid", "Galicia", "Castilla y León", etc.
+  
+  // Finanzas
+  presupuestoTotal?: number;
+  cuantiaMaximaProyecto: number;
+  porcentajeCofinanciacion: number; // 0 significa 100% financiado / 0% fondos propios
+  modalidadPago: 'anticipo' | 'reembolso' | 'mixto';
+
+  // Plazos
+  fechaPublicacion: string;
+  fechaCierre: string;
+  diasRestantes: number;
+  urgencia: UrgenciaPlazo;
+
+  // Elegibilidad y Scoring Reforesta
+  elegible: boolean;
+  motivoElegibilidad: string;     // Ej: "Apta: admite asociaciones sin ánimo de lucro declaradas de utilidad pública"
+  dealbreakers: string[];         // Requisitos excluyentes detectados (si los hay)
+  
+  matchingGlobal: number;         // 0 - 100
+  matchingLineas: MatchingLineas;
+  citasBasesJustificacion: string[]; // Frases literales extraídas del PDF
+
+  // Contenido de la Ficha Ejecutiva
+  resumenEjecutivo: string;
+  accionesSubvencionables: string[];
+  gastosNoSubvencionables?: string[];
+  requisitosSolvencia?: string[];
+
+  // Trazabilidad
+  urlBasesPdf: string;
+  urlSedeElectronica: string;
+  fuenteUrl: string;
+
+  // Estado Interno Reforesta
+  estadoInterno: EstadoInterno;
+}
+
+export interface FiltrosState {
+  busqueda: string;
+  ambito: string;
+  tipoFuente: string;
+  soloElegibles: boolean;
+  minMatching: number;
+  soloUrgentes: boolean;
+  minCuantia: number;
+}
