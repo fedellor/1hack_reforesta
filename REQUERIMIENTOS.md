@@ -41,7 +41,7 @@ Para cada oportunidad detectada, la plataforma debe condensar y mostrar de forma
 
 ## 3. Arquitectura del Frontend (Next.js + Tailwind CSS)
 
-### 3.1 Stack Tecnológico del Front (`rama: roi`)
+### 3.1 Stack Tecnológico del Front (`rama: front`)
 - **Framework:** Next.js (App Router, TypeScript).
 - **Estilos:** Tailwind CSS.
 - **Componentes:** Shadcn UI / Radix Primitives + Lucide React (iconografía).
@@ -62,7 +62,7 @@ Para cada oportunidad detectada, la plataforma debe condensar y mostrar de forma
 
 ---
 
-## 4. Arquitectura del Pipeline y Backend (`rama: diego`)
+## 4. Arquitectura del Pipeline y Backend (`rama: back`)
 
 - **Conexión en Vivo con APIs Públicas:**
   - BDNS (`infosubvenciones.es` / API de subvenciones del Estado).
@@ -75,7 +75,7 @@ Para cada oportunidad detectada, la plataforma debe condensar y mostrar de forma
 
 ## 5. Contrato de Datos Compartido (Data Contract / TypeScript Interface)
 
-Para asegurar la sincronización perfecta entre el backend (`diego`) y el frontend (`roi`), los datos se estructuran con esta interfaz:
+Para asegurar la sincronización perfecta entre el backend (`back`) y el frontend (`front`), los datos se estructuran con esta interfaz:
 
 ```typescript
 export interface Convocatoria {
@@ -129,7 +129,7 @@ export interface Convocatoria {
 
 ---
 
-## 6. Hoja de Ruta para la Rama `roi` (Frontend)
+## 6. Hoja de Ruta para la Rama `front` (Frontend)
 
 1. **Paso 1:** Inicializar la aplicación Next.js con Tailwind CSS y TypeScript en el workspace.
 2. **Paso 2:** Crear el archivo de tipos (`types/convocatoria.ts`) y un mock estructurado con las convocatorias reales del reto (*Orden 1689/2026 CAM*, *BDNS 923290 MITECO*, *Fondo RSC Santander*).
