@@ -1,0 +1,38 @@
+# Radar de Reforesta: backend (API + sincronización diaria a las 07:00) y frontend.
+#   docker compose up -d --build        # frontend en :3000, backend en :8000
+services:
+  backend:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      TZ: Europe/Madrid
+      DATABASE_URL: sqlite:////app/data/reforesta.db
+      AUTO_SYNC_ENABLED: "true"
+      # Al arrancar, sincroniza si se perdió la última cita de las 07:00
+      SYNC_CATCHUP_ON_STARTUP: "true"
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - reforesta-data:/app/data
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Dirección con la que el NAVEGADOR llega al backend. Cámbiala por el dominio público en producción
+        NEXT_PUBLIC_API_URL: ${PUBLIC_BACKEND_URL:-http://localhost:8000}
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      # Dirección con la que el SERVIDOR de Next llega al backend dentro de la red de Docker
+      BACKEND_INTERNAL_URL: http://backend:8000
+
+volumes:
+  reforesta-data:
