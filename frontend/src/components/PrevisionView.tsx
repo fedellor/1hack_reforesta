@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { History } from 'lucide-react';
 import { Convocatoria } from '@/types/convocatoria';
 import { Programa, detectarProgramas, nombreMes } from '@/lib/recurrencia';
+import { ProgramaDrawer } from '@/components/ProgramaDrawer';
 
 interface PrevisionViewProps {
   /** Activas + cerradas (2020 en adelante) */
@@ -34,6 +35,7 @@ const columnaDe = (p: Programa, hoy: Date) => Math.max(0, Math.floor((p.proxima.
 export function PrevisionView({ historico, disponible, onSeleccionar }: PrevisionViewProps) {
   const [verPocoFiables, setVerPocoFiables] = useState(false);
   const [verTodos, setVerTodos] = useState(false);
+  const [programa, setPrograma] = useState<Programa | null>(null);
   const hoy = useMemo(() => new Date(), []);
 
   const programas = useMemo(() => (historico.length ? detectarProgramas(historico, hoy) : []), [historico, hoy]);
@@ -134,7 +136,7 @@ export function PrevisionView({ historico, disponible, onSeleccionar }: Previsio
               return (
                 <button
                   key={p.clave}
-                  onClick={() => onSeleccionar(p.ediciones[0])}
+                  onClick={() => setPrograma(p)}
                   className="w-full grid grid-cols-[minmax(260px,1fr)_repeat(12,44px)_90px] items-center border-b border-zinc-100 text-left hover:bg-zinc-50"
                   title={`${p.nombre}\nSuele publicarse en ${nombreMes(p.mesApertura)} · ${p.anios.length} años con edición`}
                 >
@@ -165,9 +167,18 @@ export function PrevisionView({ historico, disponible, onSeleccionar }: Previsio
           </button>
         )}
         <p className="mt-3 text-xs text-zinc-400 leading-relaxed">
-          Estimación a partir de las ediciones anteriores: la fiabilidad sube cuando un programa sale varios años y siempre en el mismo mes. Un recuadro con borde ámbar indica que ya debería haber salido y no consta. Pulsa una fila para ver su última edición.
+          Estimación a partir de las ediciones anteriores: la fiabilidad sube cuando un programa sale varios años y siempre en el mismo mes. Un recuadro con borde ámbar indica que ya debería haber salido y no consta. Pulsa una fila para ver su ficha.
         </p>
       </section>
+
+      <ProgramaDrawer
+        programa={programa}
+        onClose={() => setPrograma(null)}
+        onVerEdicion={(c) => {
+          setPrograma(null);
+          onSeleccionar(c);
+        }}
+      />
     </div>
   );
 }

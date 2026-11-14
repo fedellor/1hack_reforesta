@@ -111,7 +111,11 @@ export function detectarProgramas(todas: Convocatoria[], hoy: Date = new Date())
     const regularidad = meses.filter((m) => distMes(m, mes) <= 1).length / meses.length;
     const confianza: Confianza = anios.length >= 3 && regularidad >= 0.75 ? 'alta' : anios.length >= 2 && regularidad >= 0.5 ? 'media' : 'baja';
 
-    const fiabilidad = Math.round(100 * regularidad * Math.min(1, 0.4 + 0.15 * anios.length));
+    // Recencia: si hace años que no sale, la regularidad pasada dice poco de si saldrá. Un año sin edición (p. ej. aún no
+    // ha llegado su mes) no penaliza; dos años penalizan algo; tres o más, mucho.
+    const sinSalir = hoy.getFullYear() - anios[anios.length - 1];
+    const recencia = sinSalir <= 1 ? 1 : sinSalir === 2 ? 0.6 : 0.35;
+    const fiabilidad = Math.round(100 * regularidad * Math.min(1, 0.4 + 0.15 * anios.length) * recencia);
 
     const dia = mediana(primeraDelAnio.filter((c) => fecha(c.fechaPublicacion).getMonth() + 1 === mes).map((c) => fecha(c.fechaPublicacion).getDate()));
     const ventanas = ediciones
