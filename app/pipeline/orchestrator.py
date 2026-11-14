@@ -1,13 +1,16 @@
-"""Pipeline Orchestrator: Raw Candidate -> Layer 1 -> Layer 2 Judge -> Geo & Date Resolution -> Priority & DB Upsert."""
+"""Pipeline Orchestrator: Raw Candidate -> Layer 1 -> Layer 2 Judge -> Geo & Date Resolution -> Dedup/Amendments -> Priority & DB Upsert."""
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
+from difflib import SequenceMatcher
 import re
 from typing import Any
+import unicodedata
 from sqlmodel import Session, select
+from app.config import settings
 from app.database import query_cache
 from app.geo import resolve_geography
 from app.models import Opportunity
-from app.pipeline.date_resolver import compute_dates_and_status
+from app.pipeline.date_resolver import add_business_days, compute_dates_and_status, parse_spanish_date
 from app.pipeline.layer1_regex import Layer1Result, evaluate_layer1
 from app.pipeline.layer2_judge import JudgeVerdictSchema, evaluate_layer2
 from app.pipeline.prioritizer import calculate_priority
@@ -56,6 +59,7 @@ class PipelineEvaluationResult:
     layer1: Layer1Result
     layer2: JudgeVerdictSchema | None
     opportunity: Opportunity | None
+    amendment_applied: str | None = None
 
 
 def _resolve_treasury_and_terrain(
@@ -127,7 +131,13 @@ def process_candidate(
     persist: bool = True,
     api_key_override: str | None = None,
 ) -> PipelineEvaluationResult:
-    """Run a single RawCandidate through Layer 1, Layer 2, Geo/Date resolution and optional DB upsert."""
+    """
+    Run a single RawCandidate through Layer 1, Layer 2 (with persistent DB cache),
+    Geo/Date resolution, Amendment (Ampliación/Corrección) detection, Semantic Dedup and DB Upsert.
+    """
+    amendment_type = _detect_amendment_type(candidate.titulo, candidate.texto)
+    referenced_existing: Opportunity | None = None
+
     # Step 1: Layer 1 Rigid Filter
     l1 = evaluate_layer1(
         titulo=candidate.titulo,
@@ -135,6 +145,32 @@ def process_candidate(
         organo=candidate.organo_convocante,
         cpv_codes=candidate.cpv_codes,
     )
+    if not l1.passed:
+        # Amendment Rescue: if an official bulletin publishes a terse "Ampliación de plazo" /
+        # "Corrección de errores" referencing an already-approved call in DB (and is not noise), apply it.
+        if (
+            amendment_type is not None
+            and session is not None
+            and not (l1.rejection_reason or "").startswith("Ruido")
+        ):
+            referenced_existing = _find_amendment_target(
+                session=session,
+                codigo_oficial=candidate.codigo_oficial,
+                titulo=candidate.titulo,
+                organo=candidate.organo_convocante,
+                ccaa_hint=candidate.region_hint,
+            )
+            if referenced_existing is not None:
+                l1 = Layer1Result(
+                    passed=True,
+                    decision="PASS_CANDIDATE",
+                    score=60,
+                    preliminary_relevance=referenced_existing.relevancia_tipo,
+                    detected_language=l1.detected_language,
+                    matched_categories=referenced_existing.categorias or [],
+                    matched_terms=[amendment_type.lower(), referenced_existing.codigo_oficial],
+                )
+
     if not l1.passed:
         return PipelineEvaluationResult(
             passed_layer1=False,
@@ -144,7 +180,44 @@ def process_candidate(
             opportunity=None,
         )
 
-    # Step 2: Layer 2 Judge (Multi-Provider LLM or Deterministic Expert Fallback)
+    # If this is an amendment that directly references an existing approved record, apply amendment fast/accurately
+    if amendment_type is not None and session is not None:
+        if referenced_existing is None:
+            referenced_existing = _find_amendment_target(
+                session=session,
+                codigo_oficial=candidate.codigo_oficial,
+                titulo=candidate.titulo,
+                organo=candidate.organo_convocante,
+                ccaa_hint=candidate.region_hint,
+            )
+        if referenced_existing is not None and persist:
+            updated_opp = _apply_amendment_to_existing(
+                session=session,
+                existing=referenced_existing,
+                amendment_type=amendment_type,
+                candidate=candidate,
+            )
+            synthetic_verdict = JudgeVerdictSchema(
+                es_relevante=True,
+                relevancia_tipo=updated_opp.relevancia_tipo if updated_opp.relevancia_tipo in ("DIRECTA", "INDIRECTA_ELEGIBLE") else "INDIRECTA_ELEGIBLE",
+                score_relevancia=updated_opp.relevancia_score,
+                categorias=updated_opp.categorias or [],
+                titulo_limpio_es=updated_opp.titulo_limpio,
+                resumen_es=updated_opp.resumen,
+                justificacion_juez_es=f"Actualizada automáticamente mediante {amendment_type} ({candidate.codigo_oficial}).",
+                beneficiarios_tipos=updated_opp.beneficiarios_tipos or [],
+                metodo_evaluacion="AMENDMENT_SYNC",
+            )
+            return PipelineEvaluationResult(
+                passed_layer1=True,
+                accepted_layer2=True,
+                layer1=l1,
+                layer2=synthetic_verdict,
+                opportunity=updated_opp,
+                amendment_applied=amendment_type,
+            )
+
+    # Step 2: Layer 2 Judge (Multi-Provider LLM + Persistent DB Cache + Deterministic Expert Fallback)
     l2 = evaluate_layer2(
         titulo=candidate.titulo,
         organo=candidate.organo_convocante,
@@ -157,6 +230,7 @@ def process_candidate(
         plazo_hint=candidate.plazo_texto_original,
         beneficiarios_hint=candidate.beneficiarios_hint,
         api_key_override=api_key_override,
+        session=session,
     )
     if not l2.es_relevante or l2.relevancia_tipo == "DESCARTADA":
         return PipelineEvaluationResult(
@@ -300,6 +374,99 @@ def process_candidate(
     )
 
 
+_STOPWORDS_SIM = {
+    "de", "del", "la", "las", "el", "los", "un", "una", "unos", "unas",
+    "para", "por", "con", "sin", "sobre", "entre", "hacia", "mediante",
+    "y", "e", "o", "u", "en", "a", "al", "se", "su", "sus",
+    "per", "amb", "els", "les", "als", "dels", "pola", "polos", "das", "dos",
+    "the", "and", "for", "of", "in", "to", "on", "with", "by",
+}
+
+_BOILERPLATE_PREFIX_RE = re.compile(
+    r"^(?:"
+    r"ampliacion\s+(?:de\s+|del\s+)?plazo\s+(?:de\s+(?:presentacion\s+de\s+solicitudes\s+)?)?(?:de\s+la\s+|de\s+)?|"
+    r"prorroga\s+(?:de\s+|del\s+)?plazo\s+(?:de\s+)?|"
+    r"correccion\s+de\s+errores\s+(?:de\s+la\s+|del\s+|de\s+)?|"
+    r"modificacion\s+(?:de\s+la\s+|del\s+)?|"
+    r"extracto\s+de\s+la\s+(?:orden|resolucion)\s+(?:de\s+[^,]{3,40},\s+)?(?:por\s+la\s+que\s+se\s+)?|"
+    r"(?:orden|resolucion|decreto|orde|resolucio)\s+(?:[a-z0-9/.\-]+\s+)?por\s+(?:la|a)\s+que\s+se\s+"
+    r"(?:convocan|aprueban|establecen|regulan)\s+"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _strip_accents(text: str) -> str:
+    return "".join(
+        ch for ch in unicodedata.normalize("NFKD", text) if not unicodedata.combining(ch)
+    )
+
+
+def _normalize_for_similarity(text: str, strip_amendment_prefix: bool = True) -> tuple[str, set[str]]:
+    clean = _strip_accents(text.lower())
+    if strip_amendment_prefix:
+        clean = _BOILERPLATE_PREFIX_RE.sub("", clean).strip()
+    tokens = [
+        tok
+        for tok in re.findall(r"[a-z0-9]+", clean)
+        if tok not in _STOPWORDS_SIM and (len(tok) >= 3 or tok in {"a", "b", "ue"})
+    ]
+    return " ".join(tokens), set(tokens)
+
+
+def _char_trigrams(s: str) -> set[str]:
+    padded = f"  {s}  "
+    if len(padded) < 3:
+        return {padded}
+    return {padded[i : i + 3] for i in range(len(padded) - 2)}
+
+
+def _semantic_similarity(
+    title_a: str,
+    org_a: str,
+    title_b: str,
+    org_b: str,
+) -> tuple[float, float]:
+    """Return (title_similarity, org_overlap) using normalized trigram Jaccard + token Jaccard + SequenceMatcher."""
+    norm_a, tok_a = _normalize_for_similarity(title_a)
+    norm_b, tok_b = _normalize_for_similarity(title_b)
+    if not norm_a or not norm_b:
+        return 0.0, 0.0
+
+    tri_a = _char_trigrams(norm_a)
+    tri_b = _char_trigrams(norm_b)
+    tri_jaccard = len(tri_a & tri_b) / max(1, len(tri_a | tri_b))
+    tok_jaccard = len(tok_a & tok_b) / max(1, len(tok_a | tok_b))
+    seq_ratio = SequenceMatcher(None, norm_a, norm_b).ratio()
+    title_sim = 0.45 * tri_jaccard + 0.35 * tok_jaccard + 0.20 * seq_ratio
+
+    _, org_tok_a = _normalize_for_similarity(org_a, strip_amendment_prefix=False)
+    _, org_tok_b = _normalize_for_similarity(org_b, strip_amendment_prefix=False)
+    if org_tok_a and org_tok_b:
+        org_overlap = len(org_tok_a & org_tok_b) / max(1, len(org_tok_a | org_tok_b))
+    else:
+        org_overlap = 0.0
+
+    return title_sim, org_overlap
+
+
+def _detect_amendment_type(titulo: str, texto: str) -> str | None:
+    """Detect whether a bulletin notice extends a deadline or corrects an existing call."""
+    head = f"{titulo} {texto[:800]}".lower()
+    if re.search(
+        r"\b(ampliaci[oó]n\s+(?:de\s+|del\s+)?plazo|se\s+ampl[ií]a\s+(?:el\s+|en\s+[\w]+\s+[^.]{0,30})?plazo|"
+        r"pr[oó]rroga\s+(?:de\s+|del\s+)?plazo|se\s+prorroga\s+el\s+plazo|ampliaci[oó]\s+de\s+termini|ampliaci[oó]n\s+do\s+prazo)\b",
+        head,
+    ):
+        return "AMPLIACION_PLAZO"
+    if re.search(
+        r"\b(correcci[oó]n\s+de\s+errores|modificaci[oó]n\s+del?\s+extracto|correcci[oó]\s+d['’]?errades|correcci[oó]n\s+de\s+erros)\b",
+        head,
+    ):
+        return "CORRECCION_ERRORES"
+    return None
+
+
 def _extract_normative_signatures(codigo_oficial: str, titulo: str) -> list[str]:
     """
     Extract canonical regulation/call signatures (e.g. ['ORDEN-1689/2026', 'BDNS-923290'])
@@ -316,33 +483,271 @@ def _extract_normative_signatures(codigo_oficial: str, titulo: str) -> list[str]
     return sigs
 
 
+def _have_conflicting_signatures(sigs_a: list[str], sigs_b: list[str]) -> bool:
+    """Prevent semantic dedup from merging two calls that explicitly carry different BDNS or Orden codes."""
+    ord_a = {s for s in sigs_a if s.startswith("ORDEN-")}
+    ord_b = {s for s in sigs_b if s.startswith("ORDEN-")}
+    if ord_a and ord_b and ord_a.isdisjoint(ord_b):
+        return True
+    bdns_a = {s for s in sigs_a if s.startswith("BDNS-")}
+    bdns_b = {s for s in sigs_b if s.startswith("BDNS-")}
+    if bdns_a and bdns_b and bdns_a.isdisjoint(bdns_b):
+        return True
+    return False
+
+
+def _find_by_normative_signature(
+    session: Session,
+    sigs: list[str],
+    ccaa_codigo: str | None = None,
+    anio: int | None = None,
+) -> Opportunity | None:
+    for sig in sigs:
+        if sig.startswith("ORDEN-"):
+            order_num = sig.replace("ORDEN-", "")
+            stmt = select(Opportunity).where(
+                Opportunity.titulo_original.ilike(f"%{order_num}%")
+                | Opportunity.codigo_oficial.ilike(f"%{order_num}%")
+            )
+            if anio:
+                stmt = stmt.where(Opportunity.anio_convocatoria == anio)
+            if ccaa_codigo and ccaa_codigo not in ("ES", "EU"):
+                matches = list(session.exec(stmt).all())
+                for m in matches:
+                    if m.ccaa_codigo in (ccaa_codigo, "ES"):
+                        return m
+            else:
+                first = session.exec(stmt).first()
+                if first:
+                    return first
+        elif sig.startswith("BDNS-"):
+            stmt = select(Opportunity).where(Opportunity.codigo_oficial == sig)
+            first = session.exec(stmt).first()
+            if first:
+                return first
+    return None
+
+
+def _find_amendment_target(
+    session: Session,
+    codigo_oficial: str,
+    titulo: str,
+    organo: str,
+    ccaa_hint: str = "",
+) -> Opportunity | None:
+    """Locate the original DB Opportunity referenced by a deadline extension or errata bulletin."""
+    sigs = _extract_normative_signatures(codigo_oficial, titulo)
+    if sigs:
+        hit = _find_by_normative_signature(session, sigs)
+        if hit is not None:
+            return hit
+
+    # Fallback: semantic match against existing records without requiring date proximity
+    all_opps = list(session.exec(select(Opportunity)).all())
+    best: Opportunity | None = None
+    best_score = 0.0
+    for candidate_opp in all_opps:
+        if _detect_amendment_type(candidate_opp.titulo_original or "", ""):
+            continue
+        title_sim, org_ov = _semantic_similarity(
+            titulo,
+            organo,
+            candidate_opp.titulo_limpio or candidate_opp.titulo_original,
+            candidate_opp.organo_convocante,
+        )
+        ccaa_bonus = 0.08 if ccaa_hint and candidate_opp.ccaa_codigo == ccaa_hint else 0.0
+        combined = title_sim + 0.15 * org_ov + ccaa_bonus
+        if title_sim >= 0.45 and combined > best_score:
+            best_score = combined
+            best = candidate_opp
+    return best if best_score >= 0.56 else None
+
+
+def _apply_amendment_to_existing(
+    session: Session,
+    existing: Opportunity,
+    amendment_type: str,
+    candidate: RawCandidate,
+) -> Opportunity:
+    """
+    Update an existing Opportunity in-place when an Ampliación de Plazo or Corrección de Errores
+    is published: updates fecha_fin_solicitud, status, countdown, citations & priority score.
+    """
+    new_fin: date | None = parse_spanish_date(candidate.fecha_fin_solicitud)
+    new_plazo_text = candidate.plazo_texto_original
+
+    if new_fin is None and new_plazo_text:
+        new_fin = parse_spanish_date(new_plazo_text)
+
+    combined_text = f"{candidate.titulo}. {candidate.texto}"
+    if new_fin is None:
+        m_until = re.search(
+            r"(?:hasta\s+el|fins\s+al|ata\s+o|nueva\s+fecha[^:]{0,20}:)\s*([^\n.;]{5,45})",
+            combined_text,
+            re.IGNORECASE,
+        )
+        if m_until:
+            new_fin = parse_spanish_date(m_until.group(1))
+
+    if new_fin is None:
+        m_ext_days = re.search(
+            r"(?:ampl[ií]a|prorroga)(?:\s+el\s+plazo(?:\s+de\s+presentaci[oó]n(?:\s+de\s+solicitudes)?)?)?"
+            r"\s+(?:en\s+)?(\d+|cinco|diez|quince|veinte)\s+d[ií]as\s+(h[aá]biles|naturales)?",
+            combined_text,
+            re.IGNORECASE,
+        )
+        word_map = {"cinco": 5, "diez": 10, "quince": 15, "veinte": 20}
+        if m_ext_days:
+            raw_n = m_ext_days.group(1).lower()
+            kind = (m_ext_days.group(2) or "hábiles").lower()
+            extra_days = int(raw_n) if raw_n.isdigit() else word_map.get(raw_n, 0)
+            if extra_days > 0:
+                anchor = existing.fecha_fin_solicitud or parse_spanish_date(candidate.fecha_publicacion) or settings.get_today()
+                if "natural" in kind:
+                    from datetime import timedelta as _td
+                    from app.pipeline.date_resolver import roll_to_next_business_day
+                    new_fin = roll_to_next_business_day(anchor + _td(days=extra_days), ccaa_codigo=existing.ccaa_codigo)
+                else:
+                    new_fin = add_business_days(anchor, extra_days, ccaa_codigo=existing.ccaa_codigo)
+                new_plazo_text = f"Ampliación de {extra_days} días {kind} sobre el cierre previo"
+
+    if new_fin is not None and (
+        existing.fecha_fin_solicitud is None
+        or amendment_type == "CORRECCION_ERRORES"
+        or new_fin >= existing.fecha_fin_solicitud
+    ):
+        existing.fecha_fin_solicitud = new_fin
+        if new_plazo_text:
+            existing.plazo_texto_original = new_plazo_text
+        else:
+            existing.plazo_texto_original = f"{amendment_type}: hasta el {new_fin.isoformat()}"
+
+    # Apply revised budget if published in Corrección de Errores
+    if amendment_type == "CORRECCION_ERRORES" and candidate.presupuesto_total is not None:
+        existing.presupuesto_total = candidate.presupuesto_total
+
+    # Recompute status & remaining days under today's date
+    resolved = compute_dates_and_status(
+        fecha_publicacion=existing.fecha_publicacion,
+        fecha_inicio_solicitud=existing.fecha_inicio_solicitud,
+        fecha_fin_solicitud=existing.fecha_fin_solicitud,
+        plazo_texto_original=existing.plazo_texto_original,
+        anio_hint=existing.anio_convocatoria,
+        ccaa_codigo=existing.ccaa_codigo,
+    )
+    existing.estado = resolved.estado
+    existing.dias_restantes = resolved.dias_restantes
+
+    # Append trace note in citations and enrich official links
+    fin_label = existing.fecha_fin_solicitud.isoformat() if existing.fecha_fin_solicitud else "según texto"
+    note = f"[{amendment_type} - {candidate.codigo_oficial}] Actualización aplicada (cierre: {fin_label}): {candidate.titulo[:140]}"
+    existing_citas = list(existing.citas_bases or [])
+    if note not in existing_citas:
+        existing_citas.append(note)
+        existing.citas_bases = existing_citas
+    if candidate.url_ficha_oficial and not existing.url_boletin_extracto:
+        existing.url_boletin_extracto = candidate.url_ficha_oficial
+    if candidate.url_bases_reguladoras and not existing.url_bases_reguladoras:
+        existing.url_bases_reguladoras = candidate.url_bases_reguladoras
+
+    prio = calculate_priority(
+        estado=existing.estado,
+        dias_restantes=existing.dias_restantes,
+        relevancia_tipo=existing.relevancia_tipo,
+        relevancia_score=existing.relevancia_score,
+        beneficiarios_tipos=existing.beneficiarios_tipos or [],
+        porcentaje_financiacion=existing.porcentaje_max_financiacion,
+        presupuesto_total=existing.presupuesto_total,
+        importe_max_proyecto=existing.importe_max_proyecto,
+        nivel_territorial=existing.nivel_territorial,
+    )
+    existing.prioridad_score = prio.prioridad_score
+    existing.prioridad_nivel = prio.prioridad_nivel
+    existing.fecha_ingesta = datetime.now(timezone.utc)
+
+    session.add(existing)
+    session.commit()
+    session.refresh(existing)
+    query_cache.invalidate_all()
+    return existing
+
+
+def _extract_track_markers(text: str) -> set[str]:
+    """Identify distinct sub-tracks (Línea A vs Línea B, Modalidad 1 vs 2, Lote 1 vs 2, Fase I vs II)."""
+    clean = _strip_accents(text.lower())
+    return {
+        f"{m.group(1)}:{m.group(2)}"
+        for m in re.finditer(
+            r"\b(linea|modalidad|subprograma|lote|eje|fase|programa|anexo)\s+([a-z0-9]{1,4})\b",
+            clean,
+        )
+    }
+
+
+def _find_semantic_duplicate(session: Session, opp: Opportunity) -> Opportunity | None:
+    """
+    Fuzzy + trigram cross-portal semantic deduplication:
+    Catches duplicates between regional portals, press releases, PLACSP and BDNS that lack
+    a shared BDNS/Orden identifier while strictly respecting distinct explicit codes, sub-tracks and dates.
+    """
+    opp_sigs = _extract_normative_signatures(opp.codigo_oficial, opp.titulo_original)
+    opp_tracks = _extract_track_markers(f"{opp.titulo_original} {opp.titulo_limpio}")
+    stmt = select(Opportunity).where(Opportunity.anio_convocatoria == opp.anio_convocatoria)
+    if opp.ccaa_codigo not in ("ES", "EU"):
+        stmt = stmt.where(Opportunity.ccaa_codigo.in_([opp.ccaa_codigo, "ES"]))
+    candidates = list(session.exec(stmt).all())
+
+    for row in candidates:
+        row_sigs = _extract_normative_signatures(row.codigo_oficial, row.titulo_original)
+        if _have_conflicting_signatures(opp_sigs, row_sigs):
+            continue
+
+        row_tracks = _extract_track_markers(f"{row.titulo_original} {row.titulo_limpio}")
+        if opp_tracks != row_tracks:
+            continue
+
+        # Date compatibility: within 7 days or at least one unknown
+        if opp.fecha_fin_solicitud and row.fecha_fin_solicitud:
+            if abs((opp.fecha_fin_solicitud - row.fecha_fin_solicitud).days) > 7:
+                continue
+
+        sim_orig, org_ov = _semantic_similarity(
+            opp.titulo_original,
+            opp.organo_convocante,
+            row.titulo_original,
+            row.organo_convocante,
+        )
+        sim_clean, _ = _semantic_similarity(
+            opp.titulo_limpio,
+            opp.organo_convocante,
+            row.titulo_limpio,
+            row.organo_convocante,
+        )
+        best_sim = max(sim_orig, sim_clean)
+        if best_sim >= 0.76 or (best_sim >= 0.60 and org_ov >= 0.40):
+            return row
+    return None
+
+
 def upsert_opportunity(session: Session, opp: Opportunity) -> Opportunity:
-    """Insert or enrich existing Opportunity by id, codigo_oficial, or cross-source normative signature."""
+    """Insert or enrich existing Opportunity by id, codigo_oficial, normative signature, or semantic similarity."""
     existing = session.get(Opportunity, opp.id)
     if not existing and opp.codigo_oficial and opp.codigo_oficial != "LIVE-EVAL":
         stmt = select(Opportunity).where(Opportunity.codigo_oficial == opp.codigo_oficial)
         existing = session.exec(stmt).first()
 
     if not existing:
-        for sig in _extract_normative_signatures(opp.codigo_oficial, opp.titulo_original):
-            if sig.startswith("ORDEN-"):
-                order_num = sig.replace("ORDEN-", "")
-                stmt = select(Opportunity).where(
-                    Opportunity.ccaa_codigo == opp.ccaa_codigo,
-                    Opportunity.anio_convocatoria == opp.anio_convocatoria,
-                    (
-                        Opportunity.titulo_original.ilike(f"%{order_num}%")
-                        | Opportunity.codigo_oficial.ilike(f"%{order_num}%")
-                    ),
-                )
-                existing = session.exec(stmt).first()
-                if existing:
-                    break
-            elif sig.startswith("BDNS-"):
-                stmt = select(Opportunity).where(Opportunity.codigo_oficial == sig)
-                existing = session.exec(stmt).first()
-                if existing:
-                    break
+        sigs = _extract_normative_signatures(opp.codigo_oficial, opp.titulo_original)
+        if sigs:
+            existing = _find_by_normative_signature(
+                session,
+                sigs,
+                ccaa_codigo=opp.ccaa_codigo,
+                anio=opp.anio_convocatoria,
+            )
+
+    if not existing:
+        existing = _find_semantic_duplicate(session, opp)
 
     if existing:
         # Enrich existing record without losing finer details or dates from PDFs

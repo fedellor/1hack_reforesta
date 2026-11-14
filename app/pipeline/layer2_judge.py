@@ -1,5 +1,6 @@
 """Layer 2: Multi-Provider LLM Judge (Gemini / Groq / OpenRouter / Public Zero-Key / Deterministic Expert) + Cache."""
 from collections import OrderedDict
+from datetime import datetime, timezone
 import hashlib
 import json
 import logging
@@ -7,7 +8,10 @@ import re
 from typing import Literal
 import httpx
 from pydantic import BaseModel, Field
+from sqlmodel import Session
 from app.config import settings
+from app.database import engine
+from app.models import LLMVerdictCache
 from app.pipeline.layer1_regex import Layer1Result
 
 logger = logging.getLogger(__name__)
@@ -76,6 +80,73 @@ REGLAS CRÍTICAS DE EVALUACIÓN:
 """
 
 
+def _db_cache_get(
+    cache_key: str,
+    session: Session | None,
+    allow_heuristic: bool,
+) -> JudgeVerdictSchema | None:
+    """Lookup persisted Layer 2 verdict from SQLite/PostgreSQL (`llm_verdict_cache`)."""
+    def _lookup(s: Session) -> JudgeVerdictSchema | None:
+        row = s.get(LLMVerdictCache, cache_key)
+        if not row:
+            return None
+        if not allow_heuristic and row.metodo_evaluacion == "HYBRID_HEURISTIC":
+            return None
+        parsed = JudgeVerdictSchema.model_validate_json(row.verdict_json)
+        row.hit_count = (row.hit_count or 0) + 1
+        row.updated_at = datetime.now(timezone.utc)
+        s.add(row)
+        s.commit()
+        return parsed
+
+    try:
+        if session is not None:
+            return _lookup(session)
+        with Session(engine) as temp_session:
+            return _lookup(temp_session)
+    except Exception as exc:
+        logger.debug("Persistent LLM cache lookup skipped: %s", exc)
+        return None
+
+
+def _db_cache_put(
+    cache_key: str,
+    verdict: JudgeVerdictSchema,
+    session: Session | None,
+) -> None:
+    """Persist Layer 2 verdict in SQLite/PostgreSQL so server restarts do not re-spend LLM quota."""
+    def _store(s: Session) -> None:
+        existing = s.get(LLMVerdictCache, cache_key)
+        payload_json = verdict.model_dump_json()
+        now = datetime.now(timezone.utc)
+        if existing:
+            existing.verdict_json = payload_json
+            existing.metodo_evaluacion = verdict.metodo_evaluacion
+            existing.updated_at = now
+            s.add(existing)
+        else:
+            s.add(
+                LLMVerdictCache(
+                    text_hash=cache_key,
+                    metodo_evaluacion=verdict.metodo_evaluacion,
+                    verdict_json=payload_json,
+                    hit_count=1,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+        s.commit()
+
+    try:
+        if session is not None:
+            _store(session)
+        else:
+            with Session(engine) as temp_session:
+                _store(temp_session)
+    except Exception as exc:
+        logger.debug("Persistent LLM cache write skipped: %s", exc)
+
+
 def evaluate_layer2(
     titulo: str,
     organo: str,
@@ -88,19 +159,37 @@ def evaluate_layer2(
     plazo_hint: str | None = None,
     beneficiarios_hint: str = "",
     api_key_override: str | None = None,
+    session: Session | None = None,
+    use_persistent_cache: bool = True,
 ) -> JudgeVerdictSchema:
     """
-    4-Tier Production-Ready Layer 2 Judge:
-    - Tier 0: Content Hash Cache (0 ms)
+    5-Tier Production-Ready Layer 2 Judge:
+    - Tier 0A: In-Memory LRU Content Hash Cache (0 ms)
+    - Tier 0B: Persistent SQLite/PostgreSQL LLM Cache (`llm_verdict_cache`, survives restarts)
     - Tier 1: Google Gemini 2.5 Flash (via HTTP Header X-LLM-Api-Key or server GEMINI_API_KEY)
     - Tier 2: Groq / OpenRouter Free Tier (if GROQ_API_KEY or OPENROUTER_API_KEY set)
     - Tier 3: Public Zero-Key OpenAI-compatible Endpoint (if ENABLE_PUBLIC_LLM_FALLBACK=true)
     - Tier 4: Instant Local Deterministic Expert Judge (0 ms, 100% autonomous, never fails)
     """
     cache_key = hashlib.sha256(f"{titulo}|{organo}|{texto[:4000]}".encode("utf-8")).hexdigest()
-    if cache_key in _VERDICT_CACHE and not api_key_override:
-        _VERDICT_CACHE.move_to_end(cache_key)
-        return _VERDICT_CACHE[cache_key]
+    allow_heuristic_cache = not bool(api_key_override and api_key_override.strip())
+
+    # Tier 0A: RAM LRU cache
+    if cache_key in _VERDICT_CACHE:
+        cached = _VERDICT_CACHE[cache_key]
+        if allow_heuristic_cache or cached.metodo_evaluacion != "HYBRID_HEURISTIC":
+            _VERDICT_CACHE.move_to_end(cache_key)
+            return cached
+
+    # Tier 0B: Persistent SQLite/PostgreSQL cache (survives restarts)
+    if use_persistent_cache:
+        db_cached = _db_cache_get(cache_key, session=session, allow_heuristic=allow_heuristic_cache)
+        if db_cached is not None:
+            _VERDICT_CACHE[cache_key] = db_cached
+            _VERDICT_CACHE.move_to_end(cache_key)
+            while len(_VERDICT_CACHE) > _MAX_CACHE_ENTRIES:
+                _VERDICT_CACHE.popitem(last=False)
+            return db_cached
 
     user_prompt = (
         f"TÍTULO ORIGINAL: {titulo}\n"
@@ -180,6 +269,10 @@ def evaluate_layer2(
     _VERDICT_CACHE.move_to_end(cache_key)
     while len(_VERDICT_CACHE) > _MAX_CACHE_ENTRIES:
         _VERDICT_CACHE.popitem(last=False)
+
+    if use_persistent_cache:
+        _db_cache_put(cache_key, verdict, session=session)
+
     return verdict
 
 

@@ -794,9 +794,13 @@ async def analyze_uploaded_pdf(
     x_llm_api_key: str | None = Header(default=None, description="API Key opcional de Gemini"),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
-    """Upload a PDF of an official bulletin or BDNS sheet to parse and evaluate live."""
+    """Upload a PDF of an official bulletin or BDNS sheet to parse and evaluate live (with OCR fallback)."""
     pdf_bytes = await file.read()
-    extracted = extract_pdf_from_bytes(pdf_bytes, filename=file.filename or "uploaded.pdf")
+    extracted = extract_pdf_from_bytes(
+        pdf_bytes,
+        filename=file.filename or "uploaded.pdf",
+        api_key_override=x_llm_api_key,
+    )
     cand = pdf_doc_to_candidate(extracted)
     res = process_candidate(
         cand,
@@ -807,8 +811,11 @@ async def analyze_uploaded_pdf(
     return {
         "filename": extracted.filename,
         "num_pages": extracted.num_pages,
+        "used_ocr": extracted.used_ocr,
+        "ocr_engine": extracted.ocr_engine,
         "passed_layer1": res.passed_layer1,
         "accepted_layer2": res.accepted_layer2,
+        "amendment_applied": res.amendment_applied,
         "layer1_detail": {
             "decision": res.layer1.decision,
             "score": res.layer1.score,

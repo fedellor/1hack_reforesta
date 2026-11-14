@@ -71,6 +71,8 @@ query_cache = FastQueryCache(ttl_seconds=settings.cache_ttl_seconds)
 
 def init_db() -> None:
     """Create all database tables and composite indexes if they do not exist."""
+    import app.models  # noqa: F401 - Ensure all table models are registered on metadata
+
     SQLModel.metadata.create_all(engine)
 
 
