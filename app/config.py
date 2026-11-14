@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     daily_sync_minute: int = 0
     daily_sync_timezone: str = "Europe/Madrid"
     auto_sync_interval_minutes: int = 1440
+    sync_catchup_on_startup: bool = True  # al arrancar, sincroniza si se perdió la última cita de las 07:00
+    sync_retry_attempts: int = 3  # intentos de una sincronización que falla (excepción)
+    sync_retry_delay_seconds: int = 300  # espera entre intentos
     cache_ttl_seconds: int = 60
     public_backend_url: str = "http://localhost:8000"
 

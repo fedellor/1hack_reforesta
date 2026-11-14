@@ -317,27 +317,87 @@ def seconds_until_next_daily_sync(
     return wait_seconds, target
 
 
-async def background_live_sync_daemon() -> None:
+def last_scheduled_slot(now: datetime | None = None) -> datetime:
+    """Última cita de sincronización (07:00 Madrid por defecto) ya pasada respecto a `now`."""
+    _, siguiente = seconds_until_next_daily_sync(now=now)
+    return siguiente - timedelta(days=1)
+
+
+def sync_overdue(session: Session, now: datetime | None = None) -> bool:
+    """¿Se perdió la última sincronización programada?
+
+    Es cierto si no hay ninguna sincronización real completada, o si la última es anterior a la última cita de las 07:00.
+    Así, reiniciar el servicio varias veces el mismo día no dispara sincronizaciones de más, pero un reinicio tras una cita
+    perdida (contenedor caído, equipo apagado) sí recupera los datos.
     """
-    Background asyncio scheduler that synchronizes live official sources
-    every day specifically at 07:00 AM (Europe/Madrid), hot-reloading ./fuentes/,
-    updating BDNS/BOE/PLACSP/EU/CCAA/Foundations, and recalculating deadlines.
-    """
-    while True:
+    # Solo cuentan las sincronizaciones reales (con fuentes en vivo): el arranque con base vacía también deja una
+    # ejecución COMPLETED que solo carga los PDF de ./fuentes, y no debe tomarse por una sincronización diaria.
+    completadas = session.exec(
+        select(IngestionRun).where(IngestionRun.status == "COMPLETED").order_by(IngestionRun.started_at.desc()).limit(50)
+    ).all()
+    ultima = next((r.started_at for r in completadas if "live_api_fetched" in (r.details or {})), None)
+    if ultima is None:
+        return True
+    if ultima.tzinfo is None:
+        ultima = ultima.replace(tzinfo=timezone.utc)
+    return ultima < last_scheduled_slot(now)
+
+
+async def run_sync_with_retries() -> bool:
+    """Sincroniza las fuentes en vivo; si falla por una excepción, reintenta (varios intentos, con espera)."""
+    intentos = max(1, settings.sync_retry_attempts)
+    for n in range(1, intentos + 1):
         try:
-            wait_sec, next_run = seconds_until_next_daily_sync()
-            logger.info(
-                "Próxima actualización automática diaria programada: %s (en %.0f s)",
-                next_run.isoformat(),
-                wait_sec,
-            )
-            await asyncio.sleep(wait_sec)
-            logger.info("Iniciando actualización diaria automática de las 07:00h (Europe/Madrid)...")
             with Session(engine) as session:
                 await run_full_ingestion(session=session, include_live_apis=True)
                 refresh_live_database_states(session)
+            return True
         except asyncio.CancelledError:
-            break
+            raise
         except Exception as exc:
-            logger.warning("Error en ciclo diario de sincronización (reintento en 5 min): %s", exc)
-            await asyncio.sleep(300)
+            logger.warning("Sincronización fallida (intento %d de %d): %s", n, intentos, exc)
+            if n < intentos:
+                await asyncio.sleep(settings.sync_retry_delay_seconds)
+    return False
+
+
+async def _esperar_hasta(objetivo: datetime) -> None:
+    """Espera hasta una hora concreta mirando el reloj real cada minuto: un único `sleep` largo se retrasa si el equipo se suspende."""
+    while True:
+        restante = (objetivo - datetime.now(objetivo.tzinfo)).total_seconds()
+        if restante <= 0:
+            return
+        await asyncio.sleep(min(60.0, restante))
+
+
+async def background_live_sync_daemon() -> None:
+    """
+    Planificador en segundo plano: sincroniza las fuentes oficiales cada día a las 07:00 (Europe/Madrid) y,
+    al arrancar, recupera la sincronización si se perdió la última cita (ver `sync_overdue`).
+    """
+    try:
+        if settings.sync_catchup_on_startup:
+            try:
+                with Session(engine) as session:
+                    perdida = sync_overdue(session)
+                if perdida:
+                    logger.info("Al arrancar: la última sincronización programada no consta; sincronizando ahora...")
+                    await run_sync_with_retries()
+            except Exception as exc:  # una comprobación fallida no debe matar el planificador
+                logger.warning("No se pudo comprobar/recuperar la sincronización al arrancar: %s", exc)
+        while True:
+            try:
+                wait_sec, next_run = seconds_until_next_daily_sync()
+                logger.info("Próxima actualización automática diaria programada: %s (en %.0f s)", next_run.isoformat(), wait_sec)
+                await _esperar_hasta(next_run)
+                logger.info("Iniciando actualización diaria automática de las 07:00h (Europe/Madrid)...")
+                if not await run_sync_with_retries():
+                    logger.error("La sincronización diaria falló tras %d intentos; se reintentará en la próxima cita.", settings.sync_retry_attempts)
+                await asyncio.sleep(1)  # evita relanzar dentro de la misma cita
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning("Error en el planificador diario (reintento en 60 s): %s", exc)
+                await asyncio.sleep(60)
+    except asyncio.CancelledError:
+        return
