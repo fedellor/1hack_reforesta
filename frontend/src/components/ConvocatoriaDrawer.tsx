@@ -9,6 +9,8 @@ import {
   Copy,
 } from 'lucide-react';
 import { Convocatoria, EstadoInterno } from '@/types/convocatoria';
+import { esCitaLiteral, limpiarJustificacion } from '@/lib/texto';
+import { aperturaISO, diasHastaApertura, esProxima } from '@/lib/plazo';
 
 interface ConvocatoriaDrawerProps {
   convocatoria: Convocatoria | null;
@@ -31,7 +33,7 @@ export function ConvocatoriaDrawer({
 Organismo: ${c.organismo} (${c.codigoOficial})
 Ámbito: ${c.ambitoTerritorial}${c.orografiaPendiente ? ` · ${c.orografiaPendiente}` : ''}
 Cuantía máx: ${new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(c.cuantiaMaximaProyecto)} (${c.porcentajeCofinanciacion === 0 ? '100% financiado' : `${c.porcentajeCofinanciacion}% cofinanciación`})
-Cierre: ${c.fechaCierre} (${c.diasRestantes} días restantes)
+Cierre: ${c.diasRestantes >= 9999 ? 'plazo abierto, sin fecha fijada' : `${c.fechaCierre} (${esProxima(c) ? `Abre en ${diasHastaApertura(c)} días` : c.diasRestantes >= 9999 ? 'Plazo abierto' : `${c.diasRestantes} días`} restantes)`}
 Elegibilidad: ${c.motivoElegibilidad}
 Afinidad Reforesta: ${c.matchingGlobal}% (Restauración: ${c.matchingLineas.restauracionEcosistemas}%, Hábitats: ${c.matchingLineas.conservacionHabitats}%, Educación: ${c.matchingLineas.educacionAmbiental}%)
 
@@ -73,7 +75,7 @@ Enlace oficial: ${c.urlBasesPdf}`;
                 </span>
                 <span className="text-zinc-400">·</span>
                 <span className="text-zinc-500">
-                  Cierre: {new Date(c.fechaCierre).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  {esProxima(c) && aperturaISO(c) ? `Abre el ${new Date(`${aperturaISO(c)}T12:00:00`).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })} · cierra el ${new Date(`${c.fechaCierre}T12:00:00`).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}` : c.diasRestantes >= 9999 ? 'Plazo abierto (según bases)' : `Cierre: ${new Date(c.fechaCierre).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}`}
                 </span>
               </div>
               <h2 className="text-base font-semibold text-zinc-900 leading-snug">
@@ -122,13 +124,18 @@ Enlace oficial: ${c.urlBasesPdf}`;
                   {c.elegible ? 'Convocatoria Apta para Reforesta' : 'Convocatoria Excluida por Bases'}
                 </span>
               </div>
-              <p className="text-zinc-700 leading-relaxed">{c.motivoElegibilidad}</p>
+              <p className="text-zinc-700 leading-relaxed">{limpiarJustificacion(c.motivoElegibilidad)}</p>
               {c.dealbreakers.length > 0 && (
-                <ul className="mt-2 text-rose-800 list-disc list-inside space-y-0.5">
-                  {c.dealbreakers.map((d, i) => (
-                    <li key={i}>{d}</li>
-                  ))}
-                </ul>
+                <div className={`mt-3 pt-3 border-t ${c.elegible ? 'border-amber-200' : 'border-rose-200'}`}>
+                  <p className={`font-semibold mb-1 ${c.elegible ? 'text-amber-800' : 'text-rose-800'}`}>
+                    {c.elegible ? 'A tener en cuenta' : 'Motivos de exclusión'}
+                  </p>
+                  <ul className={`list-disc list-inside space-y-0.5 ${c.elegible ? 'text-amber-900' : 'text-rose-800'}`}>
+                    {c.dealbreakers.map((d, i) => (
+                      <li key={i}>{d}</li>
+                    ))}
+                  </ul>
+                </div>
               )}
             </div>
 
@@ -232,22 +239,29 @@ Enlace oficial: ${c.urlBasesPdf}`;
               </div>
             </div>
 
-            {/* 5. Citas Textuales Oficiales */}
-            {c.citasBasesJustificacion.length > 0 && (
+            {/* 5. Citas de las bases (literales) y justificación del radar (generada) */}
+            {c.citasBasesJustificacion.some(esCitaLiteral) && (
               <div>
                 <h4 className="text-xs uppercase font-semibold text-zinc-500 tracking-wider mb-1.5">
                   Citas Textuales de las Bases
                 </h4>
                 <div className="space-y-1.5">
-                  {c.citasBasesJustificacion.map((cita, i) => (
-                    <blockquote
-                      key={i}
-                      className="bg-zinc-50 border-l-2 border-zinc-800 pl-3 py-1.5 text-zinc-700 italic rounded-r text-xs"
-                    >
+                  {c.citasBasesJustificacion.filter(esCitaLiteral).map((cita, i) => (
+                    <blockquote key={i} className="bg-zinc-50 border-l-2 border-zinc-800 pl-3 py-1.5 text-zinc-700 italic rounded-r text-xs">
                       &ldquo;{cita}&rdquo;
                     </blockquote>
                   ))}
                 </div>
+              </div>
+            )}
+            {c.citasBasesJustificacion.some((t) => !esCitaLiteral(t)) && (
+              <div>
+                <h4 className="text-xs uppercase font-semibold text-zinc-500 tracking-wider mb-1.5">Por qué lo recomienda el radar</h4>
+                <ul className="space-y-1.5 list-disc list-inside text-zinc-700">
+                  {c.citasBasesJustificacion.filter((t) => !esCitaLiteral(t)).map((t, i) => (
+                    <li key={i}>{limpiarJustificacion(t)}</li>
+                  ))}
+                </ul>
               </div>
             )}
 
@@ -307,47 +321,27 @@ Enlace oficial: ${c.urlBasesPdf}`;
               </div>
             )}
 
-            {/* Enlaces Oficiales Específicos */}
-            <div className="flex flex-wrap items-center gap-2">
-              {c.urlBasesPdf && (
-                <a
-                  href={c.urlBasesPdf}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded border border-[#6aa43a] text-[#2d5a27] bg-[#f4faef] hover:bg-[#6aa43a] hover:text-white transition-colors text-xs font-semibold shadow-2xs"
-                >
-                  <FileDown className="h-3.5 w-3.5" />
-                  <span>
-                    {/(\.pdf|iddocumento=|\/api\/v1\/fuentes\/|descargararchivo)/i.test(c.urlBasesPdf)
-                      ? 'Bases Oficiales (PDF)'
-                      : 'Documento de la Convocatoria'}
-                  </span>
-                </a>
-              )}
+            {/* Enlaces Oficiales */}
+            <div className="flex items-center gap-2">
+              <a
+                href={c.urlBasesPdf}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded border border-zinc-200 text-zinc-700 bg-white hover:bg-zinc-50 transition-colors text-xs font-medium shadow-2xs"
+              >
+                <FileDown className="h-3.5 w-3.5 text-zinc-500" />
+                <span>Bases Oficiales (PDF)</span>
+              </a>
 
-              {c.fuenteUrl && c.fuenteUrl !== c.urlBasesPdf && (
-                <a
-                  href={c.fuenteUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded border border-zinc-200 text-zinc-700 bg-white hover:bg-zinc-50 transition-colors text-xs font-medium shadow-2xs"
-                >
-                  <span>Ficha Oficial</span>
-                  <ExternalLink className="h-3 w-3 text-zinc-500" />
-                </a>
-              )}
-
-              {c.urlSedeElectronica && (
-                <a
-                  href={c.urlSedeElectronica}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-zinc-900 text-white hover:bg-zinc-800 transition-colors text-xs font-medium shadow-2xs"
-                >
-                  <span>Sede Electrónica</span>
-                  <ExternalLink className="h-3 w-3" />
-                </a>
-              )}
+              <a
+                href={c.urlSedeElectronica}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-zinc-900 text-white hover:bg-zinc-800 transition-colors text-xs font-medium shadow-2xs"
+              >
+                <span>Sede Electrónica</span>
+                <ExternalLink className="h-3 w-3" />
+              </a>
             </div>
 
           </div>
