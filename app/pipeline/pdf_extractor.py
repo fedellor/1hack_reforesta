@@ -1,9 +1,10 @@
-"""PDF Text & Structured Metadata Extractor using PyMuPDF (fitz)."""
+"""PDF Text & Structured Metadata Extractor using PyMuPDF (fitz) — ES/CA/GL/EU/EN."""
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 import pymupdf as fitz  # PyMuPDF
+from app.pipeline.layer1_regex import extract_cpv_codes
 
 
 @dataclass
@@ -28,15 +29,23 @@ class ExtractedPDFDocument:
     url_tramitacion: str | None = None
     url_bases_reguladoras: str | None = None
     cofinanciado_ue: bool = False
+    cpv_codes: list[str] = field(default_factory=list)
     criterios_valoracion: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _parse_euro_amount(raw: str) -> float | None:
-    """Convert Spanish number string like '17.389.322,52' or '500.000' to float."""
+    """Convert Spanish number string like '17.389.322,52', '500.000' or '120000' to float."""
     if not raw:
         return None
-    cleaned = raw.strip().replace("€", "").replace("euros", "").strip()
-    cleaned = cleaned.replace(".", "").replace(",", ".")
+    cleaned = raw.strip().replace("€", "").replace("euros", "").replace("EUR", "").strip()
+    if "," in cleaned and "." in cleaned:
+        cleaned = cleaned.replace(".", "").replace(",", ".")
+    elif "," in cleaned:
+        cleaned = cleaned.replace(",", ".")
+    elif cleaned.count(".") >= 1:
+        parts = cleaned.split(".")
+        if all(len(p) == 3 for p in parts[1:]):
+            cleaned = "".join(parts)
     try:
         return float(cleaned)
     except ValueError:
@@ -90,25 +99,33 @@ def _parse_document_fields(filename: str, num_pages: int, full_text: str) -> Ext
         full_text=full_text,
     )
 
+    # Always extract CPV codes and EU funding signals across any PDF using shared helper
+    result.cpv_codes = extract_cpv_codes(full_text)
+    result.cofinanciado_ue = bool(
+        re.search(
+            r"\b(FEADER|FEDER|NextGeneration|PRTR|LIFE|Horizon\s+Europe|Interreg|Fondo\s+Europeo)\b",
+            full_text,
+            re.IGNORECASE,
+        )
+    )
+
     # Case A: BDNS "Detalle de la convocatoria" sheet (e.g. miteco-convocatoria-923290.pdf)
     if "Detalle de la convocatoria" in full_text and "Código BDNS" in full_text:
         _parse_bdns_sheet(full_text, result)
         return result
 
-    # Case B: Official Bulletin Order / Bases / Convocatoria (e.g. comunidad-madrid-orden-1689-2026.pdf)
+    # Case B: Official Bulletin Order / Resolución / Decreto / Bases / Tender Pliego
     _parse_bulletin_order(full_text, result)
     return result
 
 
 def _parse_bdns_sheet(text: str, res: ExtractedPDFDocument) -> None:
-    # BDNS Code
     m_bdns = re.search(r"\b(\d{6,7})\s*\n\s*Código BDNS", text) or re.search(
         r"Código BDNS\s*\n\s*(\d{6,7})", text
     )
     if m_bdns:
         res.codigo_bdns = m_bdns.group(1).strip()
 
-    # Title
     m_title = re.search(
         r"(AYUDAS[^\n]+(?:\n[A-ZÁÉÍÓÚÑ0-9\s,.\-]+)*?)\s*\n\s*Título de las bases reguladoras",
         text,
@@ -120,7 +137,6 @@ def _parse_bdns_sheet(text: str, res: ExtractedPDFDocument) -> None:
         if m_t2:
             res.titulo_detectado = m_t2.group(1).strip()
 
-    # Issuing body
     if "MINISTERIO PARA LA TRANSICIÓN" in text:
         res.organo_detectado = "MINISTERIO PARA LA TRANSICIÓN ECOLÓGICA Y EL RETO DEMOGRÁFICO (MITECO)"
         if "DIRECCIÓN GENERAL DE SERVICIOS" in text:
@@ -130,38 +146,32 @@ def _parse_bdns_sheet(text: str, res: ExtractedPDFDocument) -> None:
         if m_org:
             res.organo_detectado = re.sub(r"\s+", " ", m_org.group(1)).strip()
 
-    # Region
     if "ES - ESPAÑA" in text:
         res.region_detectada = "ES - ESPAÑA"
 
-    # Sector & Beneficiaries
     if "ACTIVIDADES INMOBILIARIAS" in text:
         res.sector_economico_raw = "ACTIVIDADES INMOBILIARIAS"
     if "PERSONAS FÍSICAS QUE NO DESARROLLAN ACTIVIDAD ECONÓMICA" in text:
         res.beneficiarios_raw = "PERSONAS FÍSICAS QUE NO DESARROLLAN ACTIVIDAD ECONÓMICA / ENTIDADES INTERÉS SOCIAL"
 
-    # Budget
     m_budget = re.search(r"([\d.]+,\d{2})\s*€\s*\n\s*Presupuesto total", text) or re.search(
         r"Presupuesto total de la convocatoria\s*\n\s*([\d.]+,\d{2})\s*€", text
     )
     if m_budget:
         res.presupuesto_total = _parse_euro_amount(m_budget.group(1))
 
-    # Registration date
     m_date = re.search(r"(\d{2}/\d{2}/20\d{2})\s*\n\s*Fecha de registro", text) or re.search(
         r"Fecha de registro\s*\n\s*(\d{2}/\d{2}/20\d{2})", text
     )
     if m_date:
         res.fecha_registro_o_firma = m_date.group(1)
 
-    # Deadline text
     m_plazo = re.search(
         r"Fecha de finalización del periodo de solicitud\s*\n\s*([^\n]+)", text
     )
     if m_plazo:
         res.plazo_solicitud_texto = m_plazo.group(1).strip()
 
-    # URLs
     urls = re.findall(r"https?://[^\s\n]+", text)
     for u in urls:
         if "sede." in u and not res.url_tramitacion:
@@ -171,23 +181,29 @@ def _parse_bdns_sheet(text: str, res: ExtractedPDFDocument) -> None:
 
 
 def _parse_bulletin_order(text: str, res: ExtractedPDFDocument) -> None:
-    # Order code (e.g., Orden 1689/2026)
-    m_orden = re.search(r"\b(Orden\s+\d+/\d{4})\b", text, re.IGNORECASE)
+    # Official normative code (Orden, Resolución, Decreto, Orde, Resolució, Expediente)
+    m_orden = (
+        re.search(r"\b(Orden\s+(?:[A-Z]{2,5}/)?\d+/\d{4})\b", text, re.IGNORECASE)
+        or re.search(r"\b(Orde\s+do\s+\d{1,2}\s+de\s+[a-záéíóú]+\s+de\s+20\d{2})\b", text, re.IGNORECASE)
+        or re.search(r"\b(Resoluci[oó]n?\s+(?:de\s+\d{1,2}[^\n,]{5,35}|\d+/\d{4}))\b", text, re.IGNORECASE)
+        or re.search(r"\b(Decreto\s+\d+/\d{4})\b", text, re.IGNORECASE)
+        or re.search(r"\b(Expediente[:\s]+[A-Z0-9\-/]{4,25})\b", text, re.IGNORECASE)
+    )
     if m_orden:
-        res.codigo_orden = m_orden.group(1)
+        res.codigo_orden = re.sub(r"\s+", " ", m_orden.group(1)).strip()
 
-    # Title (full paragraph starting with Orden ...)
+    # Title paragraph
     m_title = re.search(
-        r"(Orden\s+\d+/\d{4},[^\n]+(?:\n[^\n]+){0,5}?\.)",
+        r"((?:Orden|Orde|Resoluci[oó]n?|Decreto|Extracto\s+de\s+la\s+(?:Orden|Resoluci[oó]n)|Subvenciones|Subvencions|Ayudas)\b[^\n]+(?:\n[^\n]+){0,5}?\.)",
         text,
     )
     if m_title:
         res.titulo_detectado = re.sub(r"\s+", " ", m_title.group(1)).strip()
     else:
-        first_lines = [ln.strip() for ln in text.splitlines() if len(ln.strip()) > 20][:3]
+        first_lines = [ln.strip() for ln in text.splitlines() if len(ln.strip()) > 15][:3]
         res.titulo_detectado = " ".join(first_lines)[:300]
 
-    # Issuing body & Region
+    # Issuing body & Region (multilingual ES/CA/GL/EU/EN)
     if "Comunidad de Madrid" in text:
         res.region_detectada = "Comunidad de Madrid"
         if "Consejería de Medio Ambiente, Agricultura e Interior" in text:
@@ -196,65 +212,106 @@ def _parse_bulletin_order(text: str, res: ExtractedPDFDocument) -> None:
         else:
             res.organo_detectado = "Comunidad de Madrid"
     else:
-        m_cons = re.search(r"(Consejería de [^\n,.;]+|Ministerio de [^\n,.;]+|Diputación de [^\n,.;]+|Ayuntamiento de [^\n,.;]+)", text)
-        if m_cons:
-            res.organo_detectado = m_cons.group(1).strip()
+        m_org = re.search(
+            r"((?:Consejer[ií]a|Conseller[ií]a|Conselleria|Departament|Ministerio|Diputaci[oó]n|Deputaci[oó]n|Diputaci[oó]|"
+            r"Cabildo|Consell\s+Insular|Ayuntamiento|Concello|Ajuntament|Fundaci[oó]n|Confederaci[oó]n\s+Hidrogr[aá]fica|"
+            r"Xunta\s+de\s+Galicia|Generalitat\s+de\s+Catalunya|Generalitat\s+Valenciana|Junta\s+de\s+Andaluc[ií]a|"
+            r"Junta\s+de\s+Castilla\s+y\s+Le[oó]n|European\s+Commission)\b[^\n.;]{0,80})",
+            text,
+            re.IGNORECASE,
+        )
+        if m_org:
+            res.organo_detectado = re.sub(r"\s+", " ", m_org.group(1)).strip()
+            res.region_detectada = res.organo_detectado
 
     # Beneficiaries
-    if "entidades sin ánimo de lucro" in text.lower():
+    low = text.lower()
+    if any(k in low for k in ["sin ánimo de lucro", "sin animo de lucro", "sense ànim de lucre", "sen ánimo de lucro", "ong", "non-profit"]):
         res.beneficiarios_raw = "Entidades sin ánimo de lucro (Asociaciones, Fundaciones, ONGs ambientales)"
 
-    # Total budget ("dotación de la convocatoria es de 500.000 euros")
+    # Total budget across broad phrasings
     m_dot = re.search(
-        r"(?:dotación|presupuesto|importe\s+total)[^.\n]{0,60}?es\s+de\s+([\d.]+(?:,\d{1,2})?)\s*(?:euros|€)",
+        r"(?:dotaci[oó]n|presupuesto(?:\s+base\s+de\s+licitaci[oó]n)?|importe\s+(?:total|global)|"
+        r"cr[eé]dito\s+presupuestario|cuant[ií]a\s+(?:total|m[aá]xima)|valor\s+estimado|dotada\s+con|total\s+budget)"
+        r"[^.\n€]{0,60}?(?:es\s+de|de|:|ascender[aá]\s+a|of)?\s*([\d.]+(?:,\d{1,2})?)\s*(?:euros|€|EUR)",
         text,
         re.IGNORECASE,
     )
     if m_dot:
         res.presupuesto_total = _parse_euro_amount(m_dot.group(1))
 
-    # Max per entity ("60.000 euros por entidad beneficiaria")
+    # Max per entity / beneficiary
     m_ent = re.search(
-        r"([\d.]+(?:,\d{1,2})?)\s*(?:euros|€)\s*por\s+entidad\s+beneficiaria",
+        r"(?:([\d.]+(?:,\d{1,2})?)\s*(?:euros|€)\s*por\s+(?:entidad\s+beneficiaria|beneficiario|solicitante)|"
+        r"m[aá]ximo\s+(?:por\s+)?(?:entidad|beneficiario)\s*(?:ser[aá]\s+de|:)?\s*([\d.]+(?:,\d{1,2})?)\s*(?:euros|€))",
         text,
         re.IGNORECASE,
     )
     if m_ent:
-        res.importe_max_entidad = _parse_euro_amount(m_ent.group(1))
+        res.importe_max_entidad = _parse_euro_amount(m_ent.group(1) or m_ent.group(2))
 
-    # Max per project ("30.000 euros por proyecto")
+    # Max per project
     m_proj = re.search(
-        r"([\d.]+(?:,\d{1,2})?)\s*(?:euros|€)\s*por\s+proyecto",
+        r"(?:([\d.]+(?:,\d{1,2})?)\s*(?:euros|€)\s*por\s+(?:proyecto|solicitud|actuaci[oó]n)|"
+        r"m[aá]ximo\s+por\s+proyecto\s*(?:ser[aá]\s+de|:)?\s*([\d.]+(?:,\d{1,2})?)\s*(?:euros|€))",
         text,
         re.IGNORECASE,
     )
     if m_proj:
-        res.importe_max_proyecto = _parse_euro_amount(m_proj.group(1))
+        res.importe_max_proyecto = _parse_euro_amount(m_proj.group(1) or m_proj.group(2))
 
-    # Co-financing % ("alcanzar el 100 %")
-    m_pct = re.search(r"alcanzar\s+el\s+(\d{1,3})\s*%", text, re.IGNORECASE)
-    if m_pct:
-        res.porcentaje_financiacion = float(m_pct.group(1))
-
-    # Deadline clause ("en el plazo de 10 días hábiles a contar desde el día siguiente...")
-    m_plazo = re.search(
-        r"en\s+el\s+plazo\s+de\s+([^.]+?d[ií]as\s+(?:h[aá]biles|naturales)[^.]+)",
+    # Co-financing %
+    m_pct = re.search(
+        r"(?:alcanzar\s+el|hasta\s+(?:el|un)|financiar[aá]\s+(?:hasta\s+)?el|intensidad\s+(?:m[aá]xima\s+)?del)\s*(\d{1,3})\s*%",
         text,
         re.IGNORECASE,
+    )
+    if m_pct:
+        pct_val = float(m_pct.group(1))
+        if 10.0 <= pct_val <= 100.0:
+            res.porcentaje_financiacion = pct_val
+
+    # Deadline clause (ES / CA / GL / EN) - allow line wraps inside legal sentences before '.'
+    m_plazo = (
+        re.search(
+            r"en\s+el\s+plazo\s+de\s+([^.]+?(?:d[ií](?:as|es)\s+(?:h[aáà]bil(?:e?s)?|natural(?:e?s)?)|mes(?:es|os)?)(?:[^.]{0,120})?)",
+            text,
+            re.IGNORECASE,
+        )
+        or re.search(
+            r"(?:plazo|termini|prazo)\s+de\s+presentaci[oó]n?(?:\s+de\s+solicitud(?:es)?)?\s*(?:ser[aá]\s+de|:)\s*([^.\n]{4,90})",
+            text,
+            re.IGNORECASE,
+        )
+        or re.search(
+            r"(?:hasta\s+el|fins\s+al|ata\s+o|deadline:?)\s+(\d{1,2}\s+(?:de\s+[a-záéíóú]+|[a-z]+)\s+(?:de\s+|do\s+)?20\d{2}|20\d{2}-\d{2}-\d{2}|\d{2}/\d{2}/20\d{2})",
+            text,
+            re.IGNORECASE,
+        )
     )
     if m_plazo:
         res.plazo_solicitud_texto = re.sub(r"\s+", " ", m_plazo.group(1)).strip()
 
-    # Digital signature date ("Fecha: 2026.05.07")
-    m_sig = re.search(r"Fecha:\s*(20\d{2}[./-]\d{2}[./-]\d{2})", text)
+    # Signature / Publication date
+    m_sig = (
+        re.search(r"Fecha:\s*(20\d{2}[./-]\d{2}[./-]\d{2})", text)
+        or re.search(r"(?:Publicaci[oó]n|Fecha\s+de\s+registro|En\s+[A-ZÁÉÍÓÚ][a-zñáéíóú]+,\s+a)\s*[:]?\s*(\d{1,2}\s+de\s+[a-záéíóú]+\s+de\s+20\d{2}|\d{2}/\d{2}/20\d{2})", text, re.IGNORECASE)
+    )
     if m_sig:
         res.fecha_registro_o_firma = m_sig.group(1)
 
-    # Tramitacion URL
+    # URLs
     if "sede.comunidad.madrid" in text:
         res.url_tramitacion = "https://sede.comunidad.madrid"
+    else:
+        urls = re.findall(r"https?://[^\s\n)>\"']+", text)
+        for u in urls:
+            if "sede." in u and not res.url_tramitacion:
+                res.url_tramitacion = u
+            elif any(d in u for d in ("boe.es", "bocm.es", "xunta.gal", "gencat.cat", "juntadeandalucia.es")) and not res.url_bases_reguladoras:
+                res.url_bases_reguladoras = u
 
-    # Valuation criteria extraction if present
+    # Valuation criteria extraction
     if "DIMENSIÓN AMBIENTAL" in text:
         res.criterios_valoracion = [
             {"dimension": "Dimensión Técnica", "puntos_max": 5.0, "detalle": "Coherencia técnica, experiencia previa, innovación, continuidad y cofinanciación propia (>25%)."},

@@ -1,4 +1,5 @@
 """Layer 2: Multi-Provider LLM Judge (Gemini / Groq / OpenRouter / Public Zero-Key / Deterministic Expert) + Cache."""
+from collections import OrderedDict
 import hashlib
 import json
 import logging
@@ -11,8 +12,9 @@ from app.pipeline.layer1_regex import Layer1Result
 
 logger = logging.getLogger(__name__)
 
-# In-memory hash cache so identical texts never consume LLM tokens twice
-_VERDICT_CACHE: dict[str, "JudgeVerdictSchema"] = {}
+# Bounded LRU/FIFO cache so identical texts never consume LLM tokens twice without leaking RAM
+_MAX_CACHE_ENTRIES = 2000
+_VERDICT_CACHE: OrderedDict[str, "JudgeVerdictSchema"] = OrderedDict()
 
 
 class JudgeVerdictSchema(BaseModel):
@@ -97,6 +99,7 @@ def evaluate_layer2(
     """
     cache_key = hashlib.sha256(f"{titulo}|{organo}|{texto[:4000]}".encode("utf-8")).hexdigest()
     if cache_key in _VERDICT_CACHE and not api_key_override:
+        _VERDICT_CACHE.move_to_end(cache_key)
         return _VERDICT_CACHE[cache_key]
 
     user_prompt = (
@@ -174,6 +177,9 @@ def evaluate_layer2(
         verdict.plazo_solicitud_detectado = plazo_hint
 
     _VERDICT_CACHE[cache_key] = verdict
+    _VERDICT_CACHE.move_to_end(cache_key)
+    while len(_VERDICT_CACHE) > _MAX_CACHE_ENTRIES:
+        _VERDICT_CACHE.popitem(last=False)
     return verdict
 
 
@@ -200,6 +206,19 @@ def _try_gemini_judge(api_key: str, user_prompt: str) -> JudgeVerdictSchema | No
     except Exception as exc:
         logger.warning("Gemini Judge call failed (%s); falling back.", exc)
     return None
+
+
+def _extract_json_object(content: str) -> dict:
+    """Parse JSON cleanly even if the model wraps it in markdown ```json code fences."""
+    cleaned = content.strip()
+    m_fence = re.search(r"```(?:json)?\s*(\{.*\})\s*```", cleaned, re.DOTALL)
+    if m_fence:
+        cleaned = m_fence.group(1)
+    elif not cleaned.startswith("{"):
+        m_brace = re.search(r"(\{.*\})", cleaned, re.DOTALL)
+        if m_brace:
+            cleaned = m_brace.group(1)
+    return json.loads(cleaned)
 
 
 def _try_openai_compatible_judge(
@@ -235,7 +254,7 @@ def _try_openai_compatible_judge(
             if resp.status_code != 200:
                 return None
             content = resp.json()["choices"][0]["message"]["content"]
-            parsed = json.loads(content)
+            parsed = _extract_json_object(content)
             verdict = JudgeVerdictSchema(**parsed)
             verdict.metodo_evaluacion = method_tag
             return verdict
@@ -314,6 +333,39 @@ def _deterministic_expert_judge(
             fondo_ue = f_name
             cofinanciado_ue = True
             break
+
+    # Extract financial / deadline fallback hints from raw text if caller didn't supply them
+    if presupuesto_hint is None:
+        m_pres = re.search(
+            r"(?:dotaci[oó]n|dotad[ao]\s+con|presupuesto|importe|cuant[ií]a|budget)[^.\n€]{0,45}?\b([\d.]+(?:,\d{1,2})?)\s*(?:euros|€|EUR)",
+            f"{titulo} {texto[:3000]}",
+            re.IGNORECASE,
+        )
+        if m_pres:
+            raw_num = m_pres.group(1).replace(".", "").replace(",", ".")
+            try:
+                presupuesto_hint = float(raw_num)
+            except ValueError:
+                pass
+    if porcentaje_hint is None:
+        m_pct = re.search(
+            r"(?:hasta\s+(?:el|un)|alcanzar\s+el|cofinanciaci[oó]n\s+del|intensidad\s+del)\s*(\d{1,3})\s*%",
+            f"{titulo} {texto[:3000]}",
+            re.IGNORECASE,
+        )
+        if m_pct:
+            pct_val = float(m_pct.group(1))
+            if 10.0 <= pct_val <= 100.0:
+                porcentaje_hint = pct_val
+    if not plazo_hint:
+        m_plz = re.search(
+            r"\b(\d+\s+(?:d[ií](?:as|es)\s+(?:h[aáà]bil(?:e?s)?|natural(?:e?s)?)|mes(?:es|os)?)|"
+            r"(?:un|dos)\s+mes(?:es)?|hasta\s+el\s+\d{1,2}\s+de\s+[a-záéíóú]+\s+de\s+20\d{2})\b",
+            texto[:3000],
+            re.IGNORECASE,
+        )
+        if m_plz:
+            plazo_hint = m_plz.group(1).strip()
 
     titulo_limpio, resumen, justificacion, requisitos, gastos = _craft_spanish_metadata(
         titulo=titulo,

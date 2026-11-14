@@ -1,6 +1,7 @@
 """Ingestor for local PDF documents in ./fuentes/ (including the 2 Golden Benchmark PDFs)."""
 from datetime import timedelta
 from pathlib import Path
+import re
 from app.config import FUENTES_DIR, settings
 from app.pipeline.date_resolver import add_business_days, parse_spanish_date
 from app.pipeline.orchestrator import RawCandidate
@@ -32,40 +33,50 @@ def pdf_doc_to_candidate(doc: ExtractedPDFDocument) -> RawCandidate:
         fuente = "BDNS"
         url_ficha = f"https://www.pap.hacienda.gob.es/bdnstrans/ge/es/convocatorias/{doc.codigo_bdns}"
     elif doc.codigo_orden:
-        slug = doc.codigo_orden.lower().replace(" ", "-").replace("/", "-")
-        cid = f"bocm-{slug}"
+        slug = re.sub(r"[^a-z0-9]+", "-", doc.codigo_orden.lower()).strip("-")
+        is_madrid = "madrid" in (doc.region_detectada + doc.organo_detectado + doc.filename).lower()
+        cid = f"bocm-{slug}" if is_madrid else f"pdf-{slug}"
         codigo_oficial = doc.codigo_orden.upper()
-        fuente = "BOLETIN_CCAA"
-        url_ficha = doc.url_tramitacion or "https://www.comunidad.madrid/servicios/medio-ambiente"
+        fuente = "BOLETIN_CCAA" if is_madrid or "orden" in doc.codigo_orden.lower() else "FUENTES_PDF"
+        url_ficha = doc.url_tramitacion or (
+            "https://www.comunidad.madrid/servicios/medio-ambiente" if is_madrid else ""
+        )
     else:
-        slug = Path(doc.filename).stem.lower()
+        slug = re.sub(r"[^a-z0-9]+", "-", Path(doc.filename).stem.lower()).strip("-")
         cid = f"pdf-{slug}"
         codigo_oficial = Path(doc.filename).stem.upper()
         fuente = "FUENTES_PDF"
         url_ficha = doc.url_tramitacion or ""
 
-    # If the PDF specifies a relative deadline depending on extract publication ("tras publicación extracto...")
-    # and the extract date is not closed in the PDF, compute the active business-day window from the current cycle
+    tipo_oportunidad = (
+        "LICITACION"
+        if (doc.cpv_codes and "licitaci" in doc.full_text.lower())
+        else ("PROGRAMA_UE" if "european commission" in doc.organo_detectado.lower() else "SUBVENCION")
+    )
+
+    # Compute active business-day window when extract publication triggers a relative deadline
     f_ini = None
     f_fin = None
     plazo_txt = doc.plazo_solicitud_texto or ""
     if "extracto" in plazo_txt.lower():
-        # Extract was registered in 2026; calculate active business-day window from recent extract publication
         extract_pub = today - timedelta(days=3)
         f_ini = extract_pub + timedelta(days=1)
-        num_days = 15 if "15" in plazo_txt else (10 if "10" in plazo_txt else 15)
-        f_fin = add_business_days(extract_pub, num_days)
+        m_days = re.search(r"\b(\d+)\b", plazo_txt)
+        num_days = int(m_days.group(1)) if m_days else 15
+        ccaa_hint = "ES-MD" if "madrid" in (doc.region_detectada + doc.organo_detectado).lower() else None
+        f_fin = add_business_days(extract_pub, num_days, ccaa_codigo=ccaa_hint)
 
     return RawCandidate(
         id=cid,
         codigo_oficial=codigo_oficial,
         fuente=fuente,
-        tipo_oportunidad="SUBVENCION",
+        tipo_oportunidad=tipo_oportunidad,
         titulo=doc.titulo_detectado or doc.filename,
         organo_convocante=doc.organo_detectado or "Administración Pública",
         unidad_convocante=doc.unidad_detectada,
         texto=doc.full_text,
         region_hint=doc.region_detectada,
+        cpv_codes=doc.cpv_codes,
         sector_economico_original=doc.sector_economico_raw,
         beneficiarios_hint=doc.beneficiarios_raw,
         presupuesto_total=doc.presupuesto_total,

@@ -1,4 +1,5 @@
-"""Live Async Connectors for Official Public & Private Sources: BDNS, PLACSP Atom, BOE, EU SEDIA & Foundations."""
+"""Live Async Connectors for Official Public & Private Sources: BDNS, PLACSP Atom (State + CCAA/Local), BOE, EU SEDIA & CCAA RSS."""
+import asyncio
 import logging
 import xml.etree.ElementTree as ET
 from datetime import date, timedelta
@@ -11,7 +12,16 @@ logger = logging.getLogger(__name__)
 BDNS_SEARCH_URL = "https://www.pap.hacienda.gob.es/bdnstrans/api/convocatorias/busqueda"
 BOE_SUMARIO_URL = "https://www.boe.es/datosabiertos/api/boe/sumario/{ymd}"
 EU_SEDIA_SEARCH_URL = "https://api.tech.ec.europa.eu/search-api/prod/rest/search"
-PLACSP_ATOM_URL = "https://contrataciondelestado.es/sindicacion/sindicacion_643/licitacionesPerfilesContratanteCompleto3.atom"
+PLACSP_ATOM_STATE_URL = "https://contrataciondelestado.es/sindicacion/sindicacion_643/licitacionesPerfilesContratanteCompleto3.atom"
+PLACSP_ATOM_LOCAL_URL = "https://contrataciondelestado.es/sindicacion/sindicacion_1044/PlataformasAgregadasSinMenores.atom"
+
+CCAA_RSS_FEEDS: list[dict[str, str]] = [
+    {"id": "rss-dog", "ccaa": "ES-GA", "nombre": "DOG Galicia RSS", "url": "https://www.xunta.gal/diario-oficial-galicia/rss/UltimosDogs_gl.rss"},
+    {"id": "rss-boja", "ccaa": "ES-AN", "nombre": "BOJA Andalucía RSS", "url": "https://www.juntadeandalucia.es/boja/distribucion/boja.xml"},
+    {"id": "rss-dogc", "ccaa": "ES-CT", "nombre": "DOGC Catalunya RSS", "url": "https://dogc.gencat.cat/es/el-dogc/rss/"},
+    {"id": "rss-bocyl", "ccaa": "ES-CL", "nombre": "BOCYL Castilla y León RSS", "url": "https://bocyl.jcyl.es/rss/ultimoboletin.xml"},
+    {"id": "rss-bopa", "ccaa": "ES-AS", "nombre": "BOPA Asturias RSS", "url": "https://sede.asturias.es/bopa-rss"},
+]
 
 
 # Official & Private Source Registry across all 6 levels (95+ sources)
@@ -29,19 +39,19 @@ SOURCES_REGISTRY: list[dict[str, Any]] = [
     {"id": "es-boe-api", "nivel": "ESTADO", "nombre": "BOE - Boletín Oficial del Estado (Buscador y API Datos Abiertos)", "tipo": "API_REST_XML_JSON", "url": "https://www.boe.es/", "idiomas": ["es"]},
     {"id": "es-miteco", "nivel": "ESTADO", "nombre": "MITECO - Ministerio para la Transición Ecológica y el Reto Demográfico", "tipo": "MINISTERIO", "url": "https://www.miteco.gob.es/", "idiomas": ["es"]},
     {"id": "es-fundacion-biodiversidad", "nivel": "ESTADO", "nombre": "Fundación Biodiversidad F.S.P. (MITECO)", "tipo": "FUNDACION_SECTOR_PUBLICO", "url": "https://www.fundacion-biodiversidad.es/", "idiomas": ["es"]},
-    {"id": "es-placsp", "nivel": "ESTADO", "nombre": "PLACSP - Plataforma de Contratación del Sector Público (Licitaciones CPV Forestal/Incendios)", "tipo": "ATOM_CODICE", "url": "https://contrataciondelestado.es/", "idiomas": ["es", "ca", "gl", "eu"]},
+    {"id": "es-placsp", "nivel": "ESTADO", "nombre": "PLACSP - Plataforma de Contratación del Sector Público (Licitaciones CPV Forestal/Incendios Estatal + Agregadas Locales)", "tipo": "ATOM_CODICE", "url": "https://contrataciondelestado.es/", "idiomas": ["es", "ca", "gl", "eu"]},
     # 3. 19 CCAA / CIUDADES AUTÓNOMAS
-    {"id": "ccaa-boja", "nivel": "CCAA", "ccaa": "ES-AN", "nombre": "BOJA - Boletín Oficial de la Junta de Andalucía", "tipo": "BOLETIN_OFICIAL", "url": "https://www.juntadeandalucia.es/eboja.html", "idiomas": ["es"]},
+    {"id": "ccaa-boja", "nivel": "CCAA", "ccaa": "ES-AN", "nombre": "BOJA - Boletín Oficial de la Junta de Andalucía", "tipo": "BOLETIN_OFICIAL_RSS", "url": "https://www.juntadeandalucia.es/eboja.html", "idiomas": ["es"]},
     {"id": "ccaa-boa", "nivel": "CCAA", "ccaa": "ES-AR", "nombre": "BOA - Boletín Oficial de Aragón", "tipo": "BOLETIN_OFICIAL", "url": "https://www.boa.aragon.es/", "idiomas": ["es"]},
-    {"id": "ccaa-bopa", "nivel": "CCAA", "ccaa": "ES-AS", "nombre": "BOPA - Boletín Oficial del Principado de Asturias", "tipo": "BOLETIN_OFICIAL", "url": "https://sede.asturias.es/bopa", "idiomas": ["es"]},
+    {"id": "ccaa-bopa", "nivel": "CCAA", "ccaa": "ES-AS", "nombre": "BOPA - Boletín Oficial del Principado de Asturias", "tipo": "BOLETIN_OFICIAL_RSS", "url": "https://sede.asturias.es/bopa", "idiomas": ["es"]},
     {"id": "ccaa-boc-cantabria", "nivel": "CCAA", "ccaa": "ES-CB", "nombre": "BOC - Boletín Oficial de Cantabria", "tipo": "BOLETIN_OFICIAL", "url": "https://boc.cantabria.es/", "idiomas": ["es"]},
     {"id": "ccaa-bocce", "nivel": "CCAA", "ccaa": "ES-CE", "nombre": "BOCCE - Boletín Oficial de la Ciudad de Ceuta", "tipo": "BOLETIN_OFICIAL", "url": "https://www.ceuta.es/ceuta/bocce", "idiomas": ["es"]},
-    {"id": "ccaa-bocyl", "nivel": "CCAA", "ccaa": "ES-CL", "nombre": "BOCYL - Boletín Oficial de Castilla y León", "tipo": "BOLETIN_OFICIAL", "url": "https://bocyl.jcyl.es/", "idiomas": ["es"]},
+    {"id": "ccaa-bocyl", "nivel": "CCAA", "ccaa": "ES-CL", "nombre": "BOCYL - Boletín Oficial de Castilla y León", "tipo": "BOLETIN_OFICIAL_RSS", "url": "https://bocyl.jcyl.es/", "idiomas": ["es"]},
     {"id": "ccaa-docm", "nivel": "CCAA", "ccaa": "ES-CM", "nombre": "DOCM - Diario Oficial de Castilla-La Mancha", "tipo": "BOLETIN_OFICIAL", "url": "https://docm.jccm.es/", "idiomas": ["es"]},
     {"id": "ccaa-boc-canarias", "nivel": "CCAA", "ccaa": "ES-CN", "nombre": "BOC - Boletín Oficial de Canarias", "tipo": "BOLETIN_OFICIAL", "url": "https://www.gobiernodecanarias.org/boc/", "idiomas": ["es"]},
-    {"id": "ccaa-dogc", "nivel": "CCAA", "ccaa": "ES-CT", "nombre": "DOGC - Diari Oficial de la Generalitat de Catalunya", "tipo": "BOLETIN_OFICIAL", "url": "https://dogc.gencat.cat/", "idiomas": ["ca", "es"]},
+    {"id": "ccaa-dogc", "nivel": "CCAA", "ccaa": "ES-CT", "nombre": "DOGC - Diari Oficial de la Generalitat de Catalunya", "tipo": "BOLETIN_OFICIAL_RSS", "url": "https://dogc.gencat.cat/", "idiomas": ["ca", "es"]},
     {"id": "ccaa-doe", "nivel": "CCAA", "ccaa": "ES-EX", "nombre": "DOE - Diario Oficial de Extremadura", "tipo": "BOLETIN_OFICIAL", "url": "https://doe.juntaex.es/", "idiomas": ["es"]},
-    {"id": "ccaa-dog", "nivel": "CCAA", "ccaa": "ES-GA", "nombre": "DOG - Diario Oficial de Galicia (Xunta de Galicia)", "tipo": "BOLETIN_OFICIAL", "url": "https://www.xunta.gal/diario-oficial-galicia", "idiomas": ["gl", "es"]},
+    {"id": "ccaa-dog", "nivel": "CCAA", "ccaa": "ES-GA", "nombre": "DOG - Diario Oficial de Galicia (Xunta de Galicia)", "tipo": "BOLETIN_OFICIAL_RSS", "url": "https://www.xunta.gal/diario-oficial-galicia", "idiomas": ["gl", "es"]},
     {"id": "ccaa-boib", "nivel": "CCAA", "ccaa": "ES-IB", "nombre": "BOIB - Butlletí Oficial de les Illes Balears", "tipo": "BOLETIN_OFICIAL", "url": "https://www.caib.es/eboibfront/", "idiomas": ["ca", "es"]},
     {"id": "ccaa-borm", "nivel": "CCAA", "ccaa": "ES-MC", "nombre": "BORM - Boletín Oficial de la Región de Murcia", "tipo": "BOLETIN_OFICIAL", "url": "https://www.borm.es/", "idiomas": ["es"]},
     {"id": "ccaa-bocm", "nivel": "CCAA", "ccaa": "ES-MD", "nombre": "BOCM - Boletín Oficial de la Comunidad de Madrid", "tipo": "BOLETIN_OFICIAL", "url": "https://www.bocm.es/", "idiomas": ["es"]},
@@ -78,8 +88,8 @@ async def fetch_live_bdns_candidates(
     timeout: float = 6.0,
 ) -> list[RawCandidate]:
     """
-    Query the official BDNS / SNPSAP API across State, CCAA, Diputaciones,
-    Concellos, Ayuntamientos and Ajuntaments.
+    Query the official BDNS / SNPSAP API concurrently across 16 forestry/biodiversity terms
+    spanning State, CCAA, Diputaciones, Concellos, Ayuntamientos and Ajuntaments.
     """
     search_terms = keywords or [
         "reforestacion",
@@ -89,17 +99,27 @@ async def fetch_live_bdns_candidates(
         "montes vecinales",
         "prevencion de incendios",
         "restauracion ambiental",
+        "biodiversidad",
+        "natura 2000",
+        "forestal",
+        "bosques",
+        "arbolado",
+        "cambio climatico",
+        "biomasa forestal",
+        "custodia del territorio",
+        "educacion ambiental",
     ]
     candidates: list[RawCandidate] = []
     seen_codes: set[str] = set()
+    sem = asyncio.Semaphore(6)
 
     headers = {
         "Accept": "application/json",
         "User-Agent": "1hack_reforesta/2.0 (Radar Vivo de Oportunidades Forestales)",
     }
 
-    async with httpx.AsyncClient(timeout=timeout, headers=headers, follow_redirects=True) as client:
-        for term in search_terms:
+    async def _query_term(client: httpx.AsyncClient, term: str) -> list[dict[str, Any]]:
+        async with sem:
             try:
                 params = {
                     "vpd": "GE",
@@ -110,84 +130,103 @@ async def fetch_live_bdns_candidates(
                 }
                 resp = await client.get(BDNS_SEARCH_URL, params=params)
                 if resp.status_code != 200:
-                    continue
+                    return []
                 data = resp.json()
-                items: list[dict[str, Any]] = (
+                return (
                     data.get("content")
                     or data.get("datos")
                     or (data if isinstance(data, list) else [])
                 )
-                for item in items:
-                    num_conv = str(
-                        item.get("numeroConvocatoria")
-                        or item.get("codigoBDNS")
-                        or item.get("id")
-                        or ""
-                    ).strip()
-                    if not num_conv or num_conv in seen_codes:
-                        continue
-                    seen_codes.add(num_conv)
-
-                    titulo = str(item.get("descripcion") or item.get("titulo") or "").strip()
-                    organo = " - ".join(
-                        filter(
-                            None,
-                            [
-                                item.get("nivel1"),
-                                item.get("nivel2"),
-                                item.get("nivel3"),
-                            ],
-                        )
-                    )
-                    f_rec = item.get("fechaRecepcion") or item.get("fechaRegistro")
-                    presupuesto = item.get("presupuestoTotal") or item.get("importe")
-                    try:
-                        pres_float = float(presupuesto) if presupuesto is not None else None
-                    except (TypeError, ValueError):
-                        pres_float = None
-
-                    candidates.append(
-                        RawCandidate(
-                            id=f"bdns-{num_conv}",
-                            codigo_oficial=f"BDNS-{num_conv}",
-                            fuente="BDNS",
-                            tipo_oportunidad="SUBVENCION",
-                            titulo=titulo,
-                            organo_convocante=organo or "Administración Pública (BDNS)",
-                            texto=f"{titulo}. Órgano: {organo}.",
-                            region_hint=str(item.get("nivel1") or item.get("region") or ""),
-                            presupuesto_total=pres_float,
-                            fecha_publicacion=f_rec,
-                            fecha_inicio_solicitud=item.get("fechaInicioSolicitud"),
-                            fecha_fin_solicitud=item.get("fechaFinSolicitud"),
-                            url_ficha_oficial=f"https://www.pap.hacienda.gob.es/bdnstrans/ge/es/convocatorias/{num_conv}",
-                        )
-                    )
             except Exception as exc:
                 logger.debug("BDNS live query for '%s' skipped: %s", term, exc)
+                return []
+
+    async with httpx.AsyncClient(timeout=timeout, headers=headers, follow_redirects=True) as client:
+        results_lists = await asyncio.gather(*[_query_term(client, t) for t in search_terms])
+
+    for items in results_lists:
+        for item in items:
+            num_conv = str(
+                item.get("numeroConvocatoria")
+                or item.get("codigoBDNS")
+                or item.get("codBdns")
+                or item.get("id")
+                or ""
+            ).strip()
+            if not num_conv or num_conv in seen_codes:
+                continue
+            seen_codes.add(num_conv)
+
+            titulo = str(item.get("descripcion") or item.get("titulo") or "").strip()
+            organo_obj = item.get("organo") if isinstance(item.get("organo"), dict) else {}
+            organo = " - ".join(
+                filter(
+                    None,
+                    [
+                        item.get("nivel1") or organo_obj.get("nivel1"),
+                        item.get("nivel2") or organo_obj.get("nivel2"),
+                        item.get("nivel3") or organo_obj.get("nivel3"),
+                    ],
+                )
+            )
+            f_rec = item.get("fechaRecepcion") or item.get("fechaRegistro")
+            presupuesto = item.get("presupuestoTotal") or item.get("importeTotal") or item.get("importe")
+            try:
+                pres_float = float(presupuesto) if presupuesto is not None else None
+            except (TypeError, ValueError):
+                pres_float = None
+
+            mrr_flag = bool(item.get("mrr"))
+            candidates.append(
+                RawCandidate(
+                    id=f"bdns-{num_conv}",
+                    codigo_oficial=f"BDNS-{num_conv}",
+                    fuente="BDNS",
+                    tipo_oportunidad="SUBVENCION",
+                    titulo=titulo,
+                    organo_convocante=organo or "Administración Pública (BDNS)",
+                    texto=f"{titulo}. Órgano: {organo}.",
+                    region_hint=str(item.get("nivel1") or item.get("region") or ""),
+                    presupuesto_total=pres_float,
+                    cofinanciado_ue=mrr_flag,
+                    fondo_ue="NextGenerationEU / PRTR" if mrr_flag else None,
+                    fecha_publicacion=f_rec,
+                    fecha_inicio_solicitud=item.get("fechaInicioSolicitud"),
+                    fecha_fin_solicitud=item.get("fechaFinSolicitud"),
+                    url_ficha_oficial=f"https://www.pap.hacienda.gob.es/bdnstrans/ge/es/convocatorias/{num_conv}",
+                )
+            )
 
     return candidates
 
 
 async def fetch_live_boe_candidates(
-    days_back: int = 3,
+    days_back: int = 7,
     timeout: float = 6.0,
 ) -> list[RawCandidate]:
-    """Query the official BOE Open Data API (datosabiertos) for recent daily summaries."""
+    """Query the official BOE Open Data API (datosabiertos) concurrently across recent daily summaries."""
     candidates: list[RawCandidate] = []
+    seen_ids: set[str] = set()
     headers = {"Accept": "application/json", "User-Agent": "1hack_reforesta/2.0"}
     today = date.today()
+    sem = asyncio.Semaphore(5)
 
-    async with httpx.AsyncClient(timeout=timeout, headers=headers, follow_redirects=True) as client:
-        for offset in range(days_back):
-            target_date = today - timedelta(days=offset)
-            if target_date.weekday() == 6:
-                continue
-            ymd = target_date.strftime("%Y%m%d")
+    def _abs_boe_url(raw_url: str) -> str:
+        u = raw_url.strip()
+        if u.startswith("/"):
+            return f"https://www.boe.es{u}"
+        return u
+
+    async def _fetch_day(client: httpx.AsyncClient, target_date: date) -> list[RawCandidate]:
+        if target_date.weekday() == 6:
+            return []
+        ymd = target_date.strftime("%Y%m%d")
+        day_items: list[RawCandidate] = []
+        async with sem:
             try:
                 resp = await client.get(BOE_SUMARIO_URL.format(ymd=ymd))
                 if resp.status_code != 200:
-                    continue
+                    return []
                 payload = resp.json()
                 sumario = payload.get("data", {}).get("sumario", {})
                 diario_list = sumario.get("diario", [])
@@ -209,25 +248,24 @@ async def fetch_live_boe_candidates(
                                 epigrafes = [epigrafes]
                             items = list(epigrafes)
                             if "item" in dept:
-                                raw_items = dept["item"]
-                                items.append({"item": raw_items})
+                                items.append({"item": dept["item"]})
                             for ep in items:
                                 sub_items = ep.get("item", [])
                                 if isinstance(sub_items, dict):
                                     sub_items = [sub_items]
                                 for it in sub_items:
-                                    ident = it.get("identificador", "")
-                                    titulo = it.get("titulo", "")
+                                    ident = str(it.get("identificador", "")).strip()
+                                    titulo = str(it.get("titulo", "")).strip()
+                                    if not ident or not titulo:
+                                        continue
                                     url_pdf_obj = it.get("url_pdf", {})
-                                    url_pdf = (
-                                        url_pdf_obj.get("texto")
+                                    url_pdf_raw = (
+                                        url_pdf_obj.get("texto", "")
                                         if isinstance(url_pdf_obj, dict)
                                         else str(url_pdf_obj or "")
                                     )
-                                    url_html = it.get("url_html", "")
-                                    if not ident or not titulo:
-                                        continue
-                                    candidates.append(
+                                    url_html_raw = str(it.get("url_html", "") or "")
+                                    day_items.append(
                                         RawCandidate(
                                             id=f"boe-{ident.lower()}",
                                             codigo_oficial=ident,
@@ -238,12 +276,24 @@ async def fetch_live_boe_candidates(
                                             texto=f"{titulo} ({dept_name})",
                                             fecha_publicacion=target_date,
                                             anio_convocatoria=target_date.year,
-                                            url_ficha_oficial=url_html or f"https://www.boe.es/diario_boe/txt.php?id={ident}",
-                                            url_bases_reguladoras=url_pdf or None,
+                                            url_ficha_oficial=_abs_boe_url(url_html_raw) or f"https://www.boe.es/diario_boe/txt.php?id={ident}",
+                                            url_bases_reguladoras=_abs_boe_url(url_pdf_raw) if url_pdf_raw else None,
                                         )
                                     )
             except Exception as exc:
                 logger.debug("BOE live summary for %s skipped: %s", ymd, exc)
+        return day_items
+
+    async with httpx.AsyncClient(timeout=timeout, headers=headers, follow_redirects=True) as client:
+        batches = await asyncio.gather(
+            *[_fetch_day(client, today - timedelta(days=offset)) for offset in range(days_back)]
+        )
+
+    for batch in batches:
+        for cand in batch:
+            if cand.id not in seen_ids:
+                seen_ids.add(cand.id)
+                candidates.append(cand)
 
     return candidates
 
@@ -251,16 +301,21 @@ async def fetch_live_boe_candidates(
 async def fetch_live_eu_sedia_candidates(
     timeout: float = 6.0,
 ) -> list[RawCandidate]:
-    """Query the European Commission Funding & Tenders Portal (SEDIA API) for LIFE, Horizon & Interreg calls."""
+    """Query the European Commission Funding & Tenders Portal (SEDIA API) concurrently."""
     candidates: list[RawCandidate] = []
+    seen_ids: set[str] = set()
     queries = [
         "reforestation wildfire forest restoration LIFE",
-        "biodiversity forest fire Horizon Europe",
-        "silviculture afforestation carbon farming",
+        "biodiversity Natura 2000 forest fire Horizon Europe",
+        "silviculture afforestation carbon farming soil",
+        "nature restoration green infrastructure riparian",
+        "Interreg forest climate adaptation Spain",
     ]
+    sem = asyncio.Semaphore(5)
 
-    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-        for q in queries:
+    async def _query_sedia(client: httpx.AsyncClient, q: str) -> list[RawCandidate]:
+        batch: list[RawCandidate] = []
+        async with sem:
             try:
                 params = {
                     "apiKey": "SEDIA",
@@ -270,15 +325,16 @@ async def fetch_live_eu_sedia_candidates(
                 }
                 resp = await client.get(EU_SEDIA_SEARCH_URL, params=params)
                 if resp.status_code != 200:
-                    continue
+                    return []
                 data = resp.json()
-                results = data.get("results", [])
-                for r in results:
+                for r in data.get("results", []):
                     meta = r.get("metadata", {})
                     ident_list = meta.get("identifier", []) or [r.get("reference", "")]
                     ident = str(ident_list[0]).strip() if ident_list else ""
                     title_list = meta.get("title", []) or [r.get("summary", "")]
                     title = str(title_list[0]).strip() if title_list else ""
+                    if not ident or not title:
+                        continue
                     desc_list = meta.get("descriptionByte", []) or meta.get("callTitle", []) or []
                     desc = " ".join(str(x) for x in desc_list)
                     deadline_list = meta.get("deadlineDate", [])
@@ -286,9 +342,17 @@ async def fetch_live_eu_sedia_candidates(
                     start_list = meta.get("startDate", [])
                     start_raw = str(start_list[0])[:10] if start_list else None
 
-                    if not ident or not title:
-                        continue
-                    candidates.append(
+                    id_up = ident.upper()
+                    if "LIFE" in id_up:
+                        fondo = "LIFE"
+                    elif "INTERREG" in id_up:
+                        fondo = "Interreg / FEDER"
+                    elif "EMFAF" in id_up:
+                        fondo = "EMFAF"
+                    else:
+                        fondo = "Horizon Europe"
+
+                    batch.append(
                         RawCandidate(
                             id=f"eu-{ident.lower().replace('_', '-')}",
                             codigo_oficial=ident,
@@ -300,7 +364,7 @@ async def fetch_live_eu_sedia_candidates(
                             region_hint="Unión Europea (Aplicable en España)",
                             nuts_code="EU",
                             cofinanciado_ue=True,
-                            fondo_ue="LIFE" if "LIFE" in ident.upper() else "Horizon Europe",
+                            fondo_ue=fondo,
                             fecha_publicacion=start_raw,
                             fecha_inicio_solicitud=start_raw,
                             fecha_fin_solicitud=deadline_raw,
@@ -309,17 +373,77 @@ async def fetch_live_eu_sedia_candidates(
                     )
             except Exception as exc:
                 logger.debug("EU SEDIA live query for '%s' skipped: %s", q, exc)
+        return batch
+
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+        batches = await asyncio.gather(*[_query_sedia(client, q) for q in queries])
+
+    for batch in batches:
+        for cand in batch:
+            if cand.id not in seen_ids:
+                seen_ids.add(cand.id)
+                candidates.append(cand)
 
     return candidates
 
 
+def _parse_codice_entry_metadata(entry: ET.Element) -> tuple[list[str], str | None, float | None, str | None]:
+    """
+    Namespace-agnostic extraction of CODICE fields embedded inside a PLACSP Atom <entry>:
+    - CPV codes (<cbc:ItemClassificationCode>)
+    - Contracting party name (<cac:ContractingParty>...<cbc:Name>)
+    - Estimated contract amount (<cbc:EstimatedOverallContractAmount> / <cbc:TaxExclusiveAmount>)
+    - Tender submission deadline (<cac:TenderSubmissionDeadlinePeriod>/<cbc:EndDate>)
+    """
+    cpvs: list[str] = []
+    organo: str | None = None
+    budget: float | None = None
+    deadline: str | None = None
+
+    def _local(tag: str) -> str:
+        return tag.split("}", 1)[-1] if "}" in tag else tag
+
+    for elem in entry.iter():
+        lname = _local(elem.tag)
+        txt = (elem.text or "").strip()
+        if lname == "ItemClassificationCode" and txt:
+            cpvs.append(txt)
+        elif lname in ("EstimatedOverallContractAmount", "TotalAmount", "TaxExclusiveAmount") and txt and budget is None:
+            try:
+                val = float(txt)
+                if val > 0:
+                    budget = val
+            except ValueError:
+                pass
+        elif lname == "ContractingParty" and organo is None:
+            for sub in elem.iter():
+                if _local(sub.tag) == "Name" and (sub.text or "").strip():
+                    organo = sub.text.strip()
+                    break
+        elif lname == "TenderSubmissionDeadlinePeriod" and deadline is None:
+            for sub in elem.iter():
+                if _local(sub.tag) == "EndDate" and (sub.text or "").strip():
+                    deadline = sub.text.strip()[:10]
+                    break
+
+    return sorted(set(cpvs)), organo, budget, deadline
+
+
 async def fetch_live_placsp_candidates(timeout: float = 6.0) -> list[RawCandidate]:
-    """Query the official PLACSP (Contratación del Sector Público) Atom Syndication Feed."""
+    """
+    Query BOTH official PLACSP Atom Syndication Feeds concurrently:
+    1. State Sector (`sindicacion_643`)
+    2. Regional, Provincial, Diputaciones & Municipal Agregadas (`sindicacion_1044`)
+    Extracts embedded CODICE CPV codes, budgets, contracting authority & submission deadlines.
+    """
     candidates: list[RawCandidate] = []
+    seen_ids: set[str] = set()
     headers = {"User-Agent": "1hack_reforesta/2.0"}
-    async with httpx.AsyncClient(timeout=timeout, headers=headers, follow_redirects=True) as client:
+
+    async def _fetch_feed(client: httpx.AsyncClient, url: str) -> list[RawCandidate]:
+        items: list[RawCandidate] = []
         try:
-            resp = await client.get(PLACSP_ATOM_URL)
+            resp = await client.get(url)
             if resp.status_code != 200:
                 return []
             root = ET.fromstring(resp.text)
@@ -333,20 +457,92 @@ async def fetch_live_placsp_candidates(timeout: float = 6.0) -> list[RawCandidat
                 href = link_el.attrib.get("href", "") if link_el is not None else entry_id
                 if not title:
                     continue
+
+                cpvs, organo_codice, budget_codice, deadline_codice = _parse_codice_entry_metadata(entry)
                 short_id = entry_id.split("/")[-1] if "/" in entry_id else str(abs(hash(title)) % 1000000)
-                candidates.append(
+                items.append(
                     RawCandidate(
                         id=f"placsp-{short_id.lower()}",
                         codigo_oficial=f"PLACSP-{short_id}",
                         fuente="PLACSP",
                         tipo_oportunidad="LICITACION",
                         titulo=title,
-                        organo_convocante="Contratación del Sector Público (PLACSP)",
+                        organo_convocante=organo_codice or "Contratación del Sector Público (PLACSP)",
                         texto=f"{title}. {summary}",
+                        cpv_codes=cpvs,
+                        presupuesto_total=budget_codice,
                         fecha_publicacion=updated or date.today(),
+                        fecha_fin_solicitud=deadline_codice,
                         url_ficha_oficial=href,
                     )
                 )
         except Exception as exc:
-            logger.debug("PLACSP Atom live feed skipped: %s", exc)
+            logger.debug("PLACSP Atom live feed '%s' skipped: %s", url, exc)
+        return items
+
+    async with httpx.AsyncClient(timeout=timeout, headers=headers, follow_redirects=True) as client:
+        batches = await asyncio.gather(
+            _fetch_feed(client, PLACSP_ATOM_STATE_URL),
+            _fetch_feed(client, PLACSP_ATOM_LOCAL_URL),
+        )
+
+    for batch in batches:
+        for cand in batch:
+            if cand.id not in seen_ids:
+                seen_ids.add(cand.id)
+                candidates.append(cand)
+
+    return candidates
+
+
+async def fetch_live_ccaa_rss_candidates(timeout: float = 4.0) -> list[RawCandidate]:
+    """
+    Poll official public RSS/Atom feeds of regional bulletins (DOG Galicia, BOJA Andalucía,
+    DOGC Catalunya, BOCYL Castilla y León, BOPA Asturias) concurrently with graceful fallback.
+    """
+    candidates: list[RawCandidate] = []
+    seen_ids: set[str] = set()
+    headers = {"User-Agent": "1hack_reforesta/2.0 (RSS Monitor)"}
+
+    async def _poll_rss(client: httpx.AsyncClient, feed: dict[str, str]) -> list[RawCandidate]:
+        items: list[RawCandidate] = []
+        try:
+            resp = await client.get(feed["url"])
+            if resp.status_code != 200 or not resp.text.strip().startswith("<"):
+                return []
+            root = ET.fromstring(resp.text)
+            for idx, item in enumerate(root.findall(".//item")[:40]):
+                title = (item.findtext("title") or "").strip()
+                link = (item.findtext("link") or feed["url"]).strip()
+                desc = (item.findtext("description") or "").strip()
+                if not title:
+                    continue
+                uid = f"{feed['id']}-{abs(hash(link or title)) % 10000000}-{idx}"
+                items.append(
+                    RawCandidate(
+                        id=uid,
+                        codigo_oficial=feed["id"].upper(),
+                        fuente="BOLETIN_CCAA",
+                        tipo_oportunidad="SUBVENCION",
+                        titulo=title,
+                        organo_convocante=feed["nombre"],
+                        texto=f"{title}. {desc}",
+                        region_hint=feed["ccaa"],
+                        fecha_publicacion=date.today(),
+                        url_ficha_oficial=link,
+                    )
+                )
+        except Exception as exc:
+            logger.debug("CCAA RSS '%s' skipped: %s", feed["id"], exc)
+        return items
+
+    async with httpx.AsyncClient(timeout=timeout, headers=headers, follow_redirects=True) as client:
+        batches = await asyncio.gather(*[_poll_rss(client, f) for f in CCAA_RSS_FEEDS])
+
+    for batch in batches:
+        for cand in batch:
+            if cand.id not in seen_ids:
+                seen_ids.add(cand.id)
+                candidates.append(cand)
+
     return candidates

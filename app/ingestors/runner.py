@@ -10,6 +10,7 @@ from app.ingestors.fuentes_local import load_candidates_from_fuentes
 from app.ingestors.live_connectors import (
     fetch_live_bdns_candidates,
     fetch_live_boe_candidates,
+    fetch_live_ccaa_rss_candidates,
     fetch_live_eu_sedia_candidates,
     fetch_live_placsp_candidates,
 )
@@ -61,24 +62,28 @@ async def run_full_ingestion(
         "placsp_live": 0,
         "boe_live": 0,
         "eu_sedia_live": 0,
+        "ccaa_rss_live": 0,
     }
     if include_live_apis:
-        bdns_live, placsp_live, boe_live, eu_live = await asyncio.gather(
-            fetch_live_bdns_candidates(max_per_keyword=12, timeout=5.0),
+        bdns_live, placsp_live, boe_live, eu_live, rss_live = await asyncio.gather(
+            fetch_live_bdns_candidates(max_per_keyword=15, timeout=5.0),
             fetch_live_placsp_candidates(timeout=5.0),
-            fetch_live_boe_candidates(days_back=2, timeout=5.0),
+            fetch_live_boe_candidates(days_back=5, timeout=5.0),
             fetch_live_eu_sedia_candidates(timeout=5.0),
+            fetch_live_ccaa_rss_candidates(timeout=4.0),
         )
         live_counts = {
             "bdns_live": len(bdns_live),
             "placsp_live": len(placsp_live),
             "boe_live": len(boe_live),
             "eu_sedia_live": len(eu_live),
+            "ccaa_rss_live": len(rss_live),
         }
         candidates.extend(bdns_live)
         candidates.extend(placsp_live)
         candidates.extend(boe_live)
         candidates.extend(eu_live)
+        candidates.extend(rss_live)
 
     total_scanned = 0
     passed_l1 = 0

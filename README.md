@@ -13,10 +13,11 @@ Plataforma de inteligencia en tiempo real diseñada para **capturar el 100% de l
 
 ### A. Encontrar (Ingesta Multinivel en 6 Capas + Filtro Híbrido)
 1. **Capa 1 — Filtro Rígido Multilingüe (`< 5 ms`, Coste 0)** ([layer1_regex.py](./app/pipeline/layer1_regex.py)):
-   - Expresiones regulares ponderadas en **castellano, catalán, gallego, euskera e inglés** (Comisión Europea).
-   - Filtrado por códigos **CPV** forestales y de incendios (`77200000`, `77231600`, `75251120`, `90710000`).
+   - Expresiones regulares ponderadas de alto recall en **castellano, catalán, gallego, euskera e inglés** (silvicultura, riberas, infraestructura verde urbana, mosaico agroforestal, prevención de incendios, captura de carbono, educación/voluntariado ambiental y soluciones basadas en la naturaleza).
+   - Filtrado por códigos **CPV en dos niveles** (`Tier A`: `772*`, `75251120`, `034*`, `03121*`; `Tier B`: `9071*`, `9072*`, `7731*`, `7734*`, `451127*`, `71313*`, `7311*`) extraídos tanto de APIs/CODICE como de textos PDF.
+   - Conectores en vivo concurrentes ([live_connectors.py](./app/ingestors/live_connectors.py)): BDNS (16 términos), BOE, PLACSP Atom estatal y territorial/municipal (`sindicacion_643` + `sindicacion_1044`), RSS autonómicos (`DOG`, `BOJA`, `DOGC`, `BOCYL`, `BOPA`) y EU Funding & Tenders (`SEDIA`).
    - Regla anti-trampa BDNS: **jamás descarta por el sector económico CNAE** de la ficha oficial (en [miteco-convocatoria-923290.pdf](./fuentes/miteco-convocatoria-923290.pdf) una ayuda ambiental de 17,38 M€ del MITECO figura etiquetada como *"Actividades Inmobiliarias"*).
-   - Reglas anti-ruido que descartan falsos positivos (*extintores de hospitales, extinción de condominio, césped artificial*, etc.).
+   - Reglas anti-ruido que descartan falsos positivos (*extintores de hospitales, extinción de condominio, césped artificial, seguros de incendios domésticos*, etc.).
 2. **Capa 2 — LLM Juez + Traductor al Español** ([layer2_judge.py](./app/pipeline/layer2_judge.py)):
    - Clasifica cada oportunidad en **`DIRECTA`** (100% reforestación/silvicultura/incendios) o **`INDIRECTA_ELEGIBLE`** (convocatorias ambientales/biodiversidad/Red Natura 2000/clima donde un proyecto de reforestación es financiable, como los 2 PDFs de `./fuentes/`).
    - Traduce siempre `titulo_limpio`, `resumen` y `justificacion` al español.
@@ -181,7 +182,7 @@ Cada convocatoria abierta recibe en [prioritizer.py](./app/pipeline/prioritizer.
 # 2. Levantar servidor FastAPI (puerto 8000)
 .\.venv\Scripts\uvicorn app.main:app --reload --port 8000
 
-# 3. Ejecutar suite completa de tests (Golden Benchmark + 6 niveles + Motor de Priorización)
+# 3. Ejecutar suite completa de 61 tests (Golden Benchmark + Capa 1 Recall/Precision + Geo/LPACAP + Conectores/PDF + E2E API)
 .\.venv\Scripts\pytest -v
 ```
 
@@ -206,6 +207,6 @@ Cada convocatoria abierta recibe en [prioritizer.py](./app/pipeline/prioritizer.
 | `GET` | `/api/v1/sources/registry` | Catálogo en vivo de las **fuentes oficiales y privadas/RSC** monitorizadas en los 6 niveles (`UE`, `ESTADO`, `CCAA`, `PROVINCIA`, `MUNICIPIO`, `PRIVADA`). |
 | `GET` | `/api/v1/stats/historical` | Series temporales del **Histórico Profundo (`2020–2026`)**, desglose por nivel territorial/categoría y auditoría de ruido descartado. |
 | `GET` | `/api/v1/benchmark/verify` | Verifica y devuelve las 2 convocatorias del Golden Benchmark (`bdns-923290` MITECO y `bocm-orden-1689-2026` Comunidad de Madrid). |
-| `POST` | `/api/v1/ingest/trigger` | Lanza una sincronización concurrente en vivo (`asyncio.gather` protegida por `asyncio.Lock`) contra `./fuentes/`, BDNS, PLACSP Atom, BOE y UE SEDIA. |
+| `POST` | `/api/v1/ingest/trigger` | Lanza una sincronización concurrente en vivo (`asyncio.gather` protegida por `asyncio.Lock`) contra `./fuentes/`, BDNS, PLACSP Atom (`643` estatal + `1044` local/provincial), BOE, RSS CCAA y UE SEDIA. |
 | `POST` | `/api/v1/analyze/text` | Evalúa y prioriza cualquier texto de convocatoria en vivo pasando por Capa 1 + Capa 2 + Motor de Priorización. |
 | `POST` | `/api/v1/analyze/pdf` | Sube un PDF de boletín oficial o ficha BDNS en vivo y devuelve el JSON estructurado y priorizado. |
