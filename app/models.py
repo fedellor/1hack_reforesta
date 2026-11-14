@@ -299,13 +299,45 @@ class Opportunity(SQLModel, table=True):
         from app.pipeline.metadata_extractor import build_frontend_metadata_bundle
 
         front_meta = build_frontend_metadata_bundle(self)
+        ccaa_geojson_map = {
+            "ES-AN": "Andalucía",
+            "ES-AR": "Aragón",
+            "ES-AS": "Principado de Asturias",
+            "ES-IB": "Illes Balears",
+            "ES-CN": "Canarias",
+            "ES-CB": "Cantabria",
+            "ES-CM": "Castilla-La Mancha",
+            "ES-CL": "Castilla y León",
+            "ES-CT": "Cataluña",
+            "ES-VC": "Comunitat Valenciana",
+            "ES-EX": "Extremadura",
+            "ES-GA": "Galicia",
+            "ES-RI": "La Rioja",
+            "ES-MD": "Comunidad de Madrid",
+            "ES-MC": "Región de Murcia",
+            "ES-NC": "Navarra",
+            "ES-PV": "País Vasco",
+            "ES-CE": "Ceuta",
+            "ES-ML": "Melilla",
+            "ES": "Estatal",
+            "EU": "Estatal",
+        }
+        base_ccaa = ccaa_geojson_map.get(self.ccaa_codigo or "ES", self.ccaa_nombre or "Estatal")
+        sub_loc = self.municipio_nombre or self.provincia_nombre
+        if base_ccaa == "Estatal":
+            ambito_territorial = "Estatal"
+        elif sub_loc and sub_loc.lower() not in base_ccaa.lower():
+            ambito_territorial = f"{base_ccaa} · {sub_loc}"
+        else:
+            ambito_territorial = base_ccaa
+
         return {
             "id": self.id,
             "codigoOficial": self.codigo_oficial,
             "titulo": self.titulo_limpio,
             "organismo": self.organo_convocante,
             "tipoFuente": tipo_fuente,
-            "ambitoTerritorial": self.municipio_nombre or self.provincia_nombre or self.ccaa_nombre or "Nacional (España)",
+            "ambitoTerritorial": ambito_territorial,
             "ccaaCodigo": self.ccaa_codigo,
             "nivelTerritorial": self.nivel_territorial,
             "estado": self.estado,

@@ -1,15 +1,26 @@
-# Python
+# Python (Backend)
 __pycache__/
 *.py[cod]
 *$py.class
 .venv/
 venv/
 env/
+ENV/
 .pytest_cache/
+
+# Node & Next.js (Frontend)
+node_modules/
+.next/
+out/
+build/
+*.tsbuildinfo
+next-env.d.ts
 
 # Environment & Secrets
 .env
 .env.local
+.env.*.local
+*.pem
 
 # Local Database & Cache
 data/*.db

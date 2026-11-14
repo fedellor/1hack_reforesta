@@ -1,0 +1,73 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #212121;
+}
+
+/* Paleta de reforesta.es: verde #6aa43a / #9fcf5d, crema #f6f4ee, carbón #333, negro.
+   Se redefinen las escalas de Tailwind para que todo el UI herede la identidad. */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-open-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-merriweather), Georgia, serif;
+  --font-mono: var(--font-geist-mono);
+
+  --color-brand: #6aa43a;
+  --color-brand-light: #9fcf5d;
+
+  /* Neutros cálidos (sustituyen a zinc) */
+  --color-zinc-50: #f6f4ee;
+  --color-zinc-100: #eceae2;
+  --color-zinc-200: #e3e2e0;
+  --color-zinc-300: #c7c7c7;
+  --color-zinc-400: #8a8a85;
+  --color-zinc-500: #6b6b66;
+  --color-zinc-600: #494949;
+  --color-zinc-700: #3a3a3a;
+  --color-zinc-800: #2b2b2b;
+  --color-zinc-900: #212121;
+  --color-zinc-950: #141414;
+
+  /* Verde Reforesta (sustituye a emerald) */
+  --color-emerald-50: #f0f7e6;
+  --color-emerald-100: #e0eecb;
+  --color-emerald-200: #cfe5ae;
+  --color-emerald-500: #6aa43a;
+  --color-emerald-600: #5a8f31;
+  --color-emerald-700: #4a7a29;
+  --color-emerald-800: #3c6221;
+  --color-emerald-900: #2f4c1a;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.6;
+  background-color: var(--background);
+  color: var(--foreground);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Leaflet container fixes */
+.leaflet-container {
+  font-family: inherit;
+  z-index: 10;
+}
+
+.tooltip-reforesta {
+  font-size: 11px;
+  line-height: 1.4;
+  color: #18181b;
+  border: 1px solid #e4e4e7;
+  border-radius: 6px;
+  box-shadow: none;
+  padding: 4px 8px;
+}
+.tooltip-reforesta::before { display: none; }
+
+h1, h2 {
+  font-family: var(--font-serif);
+}
