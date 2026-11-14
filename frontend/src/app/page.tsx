@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { actualizarEstadoBackend, fetchConvocatorias, fetchEmbudo, EmbudoReal } from '@/services/api';
+import { actualizarEstadoBackend, fetchConvocatorias, fetchEmbudo, fetchHistorico, EmbudoReal } from '@/services/api';
 import { Convocatoria, FiltrosState, EstadoInterno } from '@/types/convocatoria';
 import { Header, Seccion, EstadoDatos } from '@/components/Header';
 import { Hero, Embudo } from '@/components/Hero';
@@ -12,6 +12,9 @@ import { ConvocatoriaDrawer } from '@/components/ConvocatoriaDrawer';
 import { PipelineView } from '@/components/PipelineView';
 import { MapView } from '@/components/MapView';
 import { CalendarView } from '@/components/CalendarView';
+import { HistoricoView } from '@/components/HistoricoView';
+import { detectarProgramas } from '@/lib/recurrencia';
+import { guardarVistas, leerVistas } from '@/lib/novedades';
 import { AlertCircle, CalendarDays, List } from 'lucide-react';
 import { plazoSinFijar } from '@/lib/plazo';
 import { ESTATAL, TODOS, filtrarPorTerritorio } from '@/lib/territorio';
@@ -20,6 +23,7 @@ const BANNER: Record<Seccion, { titulo: string; migas: string }> = {
   mapa: { titulo: 'Dónde está la financiación', migas: 'Reforesta / Mapa' },
   convocatorias: { titulo: 'Convocatorias abiertas', migas: 'Reforesta / Convocatorias / Lista' },
   calendario: { titulo: 'Convocatorias · calendario de cierres', migas: 'Reforesta / Convocatorias / Calendario' },
+  historico: { titulo: 'Histórico y previsión', migas: 'Reforesta / Histórico' },
   empresas: { titulo: 'Empresas y fundaciones que financian', migas: 'Reforesta / Empresas' },
   pipeline: { titulo: 'Pipeline de solicitudes', migas: 'Reforesta / Pipeline' },
 };
@@ -49,6 +53,12 @@ export default function Home() {
     };
   }, [cargar]);
 
+  // Histórico (2020 en adelante): se pide al backend solo al entrar en Histórico o Empresas
+  const [historico, setHistorico] = useState<Convocatoria[]>([]);
+  const [historicoOk, setHistoricoOk] = useState<boolean | null>(null);
+  const [soloNuevas, setSoloNuevas] = useState(false);
+  const [vistasDesde, setVistasDesde] = useState<string | null>(null);
+  const [idsNuevas, setIdsNuevas] = useState<Set<string>>(new Set());
   const [convocatoriaSeleccionada, setConvocatoriaSeleccionada] = useState<Convocatoria | null>(null);
   const [seccion, setSeccion] = useState<Seccion>('mapa');
   
@@ -93,6 +103,8 @@ export default function Home() {
           if (!coincide) return false;
         }
 
+        if (soloNuevas && !idsNuevas.has(c.id)) return false;
+
         // Sección Empresas = solo mecenazgo privado (RSC)
         if (seccion === 'empresas' && c.tipoFuente !== 'privada_rsc') return false;
 
@@ -122,7 +134,7 @@ export default function Home() {
         }
         return 0;
       });
-  }, [convocatorias, filtros, ordenarPor, seccion]);
+  }, [convocatorias, filtros, ordenarPor, seccion, soloNuevas, idsNuevas]);
 
   const convocatoriasFiltradas = useMemo(
     () => filtrarPorTerritorio(baseFiltrada, filtros.ambito, filtros.provincia),
@@ -132,8 +144,39 @@ export default function Home() {
   const conFechaCierre = useMemo(() => convocatoriasFiltradas.filter((c) => !plazoSinFijar(c)), [convocatoriasFiltradas]);
   const sinPlazo = convocatoriasFiltradas.length - conFechaCierre.length;
 
+  const programas = useMemo(() => detectarProgramas(historico), [historico]);
+
+  // Novedades desde la última visita (solo con datos reales; la primera vez se registra todo sin avisar)
+  useEffect(() => {
+    if (datos.fuente !== 'backend' || convocatorias.length === 0) return;
+    const previas = leerVistas();
+    if (!previas) {
+      guardarVistas(convocatorias.map((c) => c.id));
+      return;
+    }
+    const conocidas = new Set(previas.ids);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setIdsNuevas(new Set(convocatorias.filter((c) => !conocidas.has(c.id)).map((c) => c.id)));
+    setVistasDesde(previas.desde);
+  }, [datos.fuente, convocatorias]);
+
+  const marcarVistas = () => {
+    guardarVistas(convocatorias.map((c) => c.id));
+    setIdsNuevas(new Set());
+    setSoloNuevas(false);
+  };
+
+  useEffect(() => {
+    if ((seccion === 'historico' || seccion === 'empresas') && historicoOk === null) {
+      fetchHistorico().then((r) => {
+        setHistorico(r.convocatorias);
+        setHistoricoOk(r.disponible);
+      });
+    }
+  }, [seccion, historicoOk]);
+
   const abrir = (c: Convocatoria) => setConvocatoriaSeleccionada(c);
-  const conFiltros = seccion !== 'pipeline' && seccion !== 'empresas';
+  const conFiltros = seccion !== 'pipeline' && seccion !== 'empresas' && seccion !== 'historico';
 
   return (
     <div className="min-h-screen bg-background text-zinc-800 flex flex-col font-sans antialiased">
@@ -143,6 +186,7 @@ export default function Home() {
         setSeccion={setSeccion}
         datos={datos}
         onRefresh={cargar}
+        nuevas={idsNuevas.size}
       />
 
       <Hero titulo={BANNER[seccion].titulo} migas={BANNER[seccion].migas} />
@@ -159,6 +203,20 @@ export default function Home() {
       )}
 
       <main className="flex-1 max-w-[1300px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-5">
+        {idsNuevas.size > 0 && (seccion === 'mapa' || seccion === 'convocatorias' || seccion === 'calendario') && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border border-brand/40 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-900">
+            <span>
+              <strong>{idsNuevas.size}</strong> {idsNuevas.size === 1 ? 'convocatoria nueva' : 'convocatorias nuevas'} desde tu última visita
+              {vistasDesde && ` (${new Date(vistasDesde).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })})`}
+            </span>
+            <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide">
+              <button onClick={() => { setSoloNuevas(!soloNuevas); setSeccion('convocatorias'); }} className="px-3 py-1.5 bg-white border border-brand/40 hover:bg-brand hover:text-white transition-colors">
+                {soloNuevas ? 'Ver todas' : 'Ver solo nuevas'}
+              </button>
+              <button onClick={marcarVistas} className="px-3 py-1.5 text-emerald-800 hover:underline">Marcar como vistas</button>
+            </span>
+          </div>
+        )}
         {seccion === 'mapa' && (
           <MapView
             convocatorias={baseFiltrada}
@@ -227,7 +285,8 @@ export default function Home() {
         )}
 
         {seccion === 'calendario' && <CalendarView convocatorias={conFechaCierre} onSeleccionar={abrir} />}
-        {seccion === 'empresas' && <EmpresasView convocatorias={convocatoriasFiltradas} onSeleccionar={abrir} />}
+        {seccion === 'historico' && <HistoricoView historico={historico} disponible={historicoOk} onSeleccionar={abrir} />}
+        {seccion === 'empresas' && <EmpresasView convocatorias={convocatoriasFiltradas} onSeleccionar={abrir} programas={programas} />}
         {seccion === 'pipeline' && (
           <PipelineView convocatorias={convocatorias} onSeleccionar={abrir} onCambiarEstado={handleCambiarEstado} />
         )}
@@ -239,27 +298,10 @@ export default function Home() {
         onCambiarEstado={handleCambiarEstado}
       />
 
-      {/* Footer institucional */}
-      <footer className="bg-[#141414] text-zinc-300 mt-8">
-        <div className="max-w-[1300px] mx-auto px-4 sm:px-6 lg:px-8 py-8 grid gap-6 sm:grid-cols-3 text-xs">
-          <div>
-            <p className="font-serif tracking-[0.2em] text-sm font-bold text-brand">REFORESTA</p>
-            <p className="mt-2 leading-relaxed text-zinc-400">
-              ONG creada en 1991 para la conservación de la naturaleza, declarada de Utilidad Pública.
-            </p>
-          </div>
-          <div>
-            <p className="font-serif font-bold text-white">Contacto</p>
-            <p className="mt-2 text-zinc-400">info@reforesta.es</p>
-            <p className="text-zinc-400">Tres Cantos (Madrid)</p>
-          </div>
-          <div>
-            <p className="font-serif font-bold text-white">Fuentes</p>
-            <p className="mt-2 text-zinc-400">BDNS · BOE · Boletines autonómicos · Fundaciones y programas RSC</p>
-          </div>
-        </div>
-        <div className="bg-black text-center text-xs text-zinc-400 py-2.5 uppercase tracking-wide">
-          Declarada de utilidad pública · Prototipo 1hack A Coruña (Common Seeds)
+      <footer className="bg-[#141414] text-zinc-400 mt-8">
+        <div className="max-w-[1300px] mx-auto px-4 sm:px-6 lg:px-8 py-4 text-xs flex flex-wrap items-center justify-between gap-2">
+          <span>Radar de financiación · uso interno de Reforesta</span>
+          <span>Fuentes: BDNS · BOE · boletines autonómicos · fundaciones y programas de empresas</span>
         </div>
       </footer>
     </div>

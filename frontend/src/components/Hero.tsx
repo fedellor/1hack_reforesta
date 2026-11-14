@@ -11,16 +11,13 @@ interface HeroProps {
   migas: string;
 }
 
-/** Franja de título con la imagen de cabecera de reforesta.es. Fina a propósito: el contenido va en primer plano. */
+/** Franja de título de la sección: fina, para que el contenido quede en primer plano. */
 export function Hero({ titulo, migas }: HeroProps) {
   return (
-    <div className="relative bg-[#1b2c1f] text-white overflow-hidden">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/reforesta/reforesta-slider-01.jpg" alt="" className="absolute inset-0 h-full w-full object-cover object-center" />
-      <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/60 to-black/40" />
-      <div className="relative max-w-[1300px] mx-auto px-4 sm:px-6 lg:px-8 py-5">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-white/70">{migas}</p>
-        <h1 className="mt-1 font-serif text-2xl sm:text-3xl font-bold leading-tight">{titulo}</h1>
+    <div className="bg-[#222] text-white border-b-4 border-brand">
+      <div className="max-w-[1300px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">{migas}</p>
+        <h1 className="mt-0.5 font-serif text-2xl font-bold leading-tight">{titulo}</h1>
       </div>
     </div>
   );

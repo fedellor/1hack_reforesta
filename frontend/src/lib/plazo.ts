@@ -23,7 +23,9 @@ export function normalizarPlazos(lista: Convocatoria[], recalcular: boolean): Co
   const salida: Convocatoria[] = [];
   for (const c of lista) {
     const pl = c.plazos as { urgencia?: string; fecha_fin_solicitud?: string | null } | undefined;
-    if (pl?.urgencia === 'abierta_pendiente_plazo' || (pl && pl.fecha_fin_solicitud == null && c.diasRestantes <= 0)) {
+    // Solo las convocatorias vigentes pueden estar «abiertas sin plazo»; las cerradas del histórico conservan su fecha
+    const vigente = c.estado !== 'CERRADA';
+    if (vigente && (pl?.urgencia === 'abierta_pendiente_plazo' || (pl && pl.fecha_fin_solicitud == null && c.diasRestantes <= 0))) {
       salida.push({ ...c, diasRestantes: SIN_PLAZO, urgencia: 'holgada' });
       continue;
     }

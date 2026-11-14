@@ -19,8 +19,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Reforesta FINANCIACIÓN → Reforesta",
-  description: "Asociación Reforesta · Centro de observabilidad y captación de convocatorias públicas y privadas para la reforestación y recuperación de bosques en España",
+  title: "Radar de financiación · Reforesta",
+  description: "Herramienta interna de Reforesta para detectar y priorizar convocatorias públicas y privadas",
+  robots: { index: false, follow: false },
   icons: {
     icon: [
       { url: "/reforesta/cropped-favicon-32x32.png", sizes: "32x32", type: "image/png" },

@@ -81,6 +81,27 @@ export async function fetchConvocatorias(): Promise<FetchConvocatoriasResponse> 
   return { convocatorias: normalizarPlazos(MOCK_CONVOCATORIAS, true), fuente: 'ejemplo', timestamp: new Date().toISOString() };
 }
 
+/**
+ * Histórico completo (activas + cerradas, 2020 en adelante) para la sección de búsqueda y la previsión de recurrencia.
+ * `disponible = false` cuando el backend no responde: no hay datos de ejemplo para el histórico.
+ */
+export async function fetchHistorico(): Promise<{ convocatorias: Convocatoria[]; disponible: boolean }> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
+    const res = await fetch(`${BACKEND_URL}/api/convocatorias?estado=TODAS`, { signal: controller.signal, cache: 'no-store' });
+    clearTimeout(timeout);
+    if (res.ok) {
+      const data = await res.json();
+      const lista: ConvocatoriaApi[] = data.convocatorias ?? data;
+      return { convocatorias: normalizarPlazos(lista.map(adaptarConvocatoria), false), disponible: true };
+    }
+  } catch {
+    // sin backend: la sección lo indica
+  }
+  return { convocatorias: [], disponible: false };
+}
+
 /** Cifras reales de la última ingesta del radar (para el embudo de la portada). */
 export interface EmbudoReal {
   detectadas: number;
