@@ -13,6 +13,7 @@ from app.models import Opportunity
 from app.pipeline.date_resolver import add_business_days, compute_dates_and_status, parse_spanish_date
 from app.pipeline.layer1_regex import Layer1Result, evaluate_layer1
 from app.pipeline.layer2_judge import JudgeVerdictSchema, evaluate_layer2
+from app.pipeline.metadata_extractor import extract_deadline_clause_and_date
 from app.pipeline.prioritizer import calculate_priority
 
 
@@ -250,11 +251,15 @@ def process_candidate(
     )
 
     # Step 4: Date & Status Resolution (Ley 39/2015 LPACAP Art. 30 with regional CCAA calendar)
-    plazo_str = l2.plazo_solicitud_detectado or candidate.plazo_texto_original
+    plazo_str, extracted_end_date = extract_deadline_clause_and_date(
+        texto=candidate.texto,
+        existing_clause=l2.plazo_solicitud_detectado or candidate.plazo_texto_original,
+        existing_end_date=candidate.fecha_fin_solicitud,
+    )
     resolved_dates = compute_dates_and_status(
         fecha_publicacion=candidate.fecha_publicacion,
         fecha_inicio_solicitud=candidate.fecha_inicio_solicitud,
-        fecha_fin_solicitud=candidate.fecha_fin_solicitud,
+        fecha_fin_solicitud=extracted_end_date or candidate.fecha_fin_solicitud,
         plazo_texto_original=plazo_str,
         anio_hint=candidate.anio_convocatoria,
         ccaa_codigo=geo.ccaa_codigo,

@@ -172,12 +172,72 @@ def test_layer1_immune_to_bdns_mislabeled_sector():
             "Transformación digital administrativa.",
             ["48000000"],
         ),
+        (
+            "Reforzar la investigación forestal para apoyar a Ucrania",
+            "European Commission - Horizon Europe",
+            "Strengthening forest research for the support of Ukraine. HORIZON-RIA Research and Innovation Actions.",
+            [],
+        ),
+        (
+            "Becas predoctorales para formación de personal investigador en ecología y bosques",
+            "Ministerio de Ciencia, Innovación y Universidades",
+            "Tesis doctoral y estancias de investigación en centros universitarios.",
+            ["73110000"],
+        ),
+        (
+            "Subvenciones para proyectos de cooperación internacional al desarrollo y reforestación en África Subsahariana y América Latina",
+            "AECID / Diputación Provincial",
+            "Actuaciones de agroforestería en Senegal, Perú y Colombia.",
+            [],
+        ),
+        (
+            "Obras de rehabilitación de cuarteladas interiores y laterales y paramentos verticales",
+            "Ministerio de Defensa",
+            "Reforma de edificio y patio interior.",
+            ["45112700"],
+        ),
+        (
+            "Servicios de mantenimiento de jardines de en los Centros de Acogida de Menores",
+            "Consejería de Bienestar Social",
+            "Siega y jardinería de edificios administrativos.",
+            ["77310000"],
+        ),
+        (
+            "GC Subvención nominativa a favor de empresa pública para gestión medioambiental",
+            "Cabildo de Gran Canaria",
+            "Concesión directa nominativa cerrada.",
+            [],
+        ),
+        (
+            "Anuncio de formalización de contratos de: Consejo de Administración del Patrimonio Nacional",
+            "BOE - Patrimonio Nacional",
+            "Formalización de contrato ya adjudicado de poda de arbolado.",
+            ["77340000"],
+        ),
     ],
 )
 def test_layer1_rejects_administrative_noise(titulo: str, organo: str, texto: str, cpvs: list[str]):
     res = evaluate_layer1(titulo=titulo, organo=organo, texto=texto, cpv_codes=cpvs or None)
     assert res.passed is False, f"False positive noise leaked through: {titulo}"
     assert res.decision == "REJECT"
+
+
+def test_foreign_aid_for_spain_accepted_but_foreign_territory_rejected():
+    """Verify foreign/EU grants to reforest IN Spain pass, while calls for foreign territories are rejected."""
+    eu_for_spain = evaluate_layer1(
+        titulo="Call for proposals: LIFE Nature - Native Reforestation and Wildfire Prevention in Spain (Iberian Peninsula)",
+        organo="European Commission - CINEA",
+        texto="Tree planting and ecological restoration in Spanish Natura 2000 habitats.",
+    )
+    assert eu_for_spain.passed is True
+
+    foreign_only = evaluate_layer1(
+        titulo="Call for proposals: Forest restoration and tree planting in Ukraine and Moldova",
+        organo="European Commission",
+        texto="Afforestation in Eastern Partnership countries.",
+    )
+    assert foreign_only.passed is False
+    assert "fuera de España" in (foreign_only.rejection_reason or "")
 
 
 def test_language_detection_accuracy():
