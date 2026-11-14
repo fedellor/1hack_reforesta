@@ -4,6 +4,7 @@ import React from 'react';
 import { X, ArrowRight, AlertTriangle } from 'lucide-react';
 import { Convocatoria } from '@/types/convocatoria';
 import { formatoEuros } from '@/lib/territorio';
+import { temaDePrograma } from '@/lib/texto';
 import { ETIQUETA_TRAMO, Evaluacion, PREPARACION_PREVIA_DIAS, Programa, Tramo, mesEnArco, nombreMes, textoVentana } from '@/lib/recurrencia';
 
 interface ProgramaDrawerProps {
@@ -33,7 +34,7 @@ export function ProgramaDrawer({ programa: p, evaluacion, onClose, onVerEdicion 
     return { anio: y, mes: fecha(primera.fechaPublicacion).getMonth() + 1, edicion: primera };
   });
   const ultimo = p.anios[p.anios.length - 1];
-  const tema = p.nombre.replace(/\([^)]*\)/g, '').replace(/\b(19|20)\d{2}(\s*[-/]\s*\d{2,4})?\b/g, '').replace(/\s+/g, ' ').trim();
+  const tema = temaDePrograma(p.nombre);
   const medido = evaluacion && evaluacion.porTramo[p.tramo].n >= 5 ? evaluacion.porTramo[p.tramo] : null;
 
   const motivo =

@@ -3,8 +3,10 @@
 import React, { useMemo, useState } from 'react';
 import { History } from 'lucide-react';
 import { Convocatoria } from '@/types/convocatoria';
-import { ETIQUETA_TRAMO, ORDEN_TRAMO, Programa, Tramo, detectarProgramas, evaluarPrevision, mesEnArco, nombreMes, textoVentana } from '@/lib/recurrencia';
+import { ETIQUETA_TRAMO, esAccionable, ORDEN_TRAMO, Programa, Tramo, detectarProgramas, evaluarPrevision, mesEnArco, nombreMes } from '@/lib/recurrencia';
 import { ProgramaDrawer } from '@/components/ProgramaDrawer';
+import { formatoEuros } from '@/lib/territorio';
+import { temaDePrograma } from '@/lib/texto';
 
 interface PrevisionViewProps {
   /** Activas + cerradas (2020 en adelante) */
@@ -15,16 +17,14 @@ interface PrevisionViewProps {
 }
 
 const MES_MS = 30.4375 * 86_400_000;
-const FILAS_INICIALES = 12;
 const MUESTRA_MINIMA = 10;
 
 /** Nombre corto de un programa: el tema, sin años ni paréntesis, y el órgano como apoyo. */
 function etiqueta(p: Programa) {
-  const tema = p.nombre.replace(/\([^)]*\)/g, '').replace(/\b(19|20)\d{2}(\s*[-/]\s*\d{2,4})?\b/g, '').replace(/\s+/g, ' ').trim();
-  return { tema: tema.length > 70 ? `${tema.slice(0, 68)}…` : tema, organo: p.organismo.split(' - ')[0] };
+  const tema = temaDePrograma(p.nombre);
+  return { tema: tema.length > 80 ? `${tema.slice(0, 78)}…` : tema, organo: (() => { const o = p.organismo.split(' - ').slice(0, 2).join(' · '); return o.length > 64 ? `${o.slice(0, 62)}…` : o; })() };
 }
 
-const TONO: Record<Tramo, string> = { alta: 'bg-brand', media: 'bg-brand/55', baja: 'bg-brand/20' };
 const CHIP: Record<Tramo, string> = { alta: 'bg-brand text-white', media: 'bg-emerald-100 text-emerald-900', baja: 'bg-zinc-100 text-zinc-600' };
 const pct = (a: number, b: number) => (b ? `${Math.round((100 * a) / b)}%` : '–');
 
@@ -36,32 +36,51 @@ const columnaInicio = (p: Programa, hoy: Date) => Math.max(0, Math.floor((p.prox
  * se muestra cuándo es probable que salga y con qué probabilidad, sin los datos económicos, y se mide su acierto con el histórico.
  */
 export function PrevisionView({ historico, disponible, onSeleccionar }: PrevisionViewProps) {
-  const [verPocoProbables, setVerPocoProbables] = useState(false);
-  const [verTodos, setVerTodos] = useState(false);
+  const [verMasOrganismos, setVerMasOrganismos] = useState(false);
   const [programa, setPrograma] = useState<Programa | null>(null);
   const hoy = useMemo(() => new Date(), []);
+  const siguiente = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 1); // por defecto, el mes que viene
+  const [anio, setAnio] = useState(siguiente.getFullYear());
+  const [mes, setMes] = useState(siguiente.getMonth()); // 0-11
 
   const programas = useMemo(() => (historico.length ? detectarProgramas(historico, hoy) : []), [historico, hoy]);
   const evaluacion = useMemo(() => (historico.length ? evaluarPrevision(historico, hoy) : null), [historico, hoy]);
-  const enCurso = programas.filter((p) => p.abierta);
-  const candidatos = programas.filter((p) => !p.abierta && columnaInicio(p, hoy) < 12);
+  // Solo programas en los que alguna edición fue apta para Reforesta: no sirve prever lo que no se podría pedir
+  const candidatos = programas.filter((p) => !p.abierta && columnaInicio(p, hoy) < 12 && esAccionable(p));
   const previstos = useMemo(
     () =>
       candidatos
-        .filter((p) => verPocoProbables || p.tramo !== 'baja')
+        .filter((p) => p.tramo !== 'baja')
         .sort((a, b) => ORDEN_TRAMO[a.tramo] - ORDEN_TRAMO[b.tramo] || b.anios.length - a.anios.length || a.proxima.getTime() - b.proxima.getTime()),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [programas, hoy, verPocoProbables]
+    [programas, hoy]
   );
-  const ocultos = candidatos.filter((p) => p.tramo === 'baja').length;
   const meses = Array.from({ length: 12 }, (_, i) => new Date(hoy.getFullYear(), hoy.getMonth() + i, 1));
   // Un programa «pesa» en cada mes cubierto por su ventana prevista
   const cubre = (p: Programa, m: Date) => mesEnArco(m.getMonth() + 1, p.mesDesde, p.mesHasta, 0);
   const porMes = meses.map((m) => previstos.filter((p) => cubre(p, m)));
   const maxMes = Math.max(1, ...porMes.map((l) => l.length));
-  const visibles = verTodos ? previstos : previstos.slice(0, FILAS_INICIALES);
-  const probables = previstos.filter((p) => p.tramo === 'alta').length;
-  const proximos3 = previstos.filter((p) => columnaInicio(p, hoy) < 3).length;
+  // Lo que suele salir en el mes elegido, agrupado por organismo
+  const mesSel = new Date(anio, mes, 1);
+  const mover = (delta: number) => {
+    const d = new Date(anio, mes + delta, 1);
+    setAnio(d.getFullYear());
+    setMes(d.getMonth());
+    setVerMasOrganismos(false);
+  };
+  const campo = 'appearance-none text-center px-5 py-2 border border-zinc-200 bg-white text-sm font-semibold capitalize text-zinc-800 focus:outline-hidden focus:border-zinc-500 rounded-full';
+  const delMes = previstos.filter((p) => cubre(p, mesSel));
+  const grupos = useMemo(() => {
+    const g = new Map<string, Programa[]>();
+    delMes.forEach((p) => g.set(etiqueta(p).organo, [...(g.get(etiqueta(p).organo) ?? []), p]));
+    return [...g.entries()].sort(
+      (a, b) => Math.min(...a[1].map((p) => ORDEN_TRAMO[p.tramo])) - Math.min(...b[1].map((p) => ORDEN_TRAMO[p.tramo])) || b[1].length - a[1].length
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previstos, anio, mes]);
+  const altos = delMes.filter((p) => p.tramo === 'alta').length;
+  const importeTop = Math.max(0, ...delMes.map((p) => p.cuantiaMedia));
+  const GRUPOS_VISIBLES = 6;
 
   if (disponible === null) return <p className="py-16 text-center text-sm text-zinc-400">Cargando el histórico…</p>;
   if (!disponible || historico.length === 0) {
@@ -78,22 +97,6 @@ export function PrevisionView({ historico, disponible, onSeleccionar }: Previsio
 
   return (
     <div className="space-y-8">
-      {/* Cifras clave */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-zinc-200 border border-zinc-200">
-        {[
-          { n: programas.length, t: 'Programas que se repiten', s: 'detectados en el histórico' },
-          { n: proximos3, t: 'Próximos 3 meses', s: 'con ventana de apertura prevista' },
-          { n: probables, t: 'Muy probables', s: 'salieron el año pasado y llevan años repitiéndose' },
-          { n: enCurso.length, t: 'Ya abiertos', s: 'edición de este año en curso' },
-        ].map((k) => (
-          <div key={k.t} className="bg-white p-4">
-            <span className="font-serif text-3xl font-bold text-zinc-900">{k.n}</span>
-            <span className="block text-xs font-bold uppercase tracking-wide text-zinc-900">{k.t}</span>
-            <span className="block text-xs text-zinc-500">{k.s}</span>
-          </div>
-        ))}
-      </div>
-
       {/* Cuándo llega la carga */}
       <section>
         <h3 className="mb-3 text-xs font-bold uppercase tracking-[0.15em] text-zinc-500">Programas con ventana de apertura prevista, por mes</h3>
@@ -119,64 +122,83 @@ export function PrevisionView({ historico, disponible, onSeleccionar }: Previsio
         </p>
       </section>
 
-      {/* Programas ordenados por probabilidad */}
+      {/* Resumen del mes: qué suele salir, quién y en qué consiste */}
       <section>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-xs font-bold uppercase tracking-[0.15em] text-zinc-500">Los más probables · ventanas de los próximos 12 meses</h3>
-          {ocultos > 0 && (
-            <button onClick={() => setVerPocoProbables((v) => !v)} className="text-xs font-semibold uppercase tracking-wide text-zinc-500 hover:text-zinc-900 underline">
-              {verPocoProbables ? 'Ocultar los poco probables' : `Mostrar ${ocultos} poco probables`}
-            </button>
-          )}
-        </div>
-        <div className="border border-zinc-200 bg-white overflow-x-auto">
-          <div className="min-w-[860px]">
-            <div className="grid grid-cols-[minmax(260px,1fr)_repeat(12,44px)_90px] items-center border-b border-zinc-200 bg-zinc-50 text-[11px] uppercase text-zinc-500">
-              <span className="p-2 pl-4">Programa</span>
-              {meses.map((m, i) => (
-                <span key={i} className={`text-center ${i === 0 ? 'font-bold text-zinc-900' : ''}`}>{nombreMes(m.getMonth() + 1).slice(0, 3)}</span>
-              ))}
-              <span className="text-right pr-4">Probabilidad</span>
-            </div>
-            {visibles.map((p) => {
-              const e = etiqueta(p);
-              return (
-                <button
-                  key={p.clave}
-                  onClick={() => setPrograma(p)}
-                  className="w-full grid grid-cols-[minmax(260px,1fr)_repeat(12,44px)_90px] items-center border-b border-zinc-100 text-left hover:bg-zinc-50"
-                  title={`${p.nombre}\nVentana habitual: ${textoVentana(p)} · ${p.anios.length} años con edición`}
-                >
-                  <span className="p-2 pl-4 min-w-0">
-                    <span className="block text-sm font-semibold text-zinc-900 truncate">{e.tema}</span>
-                    <span className="block text-[11px] text-zinc-500 truncate">{e.organo} · {textoVentana(p)}</span>
-                  </span>
-                  {meses.map((m, i) => (
-                    <span key={i} className="flex justify-center">
-                      {cubre(p, m) ? (
-                        <span className={`h-6 w-full ${TONO[p.tramo]}`} />
-                      ) : (
-                        p.retrasada && i === 0 && <span className="h-3 w-3 rounded-full bg-amber-500" title="Su ventana de este año ya pasó y no consta la edición" />
-                      )}
-                    </span>
-                  ))}
-                  <span className="pr-4 flex justify-end">
-                    <span className={`rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-wide ${CHIP[p.tramo]}`}>{ETIQUETA_TRAMO[p.tramo]}</span>
-                  </span>
-                </button>
-              );
-            })}
-            {previstos.length === 0 && <p className="p-8 text-center text-sm text-zinc-400">Ningún programa tiene ventana de apertura en los próximos 12 meses con este nivel de probabilidad.</p>}
+          <h3 className="text-xs font-bold uppercase tracking-[0.15em] text-zinc-500">Qué suele salir según el histórico</h3>
+          <div className="flex items-center gap-2">
+            <button onClick={() => mover(-1)} aria-label="Mes anterior" className="h-9 w-9 rounded-full border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50">‹</button>
+            <select value={mes} onChange={(e) => { setMes(Number(e.target.value)); setVerMasOrganismos(false); }} className={campo} aria-label="Mes">
+              {Array.from({ length: 12 }, (_, m) => <option key={m} value={m}>{nombreMes(m + 1)}</option>)}
+            </select>
+            <select value={anio} onChange={(e) => { setAnio(Number(e.target.value)); setVerMasOrganismos(false); }} className={campo} aria-label="Año">
+              {[hoy.getFullYear(), hoy.getFullYear() + 1, hoy.getFullYear() + 2].map((y) => <option key={y} value={y}>{y}</option>)}
+            </select>
+            <button onClick={() => mover(1)} aria-label="Mes siguiente" className="h-9 w-9 rounded-full border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50">›</button>
+            {!(anio === siguiente.getFullYear() && mes === siguiente.getMonth()) && (
+              <button onClick={() => { setAnio(siguiente.getFullYear()); setMes(siguiente.getMonth()); setVerMasOrganismos(false); }} className="ml-1 text-xs font-semibold uppercase tracking-wide text-zinc-600 underline hover:text-zinc-900">Mes que viene</button>
+            )}
           </div>
         </div>
-        {previstos.length > FILAS_INICIALES && (
-          <button onClick={() => setVerTodos((v) => !v)} className="mt-3 rounded-full border border-zinc-300 px-6 py-2.5 text-xs font-semibold uppercase tracking-wide hover:bg-zinc-900 hover:text-white transition-colors">
-            {verTodos ? 'Ver menos' : `Ver los ${previstos.length - FILAS_INICIALES} restantes`}
-          </button>
+
+        {delMes.length === 0 ? (
+          <p className="border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500">
+            El histórico no apunta a ningún programa con ventana en {nombreMes(mesSel.getMonth() + 1)}.
+          </p>
+        ) : (
+          <>
+            <p className="mb-4 text-sm text-zinc-700 leading-relaxed">
+              En <strong className="capitalize text-zinc-900">{nombreMes(mesSel.getMonth() + 1)}</strong> suelen abrir{' '}
+              <strong className="text-zinc-900">{delMes.length} {delMes.length === 1 ? 'programa' : 'programas'}</strong> de{' '}
+              <strong className="text-zinc-900">{grupos.length} {grupos.length === 1 ? 'organismo' : 'organismos'}</strong>
+              {altos > 0 ? <>, {altos} con probabilidad alta</> : null}
+              {importeTop > 0 ? <>. Las ayudas más grandes rondan los <strong className="text-zinc-900">{formatoEuros(importeTop)}</strong> por proyecto</> : null}.
+              {' '}Aún no están confirmadas: las que ya tienen fecha están en Plan de ataque.
+            </p>
+            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+              {(verMasOrganismos ? grupos : grupos.slice(0, GRUPOS_VISIBLES)).map(([organo, lista]) => (
+                <div key={organo} className="border border-zinc-200 bg-white p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-sm font-bold text-zinc-900 leading-snug">{organo}</span>
+                    <span className="shrink-0 text-xs text-zinc-400">{lista.length}</span>
+                  </div>
+                  <ul className="mt-2 space-y-2">
+                    {lista.slice(0, 3).map((p) => (
+                      <li key={p.clave}>
+                        <button onClick={() => setPrograma(p)} className="w-full text-left group">
+                          <span className="flex items-start gap-2">
+                            <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${p.tramo === 'alta' ? 'bg-brand' : 'bg-brand/40'}`} title={`Probabilidad ${ETIQUETA_TRAMO[p.tramo].toLowerCase()}`} />
+                            <span className="min-w-0">
+                              <span className="block text-xs text-zinc-800 leading-snug line-clamp-2 group-hover:underline">{etiqueta(p).tema}</span>
+                              {(p.cuantiaMedia > 0 || p.ventanaDias) && (
+                                <span className="block text-[11px] text-zinc-500">
+                                  {p.cuantiaMedia > 0 && <>≈ {formatoEuros(p.cuantiaMedia)}</>}
+                                  {p.cuantiaMedia > 0 && p.ventanaDias ? ' · ' : ''}
+                                  {p.ventanaDias ? <>plazo ≈ {p.ventanaDias} d</> : null}
+                                </span>
+                              )}
+                            </span>
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  {lista.length > 3 && <p className="mt-2 text-[11px] text-zinc-400">+{lista.length - 3} más de este organismo</p>}
+                </div>
+              ))}
+            </div>
+            {grupos.length > GRUPOS_VISIBLES && (
+              <button onClick={() => setVerMasOrganismos((v) => !v)} className="mt-3 text-xs font-semibold uppercase tracking-wide text-zinc-500 underline hover:text-zinc-900">
+                {verMasOrganismos ? 'Ver menos organismos' : `Ver ${grupos.length - GRUPOS_VISIBLES} organismos más`}
+              </button>
+            )}
+            <p className="mt-3 flex items-center gap-4 text-xs text-zinc-400">
+              <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-brand" /> probabilidad alta</span>
+              <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-brand/40" /> media</span>
+              <span>Pulsa un programa para ver cuándo salió cada año.</span>
+            </p>
+          </>
         )}
-        <p className="mt-3 text-xs text-zinc-400 leading-relaxed">
-          La banda marca los meses en que el programa ha salido en años anteriores. Un punto ámbar al inicio indica que la ventana de este año ya pasó y no consta la edición. Pulsa una fila para ver su ficha.
-        </p>
       </section>
 
       {/* Cómo de fiable es: se mide con el propio histórico */}
@@ -185,23 +207,24 @@ export function PrevisionView({ historico, disponible, onSeleccionar }: Previsio
         {evaluacion && evaluacion.total.n >= MUESTRA_MINIMA ? (
           <>
             <p className="mt-2 text-sm text-zinc-700 leading-relaxed">
-              Se ha probado con el propio histórico: para cada año ({evaluacion.anios[0]}–{evaluacion.anios[evaluacion.anios.length - 1]}) se hizo la previsión con lo que se sabía a 1 de enero y se comparó con lo que salió ({evaluacion.total.n} previsiones).
+              Probada con el propio histórico ({evaluacion.anios[0]}–{evaluacion.anios[evaluacion.anios.length - 1]}): cada año se hizo la previsión con lo que se sabía a 1 de enero y se comparó con lo que salió.
             </p>
-            <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-px bg-zinc-200 border border-zinc-200">
-              {(['alta', 'media', 'baja'] as const).map((t) => {
+            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-px bg-zinc-200 border border-zinc-200">
+              {(['alta', 'media'] as const).map((t) => {
                 const a = evaluacion.porTramo[t];
                 return (
                   <div key={t} className="bg-white p-3">
                     <span className={`inline-block rounded-full px-3 py-0.5 text-[11px] font-bold uppercase ${CHIP[t]}`}>{ETIQUETA_TRAMO[t]}</span>
                     <span className="block mt-1 font-serif text-2xl font-bold text-zinc-900">{pct(a.enAnio, a.n)}</span>
-                    <span className="block text-xs text-zinc-500">salieron ese año ({a.enAnio} de {a.n})</span>
-                    {a.enAnio >= 5 && <span className="block text-xs text-zinc-500">y en la ventana prevista: {pct(a.mesEnVentana, a.enAnio)}</span>}
+                    <span className="block text-xs text-zinc-500">
+                      salieron ese año ({a.enAnio} de {a.n}){a.enAnio >= 10 ? <> · {pct(a.mesEnVentana, a.enAnio)} de ellas, dentro de la ventana prevista</> : null}
+                    </span>
                   </div>
                 );
               })}
             </div>
             <p className="mt-3 text-xs text-zinc-500 leading-relaxed">
-              Lectura: «probabilidad alta» no significa seguro, sino la proporción que se cumplió en el pasado. El histórico solo contiene lo que el radar ha capturado; si faltan convocatorias, el acierto real es mayor. Esta medición se recalcula sola cuando se cargan más datos.
+              No es una promesa: es la proporción que se cumplió en el pasado con lo que el radar tiene capturado. Se recalcula sola al cargar más datos. Las de probabilidad baja no se muestran porque casi nunca se cumplen.
             </p>
           </>
         ) : (

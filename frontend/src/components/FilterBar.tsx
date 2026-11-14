@@ -87,33 +87,25 @@ export function FilterBar({
             ))}
           </select>
 
-          {/* Botones separados de Elegibilidad: Solo aptas ONG vs Solo excluidas */}
-          <div className="inline-flex items-center rounded-full border border-zinc-200 bg-white p-0.5 shadow-2xs">
-            <button
-              type="button"
-              onClick={() => setFiltros((prev) => ({ ...prev, elegibilidad: 'aptas' }))}
-              className={`px-4 py-2 rounded-full font-semibold uppercase text-xs tracking-wide transition-colors cursor-pointer ${
-                filtros.elegibilidad === 'aptas'
-                  ? 'bg-brand text-white shadow-2xs'
-                  : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50'
-              }`}
-            >
-              Solo aptas ONG
-              {conteoElegibilidad ? ` (${conteoElegibilidad.aptas})` : ''}
-            </button>
-            <button
-              type="button"
-              onClick={() => setFiltros((prev) => ({ ...prev, elegibilidad: 'excluidas' }))}
-              className={`px-4 py-2 rounded-full font-semibold uppercase text-xs tracking-wide transition-colors cursor-pointer ${
-                filtros.elegibilidad === 'excluidas'
-                  ? 'bg-rose-700 text-white shadow-2xs'
-                  : 'text-zinc-600 hover:text-rose-700 hover:bg-rose-50/60'
-              }`}
-            >
-              Solo excluidas
-              {conteoElegibilidad ? ` (${conteoElegibilidad.excluidas})` : ''}
-            </button>
-          </div>
+          {/* Interruptor único: apagado = aptas, encendido = excluidas */}
+          <button
+            type="button"
+            role="switch"
+            aria-checked={filtros.elegibilidad === 'excluidas'}
+            onClick={() =>
+              setFiltros((prev) => ({ ...prev, elegibilidad: prev.elegibilidad === 'aptas' ? 'excluidas' : 'aptas' }))
+            }
+            className="inline-flex items-center gap-3 rounded-full border border-zinc-200 bg-white pl-2 pr-4 py-1.5 shadow-2xs cursor-pointer"
+          >
+            <span className={`relative h-6 w-11 rounded-full transition-colors ${filtros.elegibilidad === 'aptas' ? 'bg-brand' : 'bg-rose-700'}`}>
+              <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform duration-200 ${filtros.elegibilidad === 'aptas' ? 'translate-x-0' : 'translate-x-5'}`} />
+            </span>
+            <span className="font-semibold uppercase text-xs tracking-wide text-zinc-800 min-w-[104px] text-left">
+              {filtros.elegibilidad === 'aptas'
+                ? `Aptas${conteoElegibilidad ? ` (${conteoElegibilidad.aptas})` : ''}`
+                : `Excluidas${conteoElegibilidad ? ` (${conteoElegibilidad.excluidas})` : ''}`}
+            </span>
+          </button>
 
           {/* Encaje alto */}
           <button
@@ -125,19 +117,6 @@ export function FilterBar({
           >
             Encaje ≥ 80%
           </button>
-
-          {/* Cuantía mínima */}
-          <select
-            value={filtros.minCuantia}
-            onChange={(e) =>
-              setFiltros((prev) => ({ ...prev, minCuantia: Number(e.target.value) }))
-            }
-            className="px-4 py-2 rounded-full border border-zinc-200 text-zinc-700 bg-white font-medium focus:outline-hidden focus:border-zinc-400"
-          >
-            <option value={0}>Cualquier cuantía</option>
-            <option value={50000}>≥ 50.000 €</option>
-            <option value={100000}>≥ 100.000 €</option>
-          </select>
         </div>
       </div>
 
@@ -178,8 +157,7 @@ export function FilterBar({
           )}
           {(filtros.busqueda ||
             filtros.ambito !== TODOS ||
-            filtros.minMatching > 0 ||
-            filtros.minCuantia > 0) && (
+            filtros.minMatching > 0) && (
             <button
               type="button"
               onClick={() => {
@@ -192,7 +170,6 @@ export function FilterBar({
                     ambito: TODOS,
                     provincia: '',
                     minMatching: 0,
-                    minCuantia: 0,
                     soloUrgentes: false,
                     ventanaDias: 30,
                   }));

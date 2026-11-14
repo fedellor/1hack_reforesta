@@ -12,6 +12,9 @@ export const PREPARACION_PREVIA_DIAS = 45;
 export const UMBRAL_AGRUPADO = 0.55;
 
 const DIA_MS = 86_400_000;
+
+/** Máxima amplitud de la ventana habitual de apertura, en meses. */
+const VENTANA_MAXIMA_MESES = 3;
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 export const nombreMes = (m: number) => MESES[(m + 11) % 12];
 
@@ -44,6 +47,8 @@ export interface Programa {
   /** Ventana habitual de publicación: arco de meses más corto que contiene todas las ediciones (circular, 1-12) */
   mesDesde: number;
   mesHasta: number;
+  /** Las ediciones salieron en meses muy distintos: la ventana se centra en el mes más habitual y es menos fiable */
+  dispersa: boolean;
   /** Duración típica de la ventana de solicitud, en días (null si no hay datos fiables) */
   ventanaDias: number | null;
   cuantiaMedia: number;
@@ -195,9 +200,15 @@ export function detectarProgramas(todas: Convocatoria[], hoy: Date = new Date())
     const primeraDelAnio = anios.map((y) => [...ediciones].reverse().find((c) => fecha(c.fechaPublicacion).getFullYear() === y)!);
     const meses = primeraDelAnio.map((c) => fecha(c.fechaPublicacion).getMonth() + 1);
     const mes = moda(meses);
-    const { desde, hasta } = arcoDeMeses(meses);
+    // Ventana habitual: el arco más corto que contiene todas las ediciones; si se dispersa (más de 3 meses) se centra en el mes
+    // más habitual, ±1. Medido con el histórico, una ventana de 5-8 meses «acierta» casi siempre pero no dice nada útil.
+    const arco = arcoDeMeses(meses);
+    const dispersa = ((arco.hasta - arco.desde + 12) % 12) + 1 > VENTANA_MAXIMA_MESES;
+    const desde = dispersa ? ((mes + 10) % 12) + 1 : arco.desde;
+    const hasta = dispersa ? (mes % 12) + 1 : arco.hasta;
 
-    const dia = mediana(primeraDelAnio.filter((c) => fecha(c.fechaPublicacion).getMonth() + 1 === desde).map((c) => fecha(c.fechaPublicacion).getDate()));
+    const diasEnDesde = primeraDelAnio.filter((c) => fecha(c.fechaPublicacion).getMonth() + 1 === desde).map((c) => fecha(c.fechaPublicacion).getDate());
+    const dia = diasEnDesde.length ? mediana(diasEnDesde) : 1; // si la ventana se centró en la moda puede no haber ediciones en su primer mes
     const ventanas = ediciones
       .filter((c) => c.diasRestantes < SIN_PLAZO && c.fechaCierre > c.fechaPublicacion)
       .map((c) => Math.round((fecha(c.fechaCierre).getTime() - fecha(c.fechaPublicacion).getTime()) / DIA_MS))
@@ -237,6 +248,7 @@ export function detectarProgramas(todas: Convocatoria[], hoy: Date = new Date())
       mesApertura: mes,
       mesDesde: desde,
       mesHasta: hasta,
+      dispersa,
       ventanaDias: ventanas.length ? mediana(ventanas) : null,
       cuantiaMedia: cuantias.length ? Math.round(cuantias.reduce((a, b) => a + b, 0) / cuantias.length) : 0,
       tramo,
@@ -250,6 +262,9 @@ export function detectarProgramas(todas: Convocatoria[], hoy: Date = new Date())
   }
   return programas.sort((a, b) => a.proxima.getTime() - b.proxima.getTime());
 }
+
+/** Solo tiene sentido prever lo que Reforesta podría pedir: alguna edición anterior fue apta. */
+export const esAccionable = (p: Programa) => p.ediciones.some((c) => c.elegible);
 
 /** Programas que previsiblemente se abrirán en los próximos `meses` meses (sin contar los ya abiertos). */
 export function previstosEn(programas: Programa[], meses: number, hoy: Date = new Date()): Programa[] {
@@ -274,7 +289,7 @@ export interface AciertoTramo {
   n: number;
   /** Cuántas se cumplieron: salió una edición en el año previsto */
   enAnio: number;
-  /** De las que salieron, en cuántas el mes cayó dentro de la ventana prevista (con un mes de margen) */
+  /** De las que salieron, en cuántas el mes cayó dentro de la ventana prevista (≤ 3 meses, sin margen) */
   mesEnVentana: number;
 }
 
@@ -303,13 +318,13 @@ export function evaluarPrevision(todas: Convocatoria[], hoy: Date = new Date()):
     const corte = new Date(y, 0, 1, 12);
     const pasado = todas.filter((c) => c.fechaPublicacion && anioDe(c) < y);
     const delAnio = todas.filter((c) => c.fechaPublicacion && anioDe(c) === y);
-    const previstos = previstosEn(detectarProgramas(pasado, corte), 12, corte).filter((p) => p.proxima.getFullYear() === y);
+    const previstos = previstosEn(detectarProgramas(pasado, corte), 12, corte).filter((p) => p.proxima.getFullYear() === y && esAccionable(p));
     if (previstos.length === 0) continue;
     ev.anios.push(y);
     for (const p of previstos) {
       const salidas = delAnio.filter((c) => esEdicionDe(p, c));
       const enAnio = salidas.length > 0;
-      const enVentana = salidas.some((c) => mesEnArco(fecha(c.fechaPublicacion).getMonth() + 1, p.mesDesde, p.mesHasta, 1));
+      const enVentana = salidas.some((c) => mesEnArco(fecha(c.fechaPublicacion).getMonth() + 1, p.mesDesde, p.mesHasta, 0));
       for (const t of [ev.total, ev.porTramo[p.tramo]]) {
         t.n++;
         if (enAnio) t.enAnio++;

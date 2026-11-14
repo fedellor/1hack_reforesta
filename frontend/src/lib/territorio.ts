@@ -45,6 +45,21 @@ export const formatoEuros = (n: number) =>
 
 export const formatoImporte = (n: number) => (n > 0 ? formatoEuros(n) : 'Según bases');
 
+type ConImporte = { id: string; codigoOficial: string; cuantiaMaximaProyecto: number };
+
+/** Licitación pública (contrato que se adjudica), no una ayuda: vienen de TED y PLACSP. */
+export const esLicitacion = (c: { id: string; codigoOficial: string }) =>
+  /^(ted|placsp)[-\s]/i.test(c.id) || /^(TED|PLACSP)\b/i.test(c.codigoOficial);
+
+/** Dinero que cuenta como fondos para Reforesta: el de las ayudas. El importe de un contrato no es financiación. */
+export const fondosDe = (c: ConImporte) => (esLicitacion(c) ? 0 : c.cuantiaMaximaProyecto);
+
+/** Importe tal como se enseña en listas: una licitación nunca sale como «0 €». */
+export const textoImporte = (c: ConImporte) =>
+  esLicitacion(c)
+    ? c.cuantiaMaximaProyecto > 0 ? `Licitación · ${formatoEuros(c.cuantiaMaximaProyecto)}` : 'Licitación · importe no publicado'
+    : formatoImporte(c.cuantiaMaximaProyecto);
+
 export const COMUNIDADES = [
   'Andalucía', 'Aragón', 'Principado de Asturias', 'Illes Balears', 'Canarias', 'Cantabria',
   'Castilla-La Mancha', 'Castilla y León', 'Cataluña', 'Comunitat Valenciana', 'Extremadura',

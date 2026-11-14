@@ -74,3 +74,23 @@ export function limpiarOrganismo(org: string | null | undefined): string {
   if (letras.length > 0 && mayus / letras.length > 0.7) t = aTitulo(t);
   return t.replace(/\s+/g, ' ').trim();
 }
+
+
+/** Nombre legible de un programa: quita años, fechas y la fórmula legal («Orden de…, por la que se convocan…»). */
+export function temaDePrograma(nombre: string): string {
+  let t = nombre.replace(/\([^)]*\)/g, ' ');
+  const tras = t.match(/\b(?:por la que|por el que|que)\s+se\s+(?:convocan?|aprueban?|establecen?|regulan?|publica|publican)\s+(.+)$/i);
+  if (/^(orden|resoluci[oó]n|decreto|acuerdo|extracto)\b/i.test(t.trim()) && tras) t = tras[1];
+  else {
+    const bases = t.match(/\bbases reguladoras\s+(.+)$/i);
+    if (/^(orden|resoluci[oó]n|decreto|acuerdo)\b/i.test(t.trim()) && bases) t = bases[1];
+  }
+  t = t
+    .replace(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g, ' ')
+    .replace(/\b(19|20)\d{2}(\s*[-/]\s*\d{2,4})?\b/g, ' ')
+    .replace(/\bn\.?º\s*\d+(\/\d+)?\.?/gi, ' ')
+    .replace(/^(convocatoria|convocatorias)\s+(de\s+)?(las\s+)?/i, '')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s.,:;-]+|[\s.,:;-]+$/g, '');
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : nombre;
+}

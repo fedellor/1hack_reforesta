@@ -6,7 +6,7 @@ import 'leaflet/dist/leaflet.css';
 import type { Feature, FeatureCollection } from 'geojson';
 import { ArrowLeft } from 'lucide-react';
 import { Convocatoria } from '@/types/convocatoria';
-import { COMUNIDADES, TODOS, filtrarPorTerritorio, formatoEuros, perteneceAComunidad } from '@/lib/territorio';
+import { COMUNIDADES, TODOS, filtrarPorTerritorio, formatoEuros, fondosDe, perteneceAComunidad } from '@/lib/territorio';
 
 interface LeafletMapProps {
   convocatorias: Convocatoria[];
@@ -93,7 +93,7 @@ export default function LeafletMap({ convocatorias, territorio, provincia, onCam
         onEachFeature: (feature, layer) => {
           const nombre = feature.properties?.name as string;
           const items = filtrarPorTerritorio(convocatorias, nombre);
-          const euros = items.reduce((a, c) => a + c.cuantiaMaximaProyecto, 0);
+          const euros = items.reduce((a, c) => a + fondosDe(c), 0);
           layer.bindTooltip(
             `<strong>${nombre}</strong><br/>${items.length === 0 ? 'Sin convocatorias' : `${items.length} ${items.length === 1 ? 'convocatoria' : 'convocatorias'} · ${formatoEuros(euros)}`}`,
             { sticky: true, className: 'tooltip-reforesta' }
@@ -125,7 +125,7 @@ export default function LeafletMap({ convocatorias, territorio, provincia, onCam
           onEachFeature: (feature, layer) => {
             const nombre = feature.properties?.name as string;
             const propias = convocatorias.filter((c) => c.provincia === nombre && perteneceAComunidad(c.ambitoTerritorial, territorio));
-            const euros = propias.reduce((acc, c) => acc + c.cuantiaMaximaProyecto, 0);
+            const euros = propias.reduce((acc, c) => acc + fondosDe(c), 0);
             layer.bindTooltip(
               `<strong>${nombre}</strong><br/>${propias.length === 0 ? 'Sin convocatorias propias' : `${propias.length} ${propias.length === 1 ? 'convocatoria propia' : 'convocatorias propias'} · ${formatoEuros(euros)}`}`,
               { sticky: true, className: 'tooltip-reforesta' }

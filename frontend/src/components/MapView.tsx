@@ -11,7 +11,8 @@ import {
   TODOS,
   filtrarPorTerritorio,
   formatoEuros,
-  formatoImporte,
+  textoImporte,
+  fondosDe,
   perteneceAComunidad,
 } from '@/lib/territorio';
 
@@ -41,7 +42,7 @@ function Lista({ items, vacio, onSeleccionar }: { items: Convocatoria[]; vacio: 
             </span>
             <span className="text-right shrink-0">
               <span className="block text-sm font-bold text-brand">{c.matchingGlobal}%</span>
-              <span className="block text-xs text-zinc-500">{formatoImporte(c.cuantiaMaximaProyecto)}</span>
+              <span className="block text-xs text-zinc-500">{textoImporte(c)}</span>
             </span>
           </button>
         </li>
@@ -80,7 +81,7 @@ export function MapView({
   onLimpiarBusqueda,
 }: MapViewProps) {
   const hayBusqueda = Boolean(busqueda && busqueda.trim().length > 0);
-  const total = filtradas.reduce((a, c) => a + c.cuantiaMaximaProyecto, 0);
+  const total = filtradas.reduce((a, c) => a + fondosDe(c), 0);
   const urgentes = filtradas.filter((c) => c.diasRestantes <= 15).length;
   const proximo = filtradas.length ? Math.min(...filtradas.map((c) => c.diasRestantes)) : null;
   const top = (hayBusqueda ? filtradas : [...filtradas].sort((a, b) => b.matchingGlobal - a.matchingGlobal)).slice(0, 6);
@@ -88,7 +89,7 @@ export function MapView({
 
   // Ranking de fondos por territorio (solo con todo el territorio seleccionado)
   const ranking = [ESTATAL, ...COMUNIDADES]
-    .map((t) => ({ t, euros: filtrarPorTerritorio(convocatorias, t).reduce((a, c) => a + c.cuantiaMaximaProyecto, 0) }))
+    .map((t) => ({ t, euros: filtrarPorTerritorio(convocatorias, t).reduce((a, c) => a + fondosDe(c), 0) }))
     .filter((r) => r.euros > 0)
     .sort((a, b) => b.euros - a.euros)
     .slice(0, 6);
@@ -102,7 +103,7 @@ export function MapView({
   const porProvincia = provinciasDe
     .map((p) => {
       const propias = deComunidad.filter((c) => c.provincia === p);
-      return { p, n: propias.length, euros: propias.reduce((a, c) => a + c.cuantiaMaximaProyecto, 0) };
+      return { p, n: propias.length, euros: propias.reduce((a, c) => a + fondosDe(c), 0) };
     })
     .filter((r) => r.n > 0)
     .sort((a, b) => b.euros - a.euros);

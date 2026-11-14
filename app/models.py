@@ -296,6 +296,19 @@ class Opportunity(SQLModel, table=True):
             "educacionAmbiental": max(35, educacion),
         }
 
+
+    def _afinidad(self, elegible: bool) -> int:
+        """Afinidad temática 0-100 que se enseña en la web.
+
+        Para una licitación apta se usa la relevancia temática: la prioridad penaliza que el
+        adjudicatario típico sea una empresa y deja las aptas atascadas en el mínimo (38 %),
+        lo que contradice que el propio sistema las dé por aptas. Las excluidas conservan la
+        prioridad, que ya es baja.
+        """
+        if self.tipo_oportunidad == "LICITACION" and elegible and self.relevancia_score:
+            return int(self.relevancia_score)
+        return int(self.prioridad_score or self.relevancia_score or 0)
+
     def to_frontend_convocatoria(self) -> dict[str, Any]:
         """
         Serialize directly to the TypeScript `Convocatoria` interface expected by
@@ -469,7 +482,7 @@ class Opportunity(SQLModel, table=True):
             "elegible": elegible,
             "motivoElegibilidad": motivo_elegibilidad,
             "dealbreakers": merged_dealbreakers,
-            "matchingGlobal": self.prioridad_score or self.relevancia_score,
+            "matchingGlobal": self._afinidad(elegible),
             "matchingLineas": self.matching_lineas or self._default_matching_lineas(),
             "citasBasesJustificacion": citas,
             "resumenEjecutivo": self.resumen,

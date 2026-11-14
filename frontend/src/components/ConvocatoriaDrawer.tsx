@@ -3,25 +3,36 @@
 import React, { useState } from 'react';
 import {
   X,
-  ExternalLink,
-  FileDown,
   Check,
   Copy,
 } from 'lucide-react';
-import { Convocatoria, EstadoInterno } from '@/types/convocatoria';
+import { Convocatoria } from '@/types/convocatoria';
+import { esLicitacion, textoImporte } from '@/lib/territorio';
 import { esCitaLiteral, limpiarJustificacion } from '@/lib/texto';
 import { aperturaISO, diasHastaApertura, esProxima } from '@/lib/plazo';
+
+/** Enlace único a la información y las bases: la ficha oficial si apunta a una página concreta; si no, la sede o el PDF de las bases. */
+function enlaceOficial(c: Convocatoria): string {
+  const concreta = (u?: string) => {
+    if (!u) return false;
+    try {
+      const { pathname } = new URL(u);
+      return pathname.replace(/\/+$/, '').length > 1;
+    } catch {
+      return false;
+    }
+  };
+  return [c.fuenteUrl, c.urlSedeElectronica, c.urlBasesPdf].find(concreta) || c.fuenteUrl || c.urlSedeElectronica || c.urlBasesPdf || '';
+}
 
 interface ConvocatoriaDrawerProps {
   convocatoria: Convocatoria | null;
   onClose: () => void;
-  onCambiarEstado?: (id: string, nuevoEstado: EstadoInterno) => void;
 }
 
 export function ConvocatoriaDrawer({
   convocatoria,
   onClose,
-  onCambiarEstado,
 }: ConvocatoriaDrawerProps) {
   const [copiado, setCopiado] = useState(false);
 
@@ -29,21 +40,17 @@ export function ConvocatoriaDrawer({
   const c = convocatoria;
 
   const handleCopiarMarkdown = () => {
+    const cierre = c.diasRestantes >= 9999 ? 'plazo abierto, sin fecha fijada' : `${c.fechaCierre.slice(0, 10)} (${esProxima(c) ? `abre en ${diasHastaApertura(c)} días` : `${c.diasRestantes} días restantes`})`;
+    const concretos = c.accionesSubvencionables[0] !== 'Actuaciones técnicas' ? c.accionesSubvencionables : [];
     const md = `FICHA DE CONVOCATORIA: ${c.titulo}
 Organismo: ${c.organismo} (${c.codigoOficial})
-Ámbito: ${c.ambitoTerritorial}${c.orografiaPendiente ? ` · ${c.orografiaPendiente}` : ''}
-Cuantía máx: ${new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(c.cuantiaMaximaProyecto)} (${c.porcentajeCofinanciacion === 0 ? '100% financiado' : `${c.porcentajeCofinanciacion}% cofinanciación`})
-Cierre: ${c.diasRestantes >= 9999 ? 'plazo abierto, sin fecha fijada' : `${c.fechaCierre} (${esProxima(c) ? `Abre en ${diasHastaApertura(c)} días` : c.diasRestantes >= 9999 ? 'Plazo abierto' : `${c.diasRestantes} días`} restantes)`}
+Ámbito: ${c.ambitoTerritorial}
+${esLicitacion(c) ? 'Importe del contrato' : 'Cuantía máx'}: ${textoImporte(c)}
+Cierre: ${cierre}
 Elegibilidad: ${c.motivoElegibilidad}
 Afinidad Reforesta: ${c.matchingGlobal}% (Restauración: ${c.matchingLineas.restauracionEcosistemas}%, Hábitats: ${c.matchingLineas.conservacionHabitats}%, Educación: ${c.matchingLineas.educacionAmbiental}%)
-
-Resumen de las bases:
-${c.resumenEjecutivo}
-
-Acciones financiables:
-${c.accionesSubvencionables.map((a) => ` - ${a}`).join('\n')}
-
-Enlace oficial: ${c.urlBasesPdf}`;
+${c.resumenEjecutivo && !c.resumenEjecutivo.startsWith('Convocatoria promovida por') ? `\nResumen de las bases:\n${c.resumenEjecutivo}\n` : ''}${concretos.length ? `\nGastos subvencionables:\n${concretos.map((a) => ` - ${a}`).join('\n')}\n` : ''}
+Enlace oficial: ${enlaceOficial(c)}`;
 
     navigator.clipboard.writeText(md);
     setCopiado(true);
@@ -139,107 +146,42 @@ Enlace oficial: ${c.urlBasesPdf}`;
               )}
             </div>
 
-            {/* 2. Condiciones Económicas */}
-            <div className="grid grid-cols-3 gap-3 border border-zinc-200 rounded-none p-3 bg-zinc-50/50">
+            {/* 2. Los tres datos que deciden: importe, plazo y afinidad */}
+            <div className="grid grid-cols-3 gap-3 border border-zinc-200 p-3 bg-zinc-50/50">
               <div>
-                <span className="text-[11px] uppercase font-semibold text-zinc-400 block">Cuantía Máx.</span>
-                <span className="text-sm font-bold text-zinc-900">
-                  {c.cuantiaMaximaProyecto > 0
-                    ? new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(
-                        c.cuantiaMaximaProyecto
-                      )
-                    : 'Según bases'}
-                </span>
-                <span className="text-[11px] text-zinc-500 block">por proyecto</span>
+                <span className="text-[11px] uppercase font-semibold text-zinc-400 block">{esLicitacion(c) ? 'Importe del contrato' : 'Cuantía máx.'}</span>
+                <span className="text-sm font-bold text-zinc-900">{textoImporte(c)}</span>
+                {!esLicitacion(c) && <span className="text-[11px] text-zinc-500 block">por proyecto</span>}
               </div>
-
               <div>
-                <span className="text-[11px] uppercase font-semibold text-zinc-400 block">Cofinanciación</span>
+                <span className="text-[11px] uppercase font-semibold text-zinc-400 block">{esProxima(c) ? 'Abre' : 'Cierre'}</span>
                 <span className="text-sm font-bold text-zinc-900">
-                  {c.porcentajeCofinanciacion === 0 ? '0%' : `${c.porcentajeCofinanciacion}%`}
+                  {esProxima(c)
+                    ? `en ${diasHastaApertura(c)} días`
+                    : c.diasRestantes >= 9999
+                      ? 'Sin fecha fijada'
+                      : new Date(`${c.fechaCierre.slice(0, 10)}T12:00:00`).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}
                 </span>
                 <span className="text-[11px] text-zinc-500 block">
-                  {c.porcentajeCofinanciacion === 0 ? '100% subvencionado' : 'fondos propios'}
+                  {esProxima(c) ? `cierra el ${new Date(`${c.fechaCierre.slice(0, 10)}T12:00:00`).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}` : c.diasRestantes >= 9999 ? 'plazo abierto' : `${c.diasRestantes} días restantes`}
                 </span>
               </div>
-
               <div>
-                <span className="text-[11px] uppercase font-semibold text-zinc-400 block">Plazo Restante</span>
-                <span className="text-sm font-bold text-zinc-900">
-                  {c.diasRestantes} días
+                <span className="text-[11px] uppercase font-semibold text-zinc-400 block">Afinidad</span>
+                <span className="text-sm font-bold text-zinc-900">{c.matchingGlobal}%</span>
+                <span className="text-[11px] text-zinc-500 block">
+                  Restauración {c.matchingLineas.restauracionEcosistemas}% · Hábitats {c.matchingLineas.conservacionHabitats}% · Educación {c.matchingLineas.educacionAmbiental}%
                 </span>
-                <span className="text-[11px] text-zinc-500 block">Modalidad: {c.modalidadPago}</span>
               </div>
             </div>
 
-            {/* Orografía y Pendiente */}
-            {c.orografiaPendiente && (
-              <div className="border border-zinc-200 rounded-none p-3 bg-white">
-                <span className="text-[11px] uppercase font-semibold text-zinc-400 block mb-0.5">Orografía y Pendiente del Terreno</span>
-                <span className="text-xs font-medium text-zinc-800">{c.orografiaPendiente}</span>
+            {/* 3. Resumen: solo si dice algo que no esté ya arriba (la plantilla automática repite organismo e importe) */}
+            {c.resumenEjecutivo && !c.resumenEjecutivo.startsWith('Convocatoria promovida por') && (
+              <div>
+                <h4 className="text-xs uppercase font-semibold text-zinc-500 tracking-wider mb-1.5">Resumen de las bases</h4>
+                <p className="bg-zinc-50 border border-zinc-200 p-3 leading-relaxed text-zinc-800">{c.resumenEjecutivo}</p>
               </div>
             )}
-
-            {/* 3. Resumen Ejecutivo */}
-            <div>
-              <h4 className="text-xs uppercase font-semibold text-zinc-500 tracking-wider mb-1.5">
-                Resumen de las Bases
-              </h4>
-              <p className="bg-zinc-50 border border-zinc-200 rounded-none p-3 leading-relaxed text-zinc-800">
-                {c.resumenEjecutivo}
-              </p>
-            </div>
-
-            {/* 4. Afinidad con las Líneas de Reforesta */}
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <h4 className="text-xs uppercase font-semibold text-zinc-500 tracking-wider">
-                  Afinidad Temática
-                </h4>
-                <span className="font-bold text-zinc-900">{c.matchingGlobal}%</span>
-              </div>
-
-              <div className="space-y-2 border border-zinc-200 rounded-none p-3 bg-white">
-                <div>
-                  <div className="flex items-center justify-between text-zinc-700 mb-1">
-                    <span>Restauración vegetal y suelos</span>
-                    <span className="font-mono">{c.matchingLineas.restauracionEcosistemas}%</span>
-                  </div>
-                  <div className="w-full bg-zinc-100 h-1.5 rounded-full overflow-hidden">
-                    <div
-                      className="bg-emerald-700 h-1.5 rounded-full"
-                      style={{ width: `${c.matchingLineas.restauracionEcosistemas}%` }}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between text-zinc-700 mb-1">
-                    <span>Hábitats, anfibios y fauna</span>
-                    <span className="font-mono">{c.matchingLineas.conservacionHabitats}%</span>
-                  </div>
-                  <div className="w-full bg-zinc-100 h-1.5 rounded-full overflow-hidden">
-                    <div
-                      className="bg-emerald-700 h-1.5 rounded-full"
-                      style={{ width: `${c.matchingLineas.conservacionHabitats}%` }}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between text-zinc-700 mb-1">
-                    <span>Educación ambiental y voluntariado</span>
-                    <span className="font-mono">{c.matchingLineas.educacionAmbiental}%</span>
-                  </div>
-                  <div className="w-full bg-zinc-100 h-1.5 rounded-full overflow-hidden">
-                    <div
-                      className="bg-emerald-700 h-1.5 rounded-full"
-                      style={{ width: `${c.matchingLineas.educacionAmbiental}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
 
             {/* 5. Citas de las bases (literales) y justificación del radar (generada) */}
             {c.citasBasesJustificacion.some(esCitaLiteral) && (
@@ -267,12 +209,10 @@ Enlace oficial: ${c.urlBasesPdf}`;
               </div>
             )}
 
-            {/* 6. Partidas Financiables vs Excluidas */}
-            <div className="space-y-3">
+            {/* Gastos subvencionables: solo cuando la convocatoria los concreta (la lista genérica se repite en casi todas) */}
+            {c.accionesSubvencionables.length > 0 && c.accionesSubvencionables[0] !== 'Actuaciones técnicas' && (
               <div>
-                <h4 className="text-xs uppercase font-semibold text-zinc-500 tracking-wider mb-1">
-                  Gastos Subvencionables
-                </h4>
+                <h4 className="text-xs uppercase font-semibold text-zinc-500 tracking-wider mb-1">Gastos subvencionables</h4>
                 <ul className="space-y-1">
                   {c.accionesSubvencionables.map((a, i) => (
                     <li key={i} className="flex items-start gap-1.5 text-zinc-700">
@@ -282,69 +222,24 @@ Enlace oficial: ${c.urlBasesPdf}`;
                   ))}
                 </ul>
               </div>
-
-              {c.gastosNoSubvencionables && c.gastosNoSubvencionables.length > 0 && (
-                <div>
-                  <h4 className="text-xs uppercase font-semibold text-zinc-500 tracking-wider mb-1">
-                    Gastos Excluidos
-                  </h4>
-                  <ul className="space-y-1">
-                    {c.gastosNoSubvencionables.map((g, i) => (
-                      <li key={i} className="flex items-start gap-1.5 text-zinc-500">
-                        <span className="text-zinc-400 font-bold shrink-0">✕</span>
-                        <span>{g}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
+            )}
 
           </div>
 
           {/* Footer del Drawer */}
-          <div className="p-4 border-t border-zinc-200 bg-zinc-50/60 flex items-center justify-between gap-3 flex-wrap">
+          <div className="p-4 border-t border-zinc-200 bg-zinc-50/60 flex items-center justify-end gap-3 flex-wrap">
             
-            {/* Estado Interno del Pipeline */}
-            {onCambiarEstado && (
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-zinc-500 font-medium">Estado:</span>
-                <select
-                  value={c.estadoInterno}
-                  onChange={(e) => onCambiarEstado(c.id, e.target.value as EstadoInterno)}
-                  className="px-2 py-1 rounded border border-zinc-200 bg-white text-zinc-800 text-xs font-medium focus:outline-hidden focus:border-zinc-400 shadow-2xs"
-                >
-                  <option value="nueva">Nueva</option>
-                  <option value="priorizada">Priorizada</option>
-                  <option value="en_preparacion">En preparación</option>
-                  <option value="presentada">Presentada</option>
-                  <option value="descartada">Descartada</option>
-                </select>
-              </div>
+            {/* Un solo enlace oficial: la ficha con la información y las bases */}
+            {enlaceOficial(c) && (
+              <a
+                href={enlaceOficial(c)}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2.5 px-6 py-3 rounded-full bg-brand text-white hover:bg-[#3f6a2c] transition-colors text-sm font-bold uppercase tracking-wide shadow-md"
+              >
+                <span>Convocatoria oficial</span>
+              </a>
             )}
-
-            {/* Enlaces Oficiales */}
-            <div className="flex items-center gap-2">
-              <a
-                href={c.urlBasesPdf}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded border border-zinc-200 text-zinc-700 bg-white hover:bg-zinc-50 transition-colors text-xs font-medium shadow-2xs"
-              >
-                <FileDown className="h-3.5 w-3.5 text-zinc-500" />
-                <span>Bases Oficiales (PDF)</span>
-              </a>
-
-              <a
-                href={c.urlSedeElectronica}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-zinc-900 text-white hover:bg-zinc-800 transition-colors text-xs font-medium shadow-2xs"
-              >
-                <span>Sede Electrónica</span>
-                <ExternalLink className="h-3 w-3" />
-              </a>
-            </div>
 
           </div>
 
