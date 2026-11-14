@@ -255,7 +255,25 @@ class Opportunity(SQLModel, table=True):
                 ).strip(),
                 dealbreakers=[],
             )
-        merged_dealbreakers = list(dict.fromkeys([*(elig.dealbreakers or []), *(self.dealbreakers or [])]))
+        if elig.elegible:
+            merged_dealbreakers = [
+                d
+                for d in (self.dealbreakers or [])
+                if not any(
+                    tok in d.lower()
+                    for tok in (
+                        "no acredita elegibilidad",
+                        "excluid",
+                        "reservada",
+                        "no es elegible",
+                        "domicilio",
+                        "licitación",
+                        "orientada a contratistas",
+                    )
+                )
+            ]
+        else:
+            merged_dealbreakers = list(dict.fromkeys([*(elig.dealbreakers or []), *(self.dealbreakers or [])]))
         return elig, merged_dealbreakers
 
     def _default_matching_lineas(self) -> dict[str, int]:
@@ -316,12 +334,14 @@ class Opportunity(SQLModel, table=True):
         if self.importe_max_beneficiario:
             cuantia_max = int(self.importe_max_beneficiario)
         elif raw_proy > 0:
-            # EU consortium calls (Horizon Europe RIA/IA) publish full multi-partner consortium totals (3M-12M EUR).
-            # Cap single-NGO partner grant to a realistic tranche (max 350k EUR) so map & forecast totals remain realistic.
+            # EU consortium calls (Horizon Europe RIA/IA) and multi-year/multi-lot LCSP tenders publish
+            # full multi-partner/framework totals. Cap single-NGO accessible tranche so Map & Plan totals stay realistic.
             if (
                 self.tipo_oportunidad == "PROGRAMA_UE" or str(self.id).startswith("eu-")
             ) and raw_proy >= 1_000_000:
                 cuantia_max = min(int(round(raw_proy * 0.05)), 350_000)
+            elif self.tipo_oportunidad == "LICITACION" and raw_proy >= 400_000:
+                cuantia_max = min(int(round(raw_proy * 0.25)), 220_000)
             else:
                 cuantia_max = raw_proy
         elif presupuesto > 0:

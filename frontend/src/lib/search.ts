@@ -309,8 +309,13 @@ function construirCampos(c: Convocatoria): CamposIndexados {
   if (c.id.startsWith('bdns-')) {
     metaExtra.push('bdns subvencion ayudas');
   }
-  if (c.id.startsWith('placsp-')) {
-    metaExtra.push('placsp licitacion contrato publico perfil del contratante');
+  if (
+    c.id.startsWith('placsp-') ||
+    c.id.startsWith('ted-') ||
+    c.motivoElegibilidad.toLowerCase().includes('lcsp') ||
+    c.titulo.toLowerCase().includes('licitación')
+  ) {
+    metaExtra.push('placsp ted licitacion licitaciones contrato publico perfil del contratante');
   }
   if (c.ambitoTerritorial.toLowerCase() === 'estatal') {
     metaExtra.push('estatal nacional administracion general del estado');

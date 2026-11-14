@@ -3,7 +3,15 @@ import { Convocatoria, EstadoInterno } from '@/types/convocatoria';
 import { ESTATAL, PROVINCIAS_POR_COMUNIDAD } from '@/lib/territorio';
 import { humanizar, limpiarOrganismo } from '@/lib/texto';
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+function getBackendUrl(): string {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+  if (typeof window !== 'undefined') {
+    return `${window.location.protocol}//${window.location.hostname}:8000`;
+  }
+  return 'http://127.0.0.1:8000';
+}
 
 /** Código ISO de comunidad que usa el backend → nombre que usa el mapa. */
 const CCAA_POR_CODIGO: Record<string, string> = {
@@ -64,7 +72,7 @@ export async function fetchConvocatorias(): Promise<FetchConvocatoriasResponse> 
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 6000);
-    const res = await fetch(`${BACKEND_URL}/api/convocatorias`, { signal: controller.signal, cache: 'no-store' });
+    const res = await fetch(`${getBackendUrl()}/api/convocatorias`, { signal: controller.signal, cache: 'no-store' });
     clearTimeout(timeout);
     if (res.ok) {
       const data = await res.json();
@@ -89,7 +97,7 @@ export async function fetchHistorico(): Promise<{ convocatorias: Convocatoria[];
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30000);
-    const res = await fetch(`${BACKEND_URL}/api/convocatorias?estado=TODAS`, { signal: controller.signal, cache: 'no-store' });
+    const res = await fetch(`${getBackendUrl()}/api/convocatorias?estado=TODAS`, { signal: controller.signal, cache: 'no-store' });
     clearTimeout(timeout);
     if (res.ok) {
       const data = await res.json();
@@ -114,7 +122,7 @@ export interface EmbudoReal {
 
 export async function fetchEmbudo(): Promise<EmbudoReal | null> {
   try {
-    const res = await fetch(`${BACKEND_URL}/api/v1/ingest/runs?limit=1`, { cache: 'no-store' });
+    const res = await fetch(`${getBackendUrl()}/api/v1/ingest/runs?limit=1`, { cache: 'no-store' });
     if (!res.ok) return null;
     const payload = await res.json();
     const run = payload.runs?.[0];
@@ -156,7 +164,7 @@ export interface ReforestaProfile {
 
 export async function fetchReforestaProfile(): Promise<ReforestaProfile | null> {
   try {
-    const res = await fetch(`${BACKEND_URL}/api/v1/reforesta/profile`, { cache: 'no-store' });
+    const res = await fetch(`${getBackendUrl()}/api/v1/reforesta/profile`, { cache: 'no-store' });
     if (!res.ok) return null;
     return await res.json();
   } catch {
@@ -167,7 +175,7 @@ export async function fetchReforestaProfile(): Promise<ReforestaProfile | null> 
 /** Persiste el estado interno (pipeline) en el backend. Devuelve false si no se pudo. */
 export async function actualizarEstadoBackend(id: string, estadoInterno: EstadoInterno): Promise<boolean> {
   try {
-    const res = await fetch(`${BACKEND_URL}/api/convocatorias/${encodeURIComponent(id)}/estado`, {
+    const res = await fetch(`${getBackendUrl()}/api/convocatorias/${encodeURIComponent(id)}/estado`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ estadoInterno }),

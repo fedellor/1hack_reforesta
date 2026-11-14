@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
 
 /** Proxy del backend (sin datos de respaldo): reenvía `estado` y devuelve 502 si el radar no responde. */
 export async function GET(request: Request) {

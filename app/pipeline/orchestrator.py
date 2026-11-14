@@ -255,7 +255,7 @@ def process_candidate(
 
     # Step 4: Date & Status Resolution (Ley 39/2015 LPACAP Art. 30 with regional CCAA calendar)
     plazo_str, extracted_end_date = extract_deadline_clause_and_date(
-        texto=candidate.texto,
+        texto=f"{candidate.titulo}\n{candidate.texto}",
         existing_clause=l2.plazo_solicitud_detectado or candidate.plazo_texto_original,
         existing_end_date=candidate.fecha_fin_solicitud,
     )

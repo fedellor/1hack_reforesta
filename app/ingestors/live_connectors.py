@@ -614,7 +614,8 @@ async def fetch_live_boe_candidates(
         r"dominio\s+p[uú]blico\s+mar[ií]timo[-\s]?terrestre|demarcaci[oó]n\s+de\s+costas|pantal[aá]n\b|"
         r"libre\s+designaci[oó]n|provisi[oó]n\s+de\s+puestos\s+de\s+trabajo|concurso\s+espec[ií]fico|"
         r"admitidas\s+y\s+excluidas|proceso\s+selectivo\s+para\s+ingreso|"
-        r"deslinde\s+de\s+(?:los\s+)?terrenos|corta\s+de\s+\d+\s+(?:chopos|[aá]rboles)"
+        r"deslinde\s+de\s+(?:los\s+)?terrenos|corta\s+de\s+\d+\s+(?:chopos|[aá]rboles)|"
+        r"anuncio\s+de\s+formalizaci[oó]n\s+de\s+contratos?"
         r")\b",
         re.IGNORECASE,
     )
@@ -681,15 +682,17 @@ async def fetch_live_boe_candidates(
                                         else str(url_pdf_obj or "")
                                     )
                                     url_html_raw = str(it.get("url_html", "") or "")
+                                    is_tender = sec_code == "5A" or "anuncio de licitaci" in titulo.lower()
+                                    tender_note = " · Licitación pública BOE Sección 5A (LCSP)." if is_tender else ""
                                     day_items.append(
                                         RawCandidate(
                                             id=f"boe-{ident.lower()}",
                                             codigo_oficial=ident,
                                             fuente="BOE",
-                                            tipo_oportunidad="SUBVENCION",
+                                            tipo_oportunidad="LICITACION" if is_tender else "SUBVENCION",
                                             titulo=titulo,
                                             organo_convocante=dept_name,
-                                            texto=f"{titulo} ({dept_name})",
+                                            texto=f"{titulo} ({dept_name}){tender_note}",
                                             fecha_publicacion=target_date,
                                             anio_convocatoria=target_date.year,
                                             url_ficha_oficial=_abs_boe_url(url_html_raw) or f"https://www.boe.es/diario_boe/txt.php?id={ident}",
@@ -710,6 +713,243 @@ async def fetch_live_boe_candidates(
             if cand.id not in seen_ids:
                 seen_ids.add(cand.id)
                 candidates.append(cand)
+
+    return candidates
+
+
+TED_SEARCH_URL = "https://api.ted.europa.eu/v3/notices/search"
+_TED_FOREST_CPVS = (
+    "77200000 77210000 77211000 77211100 77211200 77211300 77211400 77211500 77211600 "
+    "77220000 77230000 77231000 77231200 77231500 77231600 77231700 77231800 77231900 "
+    "90710000 90711000 90711300 90711500 90712000 90712100 90713000 90714000 "
+    "90720000 90721000 90721600 90721700 90721800 75251120 80540000"
+)
+
+
+def _ted_unwrap_text(val: Any) -> str:
+    """Safely extract best Spanish/local text string from TED v3 multilingual dicts or lists."""
+    if val is None:
+        return ""
+    if isinstance(val, str):
+        return val.strip()
+    if isinstance(val, list):
+        parts = [_ted_unwrap_text(x) for x in val]
+        return " · ".join(p for p in parts if p)
+    if isinstance(val, dict):
+        for lang in ("spa", "SPA", "cat", "glg", "baq", "eng", "ENG"):
+            if lang in val:
+                txt = _ted_unwrap_text(val[lang])
+                if txt:
+                    return txt
+        for v in val.values():
+            txt = _ted_unwrap_text(v)
+            if txt:
+                return txt
+    return ""
+
+
+def _ted_extract_urls(val: Any) -> list[str]:
+    """Collect HTTP(S) URLs recursively from TED v3 string/list/dict link containers."""
+    found: list[str] = []
+    if isinstance(val, str):
+        s = val.strip()
+        if s.startswith(("http://", "https://")):
+            found.append(s)
+    elif isinstance(val, list):
+        for item in val:
+            found.extend(_ted_extract_urls(item))
+    elif isinstance(val, dict):
+        for v in val.values():
+            found.extend(_ted_extract_urls(v))
+    return found
+
+
+def _ted_extract_date(val: Any) -> date | None:
+    if isinstance(val, list):
+        for item in val:
+            d = _ted_extract_date(item)
+            if d is not None:
+                return d
+        return None
+    if isinstance(val, str) and len(val) >= 10:
+        try:
+            return date.fromisoformat(val[:10])
+        except ValueError:
+            return None
+    return None
+
+
+def _ted_extract_max_amount(*vals: Any) -> float | None:
+    amounts: list[float] = []
+
+    def _walk(x: Any) -> None:
+        if isinstance(x, (int, float)):
+            if x > 0:
+                amounts.append(float(x))
+        elif isinstance(x, str):
+            try:
+                f = float(x.replace(",", ".").strip())
+                if f > 0:
+                    amounts.append(f)
+            except ValueError:
+                pass
+        elif isinstance(x, list):
+            for item in x:
+                _walk(item)
+
+    for v in vals:
+        _walk(v)
+    return round(max(amounts), 2) if amounts else None
+
+
+async def fetch_live_ted_candidates(timeout: float = 9.0) -> list[RawCandidate]:
+    """
+    Query EU TED Search API v3 for open Spanish environmental, forestry, reforestation,
+    wildfire-prevention & nature-education public procurement tenders (`CY = ESP`).
+    Returns clean PLACSP / TED URLs, official PDF links, NUTS subdivisions, CPVs, and deadlines.
+    """
+    today_ymd = date.today().strftime("%Y%m%d")
+    payload = {
+        "query": f"CY = ESP AND deadline-receipt-request >= {today_ymd} AND classification-cpv IN ({_TED_FOREST_CPVS})",
+        "fields": [
+            "ND",
+            "notice-title",
+            "title-proc",
+            "description-proc",
+            "buyer-name",
+            "buyer-city",
+            "deadline-receipt-request",
+            "publication-date",
+            "classification-cpv",
+            "estimated-value-glo",
+            "estimated-value-lot",
+            "contract-nature-main-proc",
+            "contract-nature",
+            "place-of-performance-city-proc",
+            "place-of-performance-subdiv-proc",
+            "place-of-performance-subdiv-lot",
+            "submission-url-lot",
+            "document-url-lot",
+            "links",
+        ],
+        "page": 1,
+        "limit": 100,
+    }
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "User-Agent": "1hack_reforesta/2.0 (TED Procurement Radar)",
+    }
+
+    candidates: list[RawCandidate] = []
+    async with _make_async_client(timeout=timeout, headers=headers) as client:
+        try:
+            resp = await client.post(TED_SEARCH_URL, json=payload)
+            if resp.status_code != 200:
+                logger.warning("TED Search v3 HTTP %s", resp.status_code)
+                return []
+            notices = resp.json().get("notices") or []
+        except Exception as exc:
+            logger.warning("TED Search v3 query failed: %s", exc)
+            return []
+
+    seen_ids: set[str] = set()
+    for n in notices:
+        if not isinstance(n, dict):
+            continue
+        nd = str(n.get("ND") or "").strip()
+        if not nd:
+            continue
+        cid = f"ted-{nd.lower()}"
+        if cid in seen_ids:
+            continue
+
+        title_proc = _ted_unwrap_text(n.get("title-proc")) or _ted_unwrap_text(n.get("notice-title"))
+        if not title_proc:
+            continue
+        desc_proc = _ted_unwrap_text(n.get("description-proc"))
+        buyer = _ted_unwrap_text(n.get("buyer-name")) or "Organismo Contratante Español (PLACSP / TED)"
+        city_perf = _ted_unwrap_text(n.get("place-of-performance-city-proc")) or _ted_unwrap_text(n.get("buyer-city"))
+
+        raw_cpvs = n.get("classification-cpv") or []
+        if isinstance(raw_cpvs, str):
+            raw_cpvs = [raw_cpvs]
+        cpv_clean = [str(c).split("-")[0].strip() for c in raw_cpvs if str(c).strip()]
+
+        raw_nature = " ".join(
+            [
+                str(n.get("contract-nature-main-proc") or ""),
+                _ted_unwrap_text(n.get("contract-nature")),
+            ]
+        ).lower()
+        if "works" in raw_nature:
+            nature_clause = "Licitación de obras (contrato de obra LCSP)."
+        elif "suppl" in raw_nature:
+            nature_clause = "Suministro de equipamiento y materiales (contrato de suministro LCSP)."
+        else:
+            nature_clause = "Contrato de servicios públicos (LCSP Art. 65)."
+
+        raw_subdivs = [
+            str(s).strip().upper()
+            for s in ([*(n.get("place-of-performance-subdiv-proc") or []), *(n.get("place-of-performance-subdiv-lot") or [])])
+            if str(s).strip()
+        ]
+        if isinstance(n.get("place-of-performance-subdiv-proc"), str):
+            raw_subdivs.append(n["place-of-performance-subdiv-proc"].strip().upper())
+        nuts_code = next((s for s in raw_subdivs if re.match(r"^ES[1-7]\d{1,2}$", s)), None)
+
+        est_val = _ted_extract_max_amount(n.get("estimated-value-lot"), n.get("estimated-value-glo"))
+        pub_date = _ted_extract_date(n.get("publication-date")) or date.today()
+        fin_date = _ted_extract_date(n.get("deadline-receipt-request"))
+
+        links_obj = n.get("links") or {}
+        pdf_map = links_obj.get("pdf") or {}
+        html_map = links_obj.get("html") or {}
+        ted_pdf = (
+            pdf_map.get("SPA")
+            or pdf_map.get("ENG")
+            or next(iter(pdf_map.values()), None)
+            or f"https://ted.europa.eu/es/notice/{nd}/pdf"
+        )
+        ted_html = (
+            html_map.get("SPA")
+            or html_map.get("ENG")
+            or next(iter(html_map.values()), None)
+            or f"https://ted.europa.eu/es/notice/-/detail/{nd}"
+        )
+        doc_urls = _ted_extract_urls(n.get("document-url-lot")) or _ted_extract_urls(n.get("submission-url-lot"))
+        placsp_or_portal_url = next(
+            (u for u in doc_urls if "contrataciondelestado.es" in u or "euskadi" in u or "gencat" in u or "juntadeandalucia" in u),
+            doc_urls[0] if doc_urls else ted_html,
+        )
+
+        seen_ids.add(cid)
+        candidates.append(
+            RawCandidate(
+                id=cid,
+                codigo_oficial=f"TED {nd}",
+                fuente="PLACSP",
+                tipo_oportunidad="LICITACION",
+                titulo=title_proc,
+                organo_convocante=buyer,
+                texto=(
+                    f"{title_proc}. {desc_proc} "
+                    f"Licitación pública · Perfil del Contratante (PLACSP / TED UE). {nature_clause} "
+                    f"Lugar de ejecución: {city_perf or 'España'}. "
+                    f"CPVs: {', '.join(cpv_clean[:6])}."
+                ).strip(),
+                cpv_codes=cpv_clean,
+                region_hint=city_perf,
+                nuts_code=nuts_code,
+                presupuesto_total=est_val,
+                importe_max_proyecto=est_val,
+                fecha_publicacion=pub_date,
+                fecha_fin_solicitud=fin_date,
+                anio_convocatoria=pub_date.year,
+                url_ficha_oficial=placsp_or_portal_url,
+                url_bases_reguladoras=ted_pdf,
+            )
+        )
 
     return candidates
 

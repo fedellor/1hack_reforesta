@@ -74,6 +74,9 @@ reforesta/
 
 ## 4. Puesta en Marcha en Local
 
+### Puesta en marcha desde cero (cualquier equipo)
+El repositorio ya incluye la base de datos SQLite consolidada (`data/reforesta.db`) y los documentos locales (`fuentes/`), de modo que cualquier equipo que clone el repositorio verá desde el primer segundo exactamente los mismos datos y convocatorias sin esperar a la primera sincronización.
+
 ### Requisitos
 - **Python 3.11+** con entorno virtual en `.venv`
 - **Node.js 18+** y **npm**
@@ -84,7 +87,7 @@ reforesta/
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 
-# Opcional: copiar variables de entorno
+# Opcional: copiar variables de entorno (los valores por defecto ya apuntan a data/reforesta.db)
 Copy-Item .env.example .env
 
 # Ejecutar batería de tests

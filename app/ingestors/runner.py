@@ -1,7 +1,7 @@
 """Master Ingestion Runner & Live Background Sync Worker."""
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 from sqlmodel import Session, select
@@ -17,6 +17,7 @@ from app.ingestors.live_connectors import (
     fetch_live_placsp_candidates,
     fetch_live_private_foundation_candidates,
     fetch_live_public_portal_candidates,
+    fetch_live_ted_candidates,
 )
 from app.ingestors.multilevel_catalog import get_multilevel_candidates
 from app.models import IngestionRun, Opportunity
@@ -66,6 +67,7 @@ async def run_full_ingestion(
     live_counts: dict[str, int] = {
         "bdns_live": 0,
         "placsp_live": 0,
+        "ted_live": 0,
         "boe_live": 0,
         "eu_sedia_live": 0,
         "ccaa_rss_live": 0,
@@ -74,20 +76,22 @@ async def run_full_ingestion(
         "pdf_links_enriched": 0,
     }
     if include_live_apis:
-        bdns_live, placsp_live, boe_live, eu_live, rss_live, priv_live, pub_live = await asyncio.gather(
+        bdns_live, placsp_live, ted_live, boe_live, eu_live, rss_live, priv_live, pub_live = await asyncio.gather(
             fetch_live_bdns_candidates(max_per_keyword=100, timeout=12.0),
             fetch_live_placsp_candidates(timeout=14.0, max_pages=4),
-            fetch_live_boe_candidates(days_back=30, timeout=8.0),
+            fetch_live_ted_candidates(timeout=9.0),
+            fetch_live_boe_candidates(days_back=45, timeout=9.0),
             fetch_live_eu_sedia_candidates(timeout=7.0),
             fetch_live_ccaa_rss_candidates(timeout=5.0),
             fetch_live_private_foundation_candidates(timeout=6.0),
             fetch_live_public_portal_candidates(timeout=6.5),
         )
-        live_batch = bdns_live + placsp_live + boe_live + eu_live + rss_live + priv_live + pub_live
+        live_batch = bdns_live + placsp_live + ted_live + boe_live + eu_live + rss_live + priv_live + pub_live
         enriched_pdfs = await enrich_candidates_with_linked_pdfs(live_batch, timeout=5.0, max_downloads=60)
         live_counts = {
             "bdns_live": len(bdns_live),
             "placsp_live": len(placsp_live),
+            "ted_live": len(ted_live),
             "boe_live": len(boe_live),
             "eu_sedia_live": len(eu_live),
             "ccaa_rss_live": len(rss_live),
@@ -212,6 +216,7 @@ def ensure_initial_seed(session: Session) -> None:
 def refresh_live_database_states(session: Session) -> int:
     """Recalculate ACTIVA/PROXIMA/CERRADA, dias_restantes and prioridad_score for all records in DB, and purge excluded items."""
     from app.pipeline.layer1_regex import HARD_EXCLUSION_PATTERN
+    from app.pipeline.metadata_extractor import extract_deadline_clause_and_date
 
     today = settings.get_today()
     opps = session.exec(select(Opportunity)).all()
@@ -221,11 +226,37 @@ def refresh_live_database_states(session: Session) -> int:
             session.delete(o)
             updated += 1
             continue
+        effective_fin = o.fecha_fin_solicitud
+        effective_plazo = o.plazo_texto_original
+        if effective_fin is None:
+            ext_clause, ext_end = extract_deadline_clause_and_date(
+                texto=f"{o.titulo_original or ''}\n{o.resumen or ''}",
+                existing_clause=effective_plazo,
+                existing_end_date=None,
+            )
+            if ext_end is not None:
+                effective_fin = ext_end
+                o.fecha_fin_solicitud = ext_end
+                updated += 1
+            if ext_clause and not effective_plazo:
+                effective_plazo = ext_clause
+                o.plazo_texto_original = ext_clause
+                updated += 1
+        if effective_fin is None and o.anio_convocatoria and o.anio_convocatoria < today.year:
+            t_low = (o.titulo_original or o.titulo_limpio or "").lower()
+            if (
+                str(o.anio_convocatoria) in t_low
+                and str(today.year) not in t_low
+                and str(today.year + 1) not in t_low
+                and ("disposición" in t_low or "cerrad" in t_low or "2025" in t_low)
+            ):
+                effective_fin = o.fecha_fin_solicitud = o.fecha_fin_solicitud or o.fecha_publicacion or date(o.anio_convocatoria, 12, 31)
+                updated += 1
         resolved = compute_dates_and_status(
             fecha_publicacion=o.fecha_publicacion,
             fecha_inicio_solicitud=o.fecha_inicio_solicitud,
-            fecha_fin_solicitud=o.fecha_fin_solicitud,
-            plazo_texto_original=o.plazo_texto_original,
+            fecha_fin_solicitud=effective_fin,
+            plazo_texto_original=effective_plazo,
             anio_hint=o.anio_convocatoria,
             today=today,
             ccaa_codigo=o.ccaa_codigo,

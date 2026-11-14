@@ -199,6 +199,18 @@ def extract_deadline_clause_and_date(
             end_date = parse_spanish_date(raw_d)
             if not clause:
                 clause = f"Hasta el {raw_d}"
+        if end_date is None:
+            m_range = re.search(
+                r"\bdel?\s+\d{1,2}\s+(?:de\s+[a-záéíóúñ]+(?:\s+de\s+20\d{2})?)\s+al\s+"
+                r"(\d{1,2}\s+de\s+[a-záéíóúñ]+\s+de\s+20\d{2})\b",
+                snippet,
+                re.IGNORECASE,
+            )
+            if m_range:
+                raw_d = m_range.group(1).strip()
+                end_date = parse_spanish_date(raw_d)
+                if not clause:
+                    clause = f"Hasta el {raw_d}"
 
     if not clause:
         m_plz = re.search(

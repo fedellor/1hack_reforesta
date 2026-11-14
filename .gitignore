@@ -22,17 +22,14 @@ next-env.d.ts
 .env.*.local
 *.pem
 
-# Local Database & Cache
-data/*.db
+# Temporary SQLite lock/test files (keep production data/reforesta.db and data/cache/ tracked in Git)
+data/test_suite.db*
 data/*.db-journal
 data/*.db-wal
-data/cache/
+data/*.db-shm
 
 # IDE & OS
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
-
-# Base de datos local del backend (SQLite)
-data/

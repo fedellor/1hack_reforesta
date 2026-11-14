@@ -155,10 +155,11 @@ def score_convocatoria_dict(conv: dict[str, Any], query: str | None) -> int:
     if conv.get("modalidadPago") == "anticipo" or conv.get("pagoAnticipadoSinAval"):
         meta_extra.append("anticipo pago anticipado sin aval")
     cid = str(conv.get("id") or "")
+    motivo_low = str(conv.get("motivoElegibilidad") or "").lower()
     if cid.startswith("bdns-"):
         meta_extra.append("bdns subvencion ayudas")
-    if cid.startswith("placsp-"):
-        meta_extra.append("placsp licitacion contrato publico perfil del contratante")
+    if cid.startswith(("placsp-", "ted-")) or "licita" in motivo_low or "lcsp" in motivo_low:
+        meta_extra.append("placsp ted licitacion licitaciones contrato publico perfil del contratante")
     if str(conv.get("ambitoTerritorial") or "").lower() == "estatal":
         meta_extra.append("estatal nacional administracion general del estado")
 

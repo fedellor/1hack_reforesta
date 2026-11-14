@@ -283,8 +283,17 @@ HARD_EXCLUSION_PATTERN = re.compile(
     r"subv(?:\.|enci[oó]n)?\s+nominativa|subvenci[oó]n\s+nominada|concesi[oó]n\s+directa\s+nominativa|"
     r"subvenci[oó]n(?:es)?\s+directa[s]?|concesi[oó]n\s+directa\s+de\s+(?:una\s+)?subvenci[oó]n|"
     r"autoriza\s+la\s+concesi[oó]n\s+directa|concesi[oó]n\s+directa\s+de\s+ayudas?|ayudas?\s+\d{4}\s+directas?\s+a\s+(?:empresas|explotaciones)|"
-    r"dir_22\.2\.a|subvenci[oó]n\s+federaci[oó]n|ayuda\s+excepcional\s+a\s+la\s+asociaci[oó]n|subv\.\s+seo/birdlife|"
+    r"dir_22\.2\.[abc]|dir[\s_]+22\.2\.[abc]|subvenci[oó]n\s+federaci[oó]n|ayuda\s+excepcional\s+a\s+la\s+asociaci[oó]n|subv\.\s+seo/birdlife|"
+    r"concesi[oó]n\s+de\s+subvenci[oó]n\s+a\s+(?:la\s+)?(?:fundaci[oó]n|asociaci[oó]n|entidad)|"
+    r"convenio\s+con\s+(?:ecodes|seo|wwf|greenpeace|fundaci[oó]n|asociaci[oó]n)|"
     r"convenio\s+diputaci[oó]n|aprobaci[oó]n\s+del\s+convenio|"
+    r"celebramos\s+diez\s+a[ñn]os|rescate\s+de\s+especies\s+marinas\s+2021|"
+    r"limpieza\s+viaria|desarrollo\s+de\s+una\s+plataforma|sistemas?\s+de\s+gesti[oó]n\s+de\s+informaci[oó]n|"
+    r"ahoyado\s+mecanizado|mantenimiento\s+mecanizado|autobombas?|mantenimiento\s+de\s+(?:parques|jardines|palmeral|centros\s+residencia\w*)|"
+    r"mantenimiento\s+integral\s+de\s+los?\s+centros?\s+residencia\w*|limpieza\s+(?:y\s+mantenimiento\s+de\s+)?playas|"
+    r"plan\s+energ[eé]tico\s+nacional.*panam[aá]|bioseguridad\s+ambiental.*quir[oó]fanos|"
+    r"establecimiento\s+sda\b|sistema\s+din[aá]mico\s+de\s+adquisici[oó]n.*zonas\s+verdes|"
+    r"zonas?\s+verdes\s+(?:municipales|en\s+las\s+carreteras|urbanas)|"
     r"convenio\s+para\s+(?:la\s+)?(?:creaci[oó]n|concesi[oó]n)|"
     r"cuota\s+anual|aportaci[oó]n\s+al\s+csic|"
     r"trabajos?\s+(?:de\s+)?fin\s+de\s+(?:grado|m[aá]ster|estudios)|beca[s]?\s+de\s+colaboraci[oó]n|beca\s+red\s+natura|"
@@ -344,7 +353,8 @@ HARD_EXCLUSION_PATTERN = re.compile(
     r"corta\s+de\s+\d+\s+(?:chopos|[aá]rboles)|cambio\s+de\s+cultivo|plan\s+de\s+cortas\s+para|deslinde\s+de\s+(?:los\s+)?terrenos|"
     r"sistema\s+de\s+defensa\s+contra\s+incendios\s+en\s+(?:los\s+)?edificios?|equipos?\s+(?:de\s+protecci[oó]n\s+)?contra\s+incendios\s+en\s+edificios?|"
     r"promoting\s+sustainable\s+forestry\s+in\s+(?:romania|bulgaria|greece|poland|brazil|vietnam)\b"
-    r")",
+    r")|"
+    r"(?:^|[\s_])dir(?:ect[ao]?)?\.?\s*22\.2(?:\.[abc])?(?:[\s_]|$)",
     re.IGNORECASE,
 )
 

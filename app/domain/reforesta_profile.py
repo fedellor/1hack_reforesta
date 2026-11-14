@@ -441,16 +441,66 @@ def assess_reforesta_eligibility(
             )
 
     if tipo_oportunidad == "LICITACION" and not has_ngo_marker:
-        msg = (
-            "Licitación de contratación pública (LCSP): orientada a contratistas/empresas; "
-            "Reforesta no es elegible como beneficiaria de subvención directa (solo UTE o asistencia técnica)."
+        tender_body = f"{titulo}\n{texto}\n{requisitos_resumen}".lower()
+        heavy_or_non_ngo_tender_re = re.compile(
+            r"\b(?:"
+            r"licitaci[oó]n\s+de\s+obras?|contrato\s+de\s+obras?|ejecuci[oó]n\s+de\s+obras?|mantenimiento\s+y\s+obra\b|"
+            r"obras?\s+(?:de\s+)?(?:construcci[oó]n|rehabilitaci[oó]n|urbanizaci[oó]n|sellado|encauzamiento|abastecimiento|saneamiento|edificaci[oó]n|equipamiento|viales?|infraestructuras?)|"
+            r"suministro\s+de\b|veh[ií]culos?|autobombas?|camiones?|maquinaria\s+(?:pesada|forestal|agr[ií]cola)|"
+            r"ahoyado\s+mecanizado|tratamientos?\s+mecanizados?|desbroce\s+mecanizado|mantenimiento\s+mecanizado|"
+            r"redes?\s+de\s+distribuci[oó]n\s+el[eé]ctrica|"
+            r"sistema\s+din[aá]mico\s+de\s+adquisici[oó]n|\bestablecimiento\s+sda\b|"
+            r"seguridad\s+y\s+salud\s+para\s+las\s+actuaciones|"
+            r"desarrollo\s+de\s+(?:una\s+)?plataforma|sistemas?\s+de\s+gesti[oó]n\s+de\s+informaci[oó]n|aplicaci[oó]n\s+inform[aá]tica|software\b|"
+            r"limpieza\s+viaria|limpieza\s+(?:y\s+mantenimiento\s+)?(?:de\s+)?playas|recogida\s+de\s+residuos|residuos\s+peligrosos|"
+            r"centros?\s+residencia(?:les)?|quir[oó]fanos?|"
+            r"parques?\s+y\s+jardines|zonas?\s+verdes?|arbolado\s+viario|poda\s+y\s+tratamiento\s+de\s+plagas|"
+            r"palmeral(?:es)?|jardin(?:er[ií]a|es\s+en\s+centros)"
+            r")\b",
+            re.IGNORECASE,
         )
-        dealbreakers.append(msg)
+        statutory_service_re = re.compile(
+            r"\b(?:"
+            r"reforest\w*|repobl\w*|plantaci[oó]n\w*|restauraci[oó]n\s+(?:forestal|ecol[oó]gica|ambiental|de\s+h[aá]bitats?|hidrol[oó]gico)|"
+            r"selvic\w*|silvic\w*|tratamientos?\s+silv[ií]colas?|trabajos?\s+silv[ií]colas?|tratamiento\s+de\s+la\s+vegetaci[oó]n|"
+            r"prevenci[oó]n\s+de\s+incendios|emergencias\s+por\s+incendios\s+forestales|"
+            r"biodiversidad|conservaci[oó]n\s+de\s+(?:la\s+)?(?:flora|fauna|h[aá]bitats?|especies|ecosistemas?)|"
+            r"conservaci[oó]n,\s+mantenimiento\s+y\s+gesti[oó]n\s+de\s+(?:la\s+)?finca|"
+            r"compensaci[oó]n\s+(?:voluntaria\s+)?de\s+(?:emisiones|huella\s+de\s+carbono)|sumideros?\s+de\s+carbono|"
+            r"uso\s+p[uú]blico\s+e\s+informaci[oó]n\s+ambiental|informaci[oó]n\s+ambiental|\b(?:lic|zec|zepa)\s+[a-záéíóúñ]+|"
+            r"educaci[oó]n\s+ambiental|sensibilizaci[oó]n\s+ambiental|voluntariado\s+ambiental|custodia\s+del\s+territorio|"
+            r"inventario\s+forestal|gesti[oó]n\s+forestal|ordenaci[oó]n\s+de\s+montes|servicios?\s+forestal\w*"
+            r")\b",
+            re.IGNORECASE,
+        )
+        m_heavy = heavy_or_non_ngo_tender_re.search(tender_body)
+        has_service_fit = bool(statutory_service_re.search(tender_body))
+        if m_heavy or ngo_banned or not has_service_fit:
+            reason_detail = (
+                f"Licitación de obras, maquinaria o suministros ({m_heavy.group(0)})"
+                if m_heavy
+                else "Licitación de contratación pública (LCSP) ajena al objeto técnico o restringida a empresas"
+            )
+            msg = (
+                f"{reason_detail}: orientada a contratistas industriales; "
+                "Reforesta no es elegible como adjudicataria directa."
+            )
+            dealbreakers.append(msg)
+            return ReforestaEligibility(
+                elegible=False,
+                beneficiarios_tipos=benef_types or ["EMPRESA_PYME"],
+                motivo_elegibilidad=f"Excluida por requisitos de contratación: {msg}",
+                dealbreakers=dealbreakers,
+            )
+        benef_types = list(dict.fromkeys([*benef_types, "ONG_FUNDACIONES", "CONTRATISTA_LCSP"]))
         return ReforestaEligibility(
-            elegible=False,
-            beneficiarios_tipos=benef_types or ["EMPRESA_PYME"],
-            motivo_elegibilidad=f"Excluida por requisitos de contratación: {msg}",
-            dealbreakers=dealbreakers,
+            elegible=True,
+            beneficiarios_tipos=benef_types,
+            motivo_elegibilidad=(
+                "Apta (LCSP Art. 65 · Contrato de servicios ambientales/forestales accesible a Asociación Reforesta "
+                "por fines estatutarios acordes y solvencia técnica propia o en UTE)."
+            ),
+            dealbreakers=[],
         )
 
     if "ONG_FUNDACIONES" not in benef_types:

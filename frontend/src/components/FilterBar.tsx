@@ -7,11 +7,11 @@ import { COMUNIDADES, TODOS } from '@/lib/territorio';
 
 const ATAJOS_BUSQUEDA = [
   { label: 'MITECO', valor: 'miteco' },
+  { label: 'Licitaciones públicas', valor: 'licitaciones' },
   { label: 'Comunidad de Madrid', valor: 'madrid' },
   { label: 'Reforestación', valor: 'reforestacion' },
   { label: 'Incendios', valor: 'incendios' },
-  { label: 'PEPAC / FEADER', valor: 'pepac' },
-  { label: 'Licitaciones PLACSP', valor: 'placsp' },
+  { label: 'UE / LIFE', valor: 'ue' },
   { label: '100% financiado', valor: '100%' },
 ];
 
@@ -52,7 +52,7 @@ export function FilterBar({
                 setFiltros((prev) => ({ ...prev, busqueda: '' }));
               }
             }}
-            placeholder="Buscar MITECO, BDNS 923290, Madrid, pepac, incendios..."
+            placeholder="Buscar MITECO, licitaciones, BDNS, Madrid, incendios..."
             className="w-full pl-9 pr-8 py-2 rounded-full border border-zinc-200 text-zinc-900 placeholder-zinc-400 focus:outline-hidden focus:border-[#2f6f3e] bg-white text-xs shadow-2xs"
           />
           {filtros.busqueda && (

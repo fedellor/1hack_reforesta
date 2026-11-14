@@ -404,3 +404,138 @@ def test_budget_realism_noise_exclusions_and_closed_year_resolution():
     assert res_closed.opportunity.estado == "CERRADA"
     assert res_closed.opportunity.fecha_fin_solicitud == date(2025, 12, 31)
 
+
+def test_lcsp_service_tender_eligibility_ted_connector_and_range_closure(monkeypatch):
+    """
+    Verify:
+    1. LCSP Art. 65 environmental service tenders are APTAS (with realistic <=220k tranche & 0 rejection dealbreakers)
+       while heavy obras/machinery tenders remain EXCLUIDAS.
+    2. Spanish date ranges 'Del X al DD de mes de YYYY' resolve closing dates properly (June 2026 -> CERRADA).
+    3. Nominative Dir 22.2.c / Convenios / anniversary news articles are rejected by Layer-1.
+    4. fetch_live_ted_candidates cleanly maps TED Search API v3 Spanish notices (NUTS, PLACSP link, TED PDF).
+    """
+    from app.ingestors.live_connectors import fetch_live_ted_candidates
+    from app.search_utils import score_convocatoria_dict
+
+    service_cand = RawCandidate(
+        id="ted-test-service-2026",
+        codigo_oficial="TED 650001-2026",
+        fuente="PLACSP",
+        tipo_oportunidad="LICITACION",
+        titulo="Servicio de reforestación con especies autóctonas y educación ambiental en montes de Cuenca",
+        organo_convocante="Junta de Comunidades de Castilla-La Mancha",
+        texto=(
+            "Contrato de servicios públicos (LCSP Art. 65) para plantación forestal, restauración ecológica "
+            "y talleres de educación ambiental en la Serranía de Cuenca."
+        ),
+        cpv_codes=["77200000", "80540000"],
+        nuts_code="ES423",
+        presupuesto_total=800_000.0,
+        importe_max_proyecto=800_000.0,
+        fecha_publicacion="2026-10-20",
+        fecha_fin_solicitud="2026-12-20",
+        url_ficha_oficial="https://contrataciondelestado.es/wps/poc?uri=deeplink:detalle_licitacion&idEvl=test123",
+        url_bases_reguladoras="https://ted.europa.eu/es/notice/650001-2026/pdf",
+    )
+    res_srv = process_candidate(service_cand, persist=False)
+    assert res_srv.accepted_layer2 is True
+    assert res_srv.opportunity is not None
+    fe_srv = res_srv.opportunity.to_frontend_convocatoria()
+    assert fe_srv["elegible"] is True
+    assert not any(
+        any(tok in db.lower() for tok in ("no acredita elegibilidad", "orientada a contratistas", "no es elegible"))
+        for db in fe_srv["dealbreakers"]
+    )
+    assert fe_srv["ccaaCodigo"] == "ES-CM"
+    assert fe_srv["presupuestoTotal"] == 800_000
+    assert 0 < fe_srv["cuantiaMaximaProyecto"] <= 220_000
+    assert score_convocatoria_dict(fe_srv, "licitaciones") > 0
+
+    works_elig = assess_reforesta_eligibility(
+        titulo="Contrato de obras de prevención de incendios y ahoyado mecanizado con autobombas",
+        organo="Consejería de Medio Ambiente",
+        texto="Licitación de obras de infraestructura viaria y suministro de maquinaria pesada LCSP.",
+        tipo_oportunidad="LICITACION",
+    )
+    assert works_elig.elegible is False
+    assert any("licitación" in db.lower() for db in works_elig.dealbreakers)
+
+    # Date range closure: "Del 02 de junio al 30 de junio de 2026" -> 2026-06-30 -> CERRADA in Nov 2026
+    cand_range = RawCandidate(
+        id="priv-range-jun2026-test",
+        codigo_oficial="PRIV-IBER-2026",
+        fuente="FUNDACION_PRIVADA",
+        tipo_oportunidad="CONVOCATORIA_PRIVADA",
+        titulo="Del 02 de junio al 30 de junio de 2026 Convocatoria 2026 de Medio Ambiente",
+        organo_convocante="Fundación Ibercaja",
+        texto="Ayudas a asociaciones sin ánimo de lucro para restauración ecológica y reforestación.",
+        region_hint="ES-AR - Aragón (Privada / RSC)",
+        url_ficha_oficial="https://www.fundacionibercaja.es/convocatorias/medio-ambiente-2026/",
+    )
+    monkeypatch.setattr(settings, "reference_date", date(2026, 11, 14))
+    res_range = process_candidate(cand_range, persist=False)
+    assert res_range.accepted_layer2 is True
+    assert res_range.opportunity is not None
+    assert res_range.opportunity.fecha_fin_solicitud == date(2026, 6, 30)
+    assert res_range.opportunity.estado == "CERRADA"
+
+    # Nominative / news exclusions rejected cleanly
+    for bad in (
+        "202604306014_Dir 22.2.c_Subvención destinada a fundación privada",
+        "Convenio con Ecodes para sensibilización climática en Navarra",
+        "Celebramos diez años de BBK Basoa recuperando nuestros bosques autóctonos",
+    ):
+        assert evaluate_layer1(titulo=bad, organo="Organismo Público", texto="Reforestación y bosques.").passed is False
+
+    # TED v3 live parser (mocked HTTP transport)
+    mock_ted_payload = {
+        "notices": [
+            {
+                "ND": "777001-2026",
+                "title-proc": {"spa": "Servicio de restauración forestal y silvicultura preventiva en Guadalajara"},
+                "description-proc": {"spa": "Trabajos de repoblación forestal y mejora de hábitats en el Alto Tajo."},
+                "buyer-name": {"spa": ["Consejería de Desarrollo Sostenible"]},
+                "place-of-performance-city-proc": {"spa": ["Guadalajara"]},
+                "place-of-performance-subdiv-proc": ["ES424"],
+                "classification-cpv": ["77200000"],
+                "estimated-value-glo": 185000.0,
+                "contract-nature-main-proc": "services",
+                "publication-date": "2026-11-01+01:00",
+                "deadline-receipt-request": ["2026-12-18+01:00"],
+                "document-url-lot": ["https://contrataciondelestado.es/wps/poc?uri=deeplink:detalle&idEvl=abc"],
+                "links": {
+                    "pdf": {"SPA": "https://ted.europa.eu/es/notice/777001-2026/pdf"},
+                    "html": {"SPA": "https://ted.europa.eu/es/notice/-/detail/777001-2026"},
+                },
+            }
+        ]
+    }
+
+    class _FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, url, json=None):
+            return httpx.Response(200, json=mock_ted_payload, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr("app.ingestors.live_connectors._make_async_client", lambda **kw: _FakeAsyncClient())
+    import asyncio
+
+    ted_items = asyncio.run(fetch_live_ted_candidates())
+    assert len(ted_items) == 1
+    t0 = ted_items[0]
+    assert t0.id == "ted-777001-2026"
+    assert t0.tipo_oportunidad == "LICITACION"
+    assert t0.nuts_code == "ES424"
+    assert t0.presupuesto_total == 185000.0
+    assert t0.fecha_fin_solicitud == date(2026, 12, 18)
+    assert "contrataciondelestado.es" in (t0.url_ficha_oficial or "")
+    assert t0.url_bases_reguladoras == "https://ted.europa.eu/es/notice/777001-2026/pdf"
+
+
