@@ -1,7 +1,7 @@
 # 🌲 Radar Reforesta · Consola de Financiación y Decisión Territorial
 > Proyecto desarrollado para el reto **1hack A Coruña — El reto de Reforesta**, impulsado por **Common Seeds (The Agile Monkeys)**.
 
-[![Next.js](https://img.shields.io/badge/Next.js-16.4-black?logo=next.js)](https://nextjs.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue?logo=typescript)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/TailwindCSS-v4-06B6D4?logo=tailwindcss)](https://tailwindcss.com/)
 [![License](https://img.shields.io/badge/License-MIT-emerald.svg)](LICENSE)
@@ -46,16 +46,20 @@ Una **Consola Ejecutiva de Decisión**:
 
 ---
 
-## 4. Vistas del Centro de Mando Frontend
+## 4. Estructura del Frontend
 
-La interfaz cuenta con 5 modos de visualización adaptados a la toma de decisiones:
+Interfaz corporativa con la identidad de reforesta.es (verde `#6aa43a`, crema `#f6f4ee`, carbón `#333`, negro `#141414`, tipografías Open Sans y Merriweather). Tres secciones, cada una responde a un dolor del cliente:
 
-* **📊 Fichas Inteligentes (Bandeja Ejecutiva):** Tarjetas horizontales de alta densidad con micro-barras de afinidad en las 3 líneas de Reforesta, badges financieros y citas clave.
-* **📋 Tabla Técnica (Data Grid):** Vista compacta para escanear y ordenar decenas de oportunidades por cuantía, encaje o fecha de cierre en 1 clic.
-* **📌 Pipeline Kanban:** Tablero de estados (*Nueva*, *Priorizada*, *En preparación*, *Presentada*, *Descartada*) para coordinar a las 6 personas del equipo sin pisarse el trabajo.
-* **📅 Calendario de Deadlines:** Cronograma temporal agrupado por cercanía de cierre (&le;10d, 11-25d, &gt;25d) para planificar las entregas.
-* **🗺️ Radar Territorial:** Mapa interactivo de España por Comunidades Autónomas con selección de ámbito estatal y selector de CCAA.
-* **🏢 Canal Empresas RSC:** Pestaña dedicada a programas de patrocinio corporativo y fundaciones privadas (Santander ESG, ”la Caixa”) para romper la barrera del "canal a cero".
+* **Radar** (dolores 1 y 2: fuentes dispersas y peaje de lectura). Cabecera con el embudo *detectadas → aptas → cierran en 30 días → encaje ≥ 80%* y las horas de lectura evitadas. Debajo, **un único listado** con filtros compartidos (territorio, solo aptas, cierre ≤ 30 días, encaje ≥ 80%, cuantía, orden) y un selector de vista sobre los mismos datos:
+  * **Lista:** cada fila con veredicto, cuantía y cofinanciación, plazo, cita literal de las bases y afinidad en las 3 líneas de Reforesta.
+  * **Tabla:** data grid compacto para comparar.
+  * **Calendario:** deadlines agrupados por cercanía de cierre.
+  * **Mapa:** coropleta por comunidad autónoma (Leaflet + GeoJSON propio, sin teselas externas); al pulsar una región se filtra el listado.
+* **Empresas (RSC)** (dolor 3: canal de mecenazgo a cero): el mismo listado restringido a fundaciones y programas corporativos.
+* **Pipeline:** seguimiento del equipo por estados (*Nueva*, *Priorizada*, *En preparación*, *Presentada*, *Descartada*).
+* **Ficha ejecutiva (panel lateral):** detalle completo con elegibilidad, citas, gastos subvencionables, solvencia, orografía y exportación a Markdown.
+
+La plataforma trabaja por defecto con una ventana de **30 días**. El total de convocatorias «detectadas» del embudo es un dato simulado hasta que el backend lo exponga.
 
 ---
 
@@ -100,10 +104,11 @@ El sistema incluye y valida casos reales facilitados por la organización y enti
                                    Next.js + Tailwind CSS v4
                          ┌──────────────────────┼──────────────────────┐
                          ▼                      ▼                      ▼
-                   [ Fichas &amp; Tabla ]     [ Pipeline &amp; Mapa ]    [ Ficha Ejecutiva ]
+                  [ Radar: lista/tabla/     [ Empresas RSC ]        [ Pipeline +
+    calendario/mapa ]                                  Ficha Ejecutiva ]
 ```
 
-* **Rama `front` (Frontend):** Aplicación Next.js ubicada en `/frontend` con tipado estricto, mock dinámico en `/api/convocatorias` y cliente de fallback automático a la API de backend.
+* **Rama `front` (Frontend):** Aplicación Next.js (React 19, Tailwind v4, Leaflet, lucide-react) ubicada en `/frontend` con tipado estricto, mock dinámico en `/api/convocatorias` y cliente de fallback automático a la API de backend.
 * **Rama `back` (Backend):** Conectores a la API pública de la BDNS (`infosubvenciones.es`), boletines oficiales y extractor estructurado con LLM.
 
 ---
@@ -130,6 +135,8 @@ npm run dev
 ```
 
 Abre en tu navegador: **`http://localhost:3000`**
+
+> El mapa funciona sin conexión: los límites autonómicos están en `frontend/public/data/ccaa.geojson`.
 
 ### Compilar para producción
 ```bash

@@ -63,4 +63,5 @@ export interface FiltrosState {
   minMatching: number;
   soloUrgentes: boolean;
   minCuantia: number;
+  ventanaDias: number; // 0 = sin límite; 30 = solo convocatorias que cierran en los próximos 30 días
 }

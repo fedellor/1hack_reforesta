@@ -1,6 +1,7 @@
 import { Convocatoria } from '../types/convocatoria';
+import { MOCK_MAPA_COMPLETO, USAR_DATOS_MAPA_COMPLETO } from './mockMapaCompleto';
 
-export const MOCK_CONVOCATORIAS: Convocatoria[] = [
+const MOCK_BASE: Convocatoria[] = [
   {
     id: 'miteco-bdns-923290',
     codigoOficial: 'BDNS 923290',
@@ -318,3 +319,7 @@ export const MOCK_CONVOCATORIAS: Convocatoria[] = [
     estadoInterno: 'descartada',
   },
 ];
+
+export const MOCK_CONVOCATORIAS: Convocatoria[] = USAR_DATOS_MAPA_COMPLETO
+  ? [...MOCK_BASE, ...MOCK_MAPA_COMPLETO]
+  : MOCK_BASE;

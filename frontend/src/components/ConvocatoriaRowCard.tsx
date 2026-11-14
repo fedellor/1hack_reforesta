@@ -1,13 +1,7 @@
 'use client';
 
 import React from 'react';
-import {
-  MapPin,
-  ChevronRight,
-  ShieldCheck,
-  ShieldAlert,
-  Mountain,
-} from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { Convocatoria } from '@/types/convocatoria';
 
 interface ConvocatoriaRowCardProps {
@@ -26,109 +20,117 @@ export function ConvocatoriaRowCard({
   return (
     <div
       onClick={() => onSeleccionar(c)}
-      className={`rounded-lg border p-4 transition-all duration-150 cursor-pointer bg-white ${
+      className={`rounded-lg border p-3.5 transition-all duration-150 cursor-pointer bg-white group ${
         seleccionada
-          ? 'border-emerald-600 ring-1 ring-emerald-600 shadow-xs'
-          : 'border-slate-200 hover:border-slate-400 hover:shadow-2xs'
-      } ${!c.elegible ? 'bg-slate-50/60 border-dashed border-rose-200' : ''}`}
+          ? 'border-zinc-900 ring-1 ring-zinc-900 shadow-2xs'
+          : 'border-zinc-200 hover:border-zinc-400 hover:bg-zinc-50/50'
+      } ${!c.elegible ? 'bg-zinc-50/60 opacity-70 border-dashed' : ''}`}
     >
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         
         {/* Información Principal */}
-        <div className="space-y-1.5 flex-1 min-w-0">
+        <div className="space-y-1 flex-1 min-w-0">
           
-          {/* Fila de Metadatos Rápidos */}
+          {/* Fila de Metadatos: Código, Territorio y Orografía */}
           <div className="flex items-center flex-wrap gap-2 text-xs">
-            <span className="font-mono text-[11px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
+            <span className="font-mono text-[11px] text-zinc-500 font-medium">
               {c.codigoOficial}
             </span>
-
-            <span className="text-[11px] font-medium text-slate-600 flex items-center gap-1">
-              <MapPin className="h-3 w-3 text-slate-400" />
+            <span className="text-zinc-300">·</span>
+            <span className="text-zinc-600 text-[11px]">
               {c.ambitoTerritorial}
             </span>
 
-            {/* Orografía / Pendiente (SLOPE) */}
             {c.orografiaPendiente && (
-              <span className="text-[11px] font-medium text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded flex items-center gap-1 border border-emerald-100">
-                <Mountain className="h-3 w-3 text-emerald-600" />
-                {c.orografiaPendiente}
-              </span>
+              <>
+                <span className="text-zinc-300">·</span>
+                <span className="text-[11px] text-zinc-600 font-medium">
+                  {c.orografiaPendiente}
+                </span>
+              </>
             )}
 
-            {/* Urgencia Plazo */}
+            <span className="text-zinc-300">·</span>
             <span
-              className={`text-[11px] font-semibold px-2 py-0.5 rounded ${
+              className={`text-[11px] font-medium ${
                 c.diasRestantes <= 7
-                  ? 'bg-rose-50 text-rose-700 font-bold border border-rose-200'
+                  ? 'text-rose-700 font-semibold'
                   : c.diasRestantes <= 20
-                  ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                  : 'bg-slate-100 text-slate-600'
+                  ? 'text-amber-700'
+                  : 'text-zinc-500'
               }`}
             >
-              Cierre: {c.diasRestantes} días ({new Date(c.fechaCierre).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })})
+              Cierre: {c.diasRestantes}d ({new Date(c.fechaCierre).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })})
             </span>
           </div>
 
           {/* Título de la Convocatoria */}
           <div>
-            <h3 className="text-sm font-bold text-slate-900 hover:text-emerald-800 transition-colors line-clamp-1">
+            <h3 className="text-sm font-semibold text-zinc-900 group-hover:text-emerald-900 transition-colors line-clamp-1">
               {c.titulo}
             </h3>
-            <p className="text-xs text-slate-500 truncate mt-0.5">
+            <p className="text-xs text-zinc-500 truncate mt-0.5">
               {c.organismo}
             </p>
+            {(c.elegible ? c.citasBasesJustificacion[0] : c.dealbreakers[0] ?? c.motivoElegibilidad) && (
+              <p className={`text-[11px] italic line-clamp-1 mt-1 border-l-2 pl-2 ${c.elegible ? 'border-brand text-zinc-500' : 'border-rose-400 text-rose-700'}`}>
+                {c.elegible ? `“${c.citasBasesJustificacion[0]}”` : `Excluida: ${c.dealbreakers[0] ?? c.motivoElegibilidad}`}
+              </p>
+            )}
           </div>
 
         </div>
 
         {/* Bloque Económico y Afinidad */}
-        <div className="flex items-center justify-between sm:justify-end gap-5 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 shrink-0">
+        <div className="flex items-center justify-between sm:justify-end gap-6 pt-2 sm:pt-0 border-t sm:border-t-0 border-zinc-100 shrink-0">
           
           {/* Cuantía */}
           <div className="text-left sm:text-right">
-            <span className="text-[10px] text-slate-400 uppercase font-semibold block">Cuantía Máx.</span>
-            <span className="text-base font-extrabold text-slate-900">
+            <span className="text-sm font-bold text-zinc-900 font-mono block">
               {new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(
                 c.cuantiaMaximaProyecto
               )}
             </span>
-            <span className="text-[11px] text-slate-500 block">
-              {c.porcentajeCofinanciacion === 0 ? '100% subvencionado' : `${100 - c.porcentajeCofinanciacion}% subvención`}
+            <span className="text-[11px] text-zinc-400 block">
+              {c.porcentajeCofinanciacion === 0 ? '100% subvencionado' : `${c.porcentajeCofinanciacion}% fondos propios`} · {c.modalidadPago}
             </span>
           </div>
 
-          {/* Afinidad / Elegibilidad */}
-          <div className="text-right">
-            <div className="flex items-center justify-end gap-1 mb-0.5">
-              {c.elegible ? (
-                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                  <ShieldCheck className="h-3 w-3" /> Apta
+          {/* Afinidad por línea */}
+          <div className="hidden md:flex flex-col gap-1 w-28">
+            {[
+              ['Restauración', c.matchingLineas.restauracionEcosistemas],
+              ['Hábitats', c.matchingLineas.conservacionHabitats],
+              ['Educación', c.matchingLineas.educacionAmbiental],
+            ].map(([nombre, valor]) => (
+              <div key={nombre} className="flex items-center gap-1.5 text-[10px] text-zinc-500">
+                <span className="w-14 truncate">{nombre}</span>
+                <span className="flex-1 h-1 rounded-full bg-zinc-100 overflow-hidden">
+                  <span className="block h-full bg-brand" style={{ width: `${valor}%` }} />
                 </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
-                  <ShieldAlert className="h-3 w-3" /> Excluida
-                </span>
-              )}
-
-              <span
-                className={`text-xs font-bold px-2 py-0.5 rounded ${
-                  c.matchingGlobal >= 90
-                    ? 'bg-emerald-700 text-white'
-                    : c.matchingGlobal >= 80
-                    ? 'bg-emerald-100 text-emerald-900'
-                    : 'bg-slate-200 text-slate-700'
-                }`}
-              >
-                {c.matchingGlobal}%
-              </span>
-            </div>
-            <span className="text-[10px] text-slate-400 font-medium">afinidad Reforesta</span>
+              </div>
+            ))}
           </div>
 
-          {/* Flecha */}
-          <div className="hidden sm:block text-slate-400 hover:text-slate-700">
-            <ChevronRight className="h-4 w-4" />
+          {/* Estado de Elegibilidad y Afinidad */}
+          <div className="text-right flex items-center gap-3">
+            <div>
+              <div className="flex items-center justify-end gap-1.5">
+                <span
+                  className={`h-2 w-2 rounded-full ${
+                    c.elegible ? 'bg-emerald-600' : 'bg-rose-500'
+                  }`}
+                />
+                <span className="text-xs font-semibold text-zinc-900 font-mono">
+                  {c.matchingGlobal}%
+                </span>
+              </div>
+              <span className="text-[10px] text-zinc-400 block">
+                {c.elegible ? 'Apta' : 'Excluida'}
+              </span>
+            </div>
+
+            <ChevronRight className="h-4 w-4 text-zinc-400 group-hover:text-zinc-700 transition-colors" />
           </div>
 
         </div>

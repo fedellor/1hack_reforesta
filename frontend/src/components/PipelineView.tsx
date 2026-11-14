@@ -13,41 +13,36 @@ interface PipelineViewProps {
 interface ColumnaConfig {
   id: EstadoInterno;
   titulo: string;
-  colorBorde: string;
-  badgeBg: string;
-  badgeText: string;
+  dotColor: string;
 }
 
 export function PipelineView({ convocatorias, onSeleccionar, onCambiarEstado }: PipelineViewProps) {
   const columnas: ColumnaConfig[] = [
-    { id: 'nueva', titulo: '⚪ Nuevas Detectadas', colorBorde: 'border-slate-300', badgeBg: 'bg-slate-100', badgeText: 'text-slate-700' },
-    { id: 'priorizada', titulo: '⭐ Priorizadas / Interés', colorBorde: 'border-blue-300', badgeBg: 'bg-blue-100', badgeText: 'text-blue-800' },
-    { id: 'en_preparacion', titulo: '✏️ En Preparación', colorBorde: 'border-amber-300', badgeBg: 'bg-amber-100', badgeText: 'text-amber-800' },
-    { id: 'presentada', titulo: '✅ Solicitadas / Presentadas', colorBorde: 'border-emerald-300', badgeBg: 'bg-emerald-100', badgeText: 'text-emerald-800' },
-    { id: 'descartada', titulo: '❌ Descartadas', colorBorde: 'border-rose-300', badgeBg: 'bg-rose-100', badgeText: 'text-rose-800' },
+    { id: 'nueva', titulo: 'Nuevas', dotColor: 'bg-zinc-400' },
+    { id: 'priorizada', titulo: 'Priorizadas', dotColor: 'bg-blue-600' },
+    { id: 'en_preparacion', titulo: 'En Preparación', dotColor: 'bg-amber-600' },
+    { id: 'presentada', titulo: 'Presentadas', dotColor: 'bg-emerald-600' },
+    { id: 'descartada', titulo: 'Descartadas', dotColor: 'bg-rose-600' },
   ];
 
   return (
     <div className="space-y-4">
       
       {/* Header del Pipeline */}
-      <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex items-center justify-between">
+      <div className="bg-white border border-zinc-200 rounded-lg p-3.5 shadow-2xs flex items-center justify-between">
         <div>
-          <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-            <Kanban className="h-5 w-5 text-emerald-600" />
-            Pipeline Operativo del Equipo de Reforesta
+          <h2 className="text-sm font-bold text-zinc-900 flex items-center gap-2">
+            <Kanban className="h-4 w-4 text-zinc-700" />
+            Pipeline de Tramitación
           </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Coordina el flujo de trabajo entre los 6-7 miembros del equipo para no duplicar esfuerzos ni perder plazos.
+          <p className="text-xs text-zinc-500 mt-0.5">
+            Flujo de trabajo para coordinar las candidaturas del equipo de Reforesta
           </p>
         </div>
-        <span className="text-xs font-semibold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-          Objetivo: Pasar de 4-5 a &gt;10 solicitudes/año
-        </span>
       </div>
 
       {/* Columnas Kanban */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-3.5 items-start">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-3 items-start">
         {columnas.map((col) => {
           const items = convocatorias.filter((c) => c.estadoInterno === col.id);
           const totalColumna = items.reduce((acc, c) => acc + c.cuantiaMaximaProyecto, 0);
@@ -55,70 +50,64 @@ export function PipelineView({ convocatorias, onSeleccionar, onCambiarEstado }: 
           return (
             <div
               key={col.id}
-              className={`bg-slate-100/70 border ${col.colorBorde} rounded-xl p-3 flex flex-col space-y-2.5 min-h-[500px]`}
+              className="bg-zinc-100/70 border border-zinc-200/80 rounded-lg p-2.5 flex flex-col space-y-2 min-h-[460px]"
             >
               {/* Header de Columna */}
-              <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
-                <span className="font-bold text-xs text-slate-800">{col.titulo}</span>
-                <span className={`text-[10px] font-bold px-2 py-0.2 rounded-full ${col.badgeBg} ${col.badgeText}`}>
+              <div className="flex items-center justify-between border-b border-zinc-200 pb-1.5">
+                <div className="flex items-center gap-1.5">
+                  <span className={`h-2 w-2 rounded-full ${col.dotColor}`} />
+                  <span className="font-semibold text-xs text-zinc-800">{col.titulo}</span>
+                </div>
+                <span className="text-[10px] font-mono font-semibold text-zinc-500 bg-white px-1.5 py-0.2 rounded border border-zinc-200">
                   {items.length}
                 </span>
               </div>
 
-              {/* Total económico de la columna */}
+              {/* Total económico */}
               {items.length > 0 && (
-                <div className="text-[10px] text-slate-500 font-medium pb-1">
-                  Volumen:{' '}
-                  <strong className="text-slate-800">
-                    {new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(
-                      totalColumna
-                    )}
-                  </strong>
+                <div className="text-[10px] font-mono text-zinc-500 pb-0.5">
+                  {new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(
+                    totalColumna
+                  )}
                 </div>
               )}
 
-              {/* Tarjetas de la Columna */}
-              <div className="space-y-2 flex-1">
+              {/* Tarjetas */}
+              <div className="space-y-1.5 flex-1">
                 {items.map((c) => (
                   <div
                     key={c.id}
                     onClick={() => onSeleccionar(c)}
-                    className="bg-white border border-slate-200 rounded-lg p-3 hover:border-emerald-400 hover:shadow-xs transition-all cursor-pointer space-y-2 text-xs"
+                    className="bg-white border border-zinc-200 rounded-md p-2.5 hover:border-zinc-400 transition-colors cursor-pointer space-y-1.5 text-xs shadow-2xs"
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-[9px] font-bold text-slate-500">{c.codigoOficial}</span>
-                      <span className="bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded text-[10px]">
-                        {c.matchingGlobal}%
-                      </span>
+                    <div className="flex items-center justify-between text-[10px] text-zinc-500">
+                      <span className="font-mono">{c.codigoOficial}</span>
+                      <span className="font-mono font-bold text-zinc-700">{c.matchingGlobal}%</span>
                     </div>
 
-                    <h4 className="font-bold text-slate-900 line-clamp-2 leading-snug">{c.titulo}</h4>
+                    <h4 className="font-bold text-zinc-900 line-clamp-2 leading-tight">{c.titulo}</h4>
 
-                    <div className="flex items-center justify-between pt-1 border-t border-slate-100 text-[11px]">
-                      <span className="font-black text-slate-800">
+                    <div className="flex items-center justify-between pt-1 border-t border-zinc-100 text-[11px] font-mono">
+                      <span className="font-bold text-zinc-900">
                         {new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(
                           c.cuantiaMaximaProyecto
                         )}
                       </span>
-                      <span
-                        className={`font-semibold ${
-                          c.diasRestantes <= 7 ? 'text-rose-600' : 'text-slate-500'
-                        }`}
-                      >
+                      <span className={c.diasRestantes <= 7 ? 'text-rose-700 font-bold' : 'text-zinc-500'}>
                         {c.diasRestantes}d
                       </span>
                     </div>
 
-                    {/* Mover rápido a siguiente estado */}
+                    {/* Selector de estado */}
                     <div
                       onClick={(e) => e.stopPropagation()}
-                      className="pt-1.5 flex items-center justify-between text-[10px] border-t border-slate-100"
+                      className="pt-1 flex items-center justify-between text-[10px] border-t border-zinc-100"
                     >
-                      <span className="text-slate-400">Mover:</span>
+                      <span className="text-zinc-400">Estado:</span>
                       <select
                         value={c.estadoInterno}
                         onChange={(e) => onCambiarEstado(c.id, e.target.value as EstadoInterno)}
-                        className="bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-slate-700 text-[10px] font-medium"
+                        className="bg-zinc-50 border border-zinc-200 rounded px-1.5 py-0.5 text-zinc-700 text-[10px] font-medium"
                       >
                         <option value="nueva">Nueva</option>
                         <option value="priorizada">Priorizada</option>
@@ -131,7 +120,7 @@ export function PipelineView({ convocatorias, onSeleccionar, onCambiarEstado }: 
                 ))}
 
                 {items.length === 0 && (
-                  <div className="h-24 flex items-center justify-center text-slate-400 text-[11px] italic border border-dashed border-slate-300 rounded-lg">
+                  <div className="h-20 flex items-center justify-center text-zinc-400 text-[11px] italic border border-dashed border-zinc-200 rounded">
                     Sin convocatorias
                   </div>
                 )}

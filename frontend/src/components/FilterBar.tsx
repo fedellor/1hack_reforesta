@@ -1,16 +1,15 @@
 'use client';
 
 import React from 'react';
-import { Search, CheckCircle2 } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { FiltrosState } from '@/types/convocatoria';
+import { COMUNIDADES } from '@/lib/territorio';
 
 interface FilterBarProps {
   filtros: FiltrosState;
   setFiltros: React.Dispatch<React.SetStateAction<FiltrosState>>;
   ordenarPor: 'matching' | 'cuantia' | 'urgencia';
   setOrdenarPor: (orden: 'matching' | 'cuantia' | 'urgencia') => void;
-  totalConvocatorias: number;
-  totalFiltradas: number;
 }
 
 export function FilterBar({
@@ -18,78 +17,96 @@ export function FilterBar({
   setFiltros,
   ordenarPor,
   setOrdenarPor,
-  totalConvocatorias,
-  totalFiltradas,
 }: FilterBarProps) {
+  const chip = (activo: boolean) =>
+    `px-2.5 py-1.5 rounded-md border font-medium transition-colors ${
+      activo ? 'bg-brand border-brand text-white' : 'bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-50'
+    }`;
   return (
-    <div className="bg-slate-50/70 border-b border-slate-200 px-4 sm:px-6 lg:px-8 py-2.5">
+    <div className="bg-zinc-50/80 border-b border-zinc-200 px-4 sm:px-6 lg:px-8 py-2.5">
       <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 text-xs">
         
-        {/* Buscador de Texto */}
+        {/* Input de Búsqueda */}
         <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" />
           <input
             type="text"
             value={filtros.busqueda}
             onChange={(e) => setFiltros((prev) => ({ ...prev, busqueda: e.target.value }))}
-            placeholder="Buscar por código, organismo o palabra clave..."
-            className="w-full pl-8 pr-3 py-1.5 rounded-md border border-slate-300 text-slate-800 placeholder-slate-400 focus:outline-hidden focus:ring-1 focus:ring-emerald-600 focus:border-emerald-600 bg-white"
+            placeholder="Filtrar por código, organismo, pendiente o término..."
+            className="w-full pl-8 pr-3 py-1.5 rounded-md border border-zinc-200 text-zinc-900 placeholder-zinc-400 focus:outline-hidden focus:border-zinc-400 bg-white text-xs shadow-2xs"
           />
         </div>
 
-        {/* Controles de Filtro */}
+        {/* Controles y Chips de Filtro */}
         <div className="flex items-center flex-wrap gap-2">
           
-          {/* Ámbito */}
+          {/* Chip de Ámbito */}
           <select
             value={filtros.ambito}
             onChange={(e) => setFiltros((prev) => ({ ...prev, ambito: e.target.value }))}
-            className="px-2.5 py-1.5 rounded-md border border-slate-300 text-slate-700 bg-white focus:outline-hidden focus:ring-1 focus:ring-emerald-600 font-medium"
+            className="px-2.5 py-1.5 rounded-md border border-zinc-200 text-zinc-700 bg-white font-medium focus:outline-hidden focus:border-zinc-400 shadow-2xs"
           >
-            <option value="todos">Todo el Territorio</option>
-            <option value="Estatal">Ámbito Estatal</option>
-            <option value="Madrid">Comunidad de Madrid</option>
-            <option value="Galicia">Galicia</option>
-            <option value="Castilla y León">Castilla y León</option>
+            <option value="todos">Todo el territorio</option>
+            <option value="Estatal">Ámbito estatal</option>
+            {COMUNIDADES.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
           </select>
 
-          {/* Tipo de Fuente */}
-          <select
-            value={filtros.tipoFuente}
-            onChange={(e) => setFiltros((prev) => ({ ...prev, tipoFuente: e.target.value }))}
-            className="px-2.5 py-1.5 rounded-md border border-slate-300 text-slate-700 bg-white focus:outline-hidden focus:ring-1 focus:ring-emerald-600 font-medium"
-          >
-            <option value="todos">Todas las Fuentes</option>
-            <option value="publica_estatal">Estatal (MITECO)</option>
-            <option value="publica_autonomica">Autonómica (CCAA)</option>
-            <option value="privada_rsc">Privada (RSC)</option>
-          </select>
-
-          {/* Solo Elegibles Toggle */}
+          {/* Toggle Solo Elegibles */}
           <button
             type="button"
             onClick={() => setFiltros((prev) => ({ ...prev, soloElegibles: !prev.soloElegibles }))}
-            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md font-medium border transition-colors ${
+            className={`px-2.5 py-1.5 rounded-md border font-medium transition-colors shadow-2xs ${
               filtros.soloElegibles
-                ? 'bg-emerald-50 border-emerald-300 text-emerald-800 font-semibold'
-                : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'
+                ? 'bg-brand border-brand text-white'
+                : 'bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-50'
             }`}
           >
-            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-            <span>Solo Elegibles</span>
+            {filtros.soloElegibles ? 'Solo aptas' : 'Todas (incl. excluidas)'}
           </button>
 
-          {/* Ordenar */}
-          <div className="flex items-center gap-1.5 pl-2 border-l border-slate-200">
-            <span className="text-slate-500">Ordenar:</span>
+          {/* Ventana de 30 días */}
+          <button
+            type="button"
+            onClick={() => setFiltros((prev) => ({ ...prev, ventanaDias: prev.ventanaDias === 30 ? 0 : 30 }))}
+            className={chip(filtros.ventanaDias === 30)}
+          >
+            Cierre ≤ 30 días
+          </button>
+
+          {/* Encaje alto */}
+          <button
+            type="button"
+            onClick={() => setFiltros((prev) => ({ ...prev, minMatching: prev.minMatching >= 80 ? 0 : 80 }))}
+            className={chip(filtros.minMatching >= 80)}
+          >
+            Encaje ≥ 80%
+          </button>
+
+          {/* Cuantía mínima */}
+          <select
+            value={filtros.minCuantia}
+            onChange={(e) => setFiltros((prev) => ({ ...prev, minCuantia: Number(e.target.value) }))}
+            className="px-2.5 py-1.5 rounded-md border border-zinc-200 text-zinc-700 bg-white font-medium focus:outline-hidden focus:border-zinc-400"
+          >
+            <option value={0}>Cualquier cuantía</option>
+            <option value={50000}>≥ 50.000 €</option>
+            <option value={100000}>≥ 100.000 €</option>
+          </select>
+
+          {/* Ordenación */}
+          <div className="flex items-center gap-1.5 pl-2 border-l border-zinc-200 text-zinc-500">
+            <span>Ordenar:</span>
             <select
               value={ordenarPor}
               onChange={(e) => setOrdenarPor(e.target.value as 'matching' | 'cuantia' | 'urgencia')}
-              className="px-2 py-1.5 rounded-md border border-slate-300 text-slate-800 bg-white font-medium focus:outline-hidden focus:ring-1 focus:ring-emerald-600"
+              className="px-2 py-1.5 rounded-md border border-zinc-200 text-zinc-800 bg-white font-medium focus:outline-hidden focus:border-zinc-400 shadow-2xs"
             >
-              <option value="matching">Mayor Encaje</option>
-              <option value="cuantia">Mayor Cuantía</option>
-              <option value="urgencia">Cierre Próximo</option>
+              <option value="matching">Mayor encaje</option>
+              <option value="cuantia">Mayor cuantía</option>
+              <option value="urgencia">Cierre próximo</option>
             </select>
           </div>
 
@@ -97,12 +114,6 @@ export function FilterBar({
 
       </div>
 
-      <div className="max-w-7xl mx-auto mt-1.5 flex items-center justify-between text-[11px] text-slate-500">
-        <span>{totalFiltradas} de {totalConvocatorias} convocatorias</span>
-        {filtros.soloElegibles && (
-          <span className="text-slate-400">Descartadas automáticamente convocatorias que no admiten ONGs</span>
-        )}
-      </div>
     </div>
   );
 }
