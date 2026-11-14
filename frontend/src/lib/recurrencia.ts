@@ -24,6 +24,8 @@ export interface Programa {
   ventanaDias: number | null;
   cuantiaMedia: number;
   confianza: Confianza;
+  /** Índice de fiabilidad 0-100: regularidad del mes de publicación ponderada por los años con edición */
+  fiabilidad: number;
   /** Edición abierta ahora, si la hay */
   abierta: Convocatoria | null;
   /** Próxima publicación prevista (tras la última edición detectada) */
@@ -109,6 +111,8 @@ export function detectarProgramas(todas: Convocatoria[], hoy: Date = new Date())
     const regularidad = meses.filter((m) => distMes(m, mes) <= 1).length / meses.length;
     const confianza: Confianza = anios.length >= 3 && regularidad >= 0.75 ? 'alta' : anios.length >= 2 && regularidad >= 0.5 ? 'media' : 'baja';
 
+    const fiabilidad = Math.round(100 * regularidad * Math.min(1, 0.4 + 0.15 * anios.length));
+
     const dia = mediana(primeraDelAnio.filter((c) => fecha(c.fechaPublicacion).getMonth() + 1 === mes).map((c) => fecha(c.fechaPublicacion).getDate()));
     const ventanas = ediciones
       .filter((c) => c.diasRestantes < SIN_PLAZO && c.fechaCierre > c.fechaPublicacion)
@@ -141,6 +145,7 @@ export function detectarProgramas(todas: Convocatoria[], hoy: Date = new Date())
       ventanaDias: ventanas.length ? mediana(ventanas) : null,
       cuantiaMedia: cuantias.length ? Math.round(cuantias.reduce((a, b) => a + b, 0) / cuantias.length) : 0,
       confianza,
+      fiabilidad,
       abierta,
       proxima,
       prepararDesde: new Date(proxima.getTime() - PREPARACION_PREVIA_DIAS * DIA_MS),

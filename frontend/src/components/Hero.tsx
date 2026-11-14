@@ -27,7 +27,7 @@ export function Embudo({ convocatorias, embudo }: { convocatorias: Convocatoria[
   const real = embudo !== null && embudo.detectadas > 0;
   const detectadas = real ? Math.max(embudo.detectadas, convocatorias.length) : convocatorias.length;
   const aptas = convocatorias.filter((c) => c.elegible);
-  const en30 = aptas.filter((c) => !plazoSinFijar(c) && c.diasRestantes <= 30);
+  const en30 = aptas.filter((c) => c.estado !== 'PROXIMA' && !plazoSinFijar(c) && c.diasRestantes <= 30);
   const altoEncaje = en30.filter((c) => c.matchingGlobal >= 80);
   const fondos30 = altoEncaje.reduce((a, c) => a + c.cuantiaMaximaProyecto, 0);
   const descartadas = real ? Math.max(0, embudo.detectadas - embudo.aceptadas) : 0;

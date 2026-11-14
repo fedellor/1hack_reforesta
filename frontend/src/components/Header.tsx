@@ -9,7 +9,7 @@ export interface EstadoDatos {
   actualizado: Date | null;
 }
 
-export type Seccion = 'mapa' | 'plan' | 'historico' | 'empresas' | 'pipeline';
+export type Seccion = 'mapa' | 'plan' | 'prevision' | 'historico' | 'empresas';
 
 interface HeaderProps {
   convocatorias: Convocatoria[];
@@ -26,9 +26,9 @@ interface HeaderProps {
 const ITEMS_MENU: { id: Seccion; label: string }[] = [
   { id: 'mapa', label: 'Mapa' },
   { id: 'plan', label: 'Plan de ataque' },
+  { id: 'prevision', label: 'Previsión' },
   { id: 'historico', label: 'Histórico' },
   { id: 'empresas', label: 'Empresas' },
-  { id: 'pipeline', label: 'Pipeline' },
 ];
 
 export function Header({ convocatorias, seccion, setSeccion, datos, onRefresh, nuevas = 0, proximaSync = null }: HeaderProps) {

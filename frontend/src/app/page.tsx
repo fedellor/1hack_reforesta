@@ -8,10 +8,10 @@ import { Hero, Embudo } from '@/components/Hero';
 import { EmpresasView } from '@/components/EmpresasView';
 import { FilterBar } from '@/components/FilterBar';
 import { ConvocatoriaDrawer } from '@/components/ConvocatoriaDrawer';
-import { PipelineView } from '@/components/PipelineView';
 import { MapView } from '@/components/MapView';
 import { PlanView } from '@/components/PlanView';
 import { HistoricoView } from '@/components/HistoricoView';
+import { PrevisionView } from '@/components/PrevisionView';
 import { detectarProgramas } from '@/lib/recurrencia';
 import { guardarVistas, leerVistas } from '@/lib/novedades';
 import { ESTATAL, TODOS, filtrarPorTerritorio } from '@/lib/territorio';
@@ -19,9 +19,9 @@ import { ESTATAL, TODOS, filtrarPorTerritorio } from '@/lib/territorio';
 const BANNER: Record<Seccion, { titulo: string; migas: string }> = {
   mapa: { titulo: 'Dónde está la financiación', migas: 'Reforesta / Mapa' },
   plan: { titulo: 'Plan de ataque', migas: 'Reforesta / Plan de ataque' },
-  historico: { titulo: 'Histórico y previsión', migas: 'Reforesta / Histórico' },
+  prevision: { titulo: 'Previsión de aperturas', migas: 'Reforesta / Previsión' },
+  historico: { titulo: 'Histórico de convocatorias', migas: 'Reforesta / Histórico' },
   empresas: { titulo: 'Empresas y fundaciones que financian', migas: 'Reforesta / Empresas' },
-  pipeline: { titulo: 'Pipeline de solicitudes', migas: 'Reforesta / Pipeline' },
 };
 
 export default function Home() {
@@ -53,6 +53,7 @@ export default function Home() {
   const [historico, setHistorico] = useState<Convocatoria[]>([]);
   const [historicoOk, setHistoricoOk] = useState<boolean | null>(null);
   const [soloNuevas, setSoloNuevas] = useState(false);
+  const [verDescartadas, setVerDescartadas] = useState(false);
   const [vistasDesde, setVistasDesde] = useState<string | null>(null);
   const [idsNuevas, setIdsNuevas] = useState<Set<string>>(new Set());
   const [convocatoriaSeleccionada, setConvocatoriaSeleccionada] = useState<Convocatoria | null>(null);
@@ -99,6 +100,7 @@ export default function Home() {
         }
 
         if (soloNuevas && !idsNuevas.has(c.id)) return false;
+        if (c.estadoInterno === 'descartada' && !verDescartadas && seccion !== 'empresas') return false;
 
         // Sección Empresas = solo mecenazgo privado (RSC)
         if (seccion === 'empresas' && c.tipoFuente !== 'privada_rsc') return false;
@@ -118,7 +120,7 @@ export default function Home() {
         return true;
       })
       .sort((a, b) => b.matchingGlobal - a.matchingGlobal);
-  }, [convocatorias, filtros, seccion, soloNuevas, idsNuevas]);
+  }, [convocatorias, filtros, seccion, soloNuevas, idsNuevas, verDescartadas]);
 
   const convocatoriasFiltradas = useMemo(
     () => filtrarPorTerritorio(baseFiltrada, filtros.ambito, filtros.provincia),
@@ -148,7 +150,7 @@ export default function Home() {
   };
 
   useEffect(() => {
-    if ((seccion === 'historico' || seccion === 'empresas') && historicoOk === null) {
+    if ((seccion === 'historico' || seccion === 'prevision' || seccion === 'empresas') && historicoOk === null) {
       fetchHistorico().then((r) => {
         setHistorico(r.convocatorias);
         setHistoricoOk(r.disponible);
@@ -157,7 +159,8 @@ export default function Home() {
   }, [seccion, historicoOk]);
 
   const abrir = (c: Convocatoria) => setConvocatoriaSeleccionada(c);
-  const conFiltros = seccion !== 'pipeline' && seccion !== 'empresas' && seccion !== 'historico';
+  const conFiltros = seccion === 'mapa' || seccion === 'plan';
+  const descartadas = convocatorias.filter((c) => c.estadoInterno === 'descartada').length;
 
   return (
     <div className="min-h-screen bg-background text-zinc-800 flex flex-col font-sans antialiased">
@@ -217,7 +220,7 @@ export default function Home() {
 
         {seccion === 'plan' && (
           <>
-            {(filtros.ambito !== TODOS || soloNuevas) && (
+            {(filtros.ambito !== TODOS || soloNuevas || descartadas > 0) && (
               <p className="text-sm text-zinc-500 flex flex-wrap items-center gap-3">
                 {filtros.ambito !== TODOS && (
                   <button onClick={() => setFiltros((p) => ({ ...p, ambito: TODOS, provincia: '' }))} className="underline hover:text-zinc-900">
@@ -227,16 +230,19 @@ export default function Home() {
                 {soloNuevas && (
                   <button onClick={() => setSoloNuevas(false)} className="underline hover:text-zinc-900">Solo nuevas ✕</button>
                 )}
+                {descartadas > 0 && (
+                  <button onClick={() => setVerDescartadas(!verDescartadas)} className="underline hover:text-zinc-900">
+                    {verDescartadas ? 'Ocultar' : 'Mostrar'} {descartadas} descartadas
+                  </button>
+                )}
               </p>
             )}
             <PlanView convocatorias={convocatoriasFiltradas} onSeleccionar={abrir} />
           </>
         )}
+        {seccion === 'prevision' && <PrevisionView historico={historico} disponible={historicoOk} onSeleccionar={abrir} />}
         {seccion === 'historico' && <HistoricoView historico={historico} disponible={historicoOk} onSeleccionar={abrir} />}
         {seccion === 'empresas' && <EmpresasView convocatorias={convocatoriasFiltradas} onSeleccionar={abrir} programas={programas} />}
-        {seccion === 'pipeline' && (
-          <PipelineView convocatorias={convocatorias} onSeleccionar={abrir} onCambiarEstado={handleCambiarEstado} />
-        )}
       </main>
 
       <ConvocatoriaDrawer

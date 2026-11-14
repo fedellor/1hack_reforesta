@@ -4,7 +4,7 @@ import React from 'react';
 import { Building2, ExternalLink, Repeat } from 'lucide-react';
 import { Convocatoria } from '@/types/convocatoria';
 import { formatoEuros } from '@/lib/territorio';
-import { plazoSinFijar } from '@/lib/plazo';
+import { diasHastaApertura, esProxima, plazoSinFijar } from '@/lib/plazo';
 import { esCitaLiteral, limpiarJustificacion } from '@/lib/texto';
 import { Programa, nombreMes, recurrenciaDe } from '@/lib/recurrencia';
 
@@ -49,7 +49,7 @@ export function EmpresasView({ convocatorias, onSeleccionar, programas = [] }: E
             <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
               <span className="rounded-full bg-brand px-3 py-1 text-white">Encaje {c.matchingGlobal}%</span>
               <span className="rounded-full border border-zinc-300 px-3 py-1 text-zinc-700">
-                {plazoSinFijar(c) ? 'Plazo abierto' : `Cierra en ${c.diasRestantes} d`}
+                {esProxima(c) ? `Abre en ${diasHastaApertura(c)} d` : plazoSinFijar(c) ? 'Plazo abierto' : `Cierra en ${c.diasRestantes} d`}
               </span>
               <span className="rounded-full border border-zinc-300 px-3 py-1 text-zinc-700">
                 {c.porcentajeCofinanciacion === 0 ? 'Sin cofinanciación' : `Aportas ${c.porcentajeCofinanciacion}%`}
