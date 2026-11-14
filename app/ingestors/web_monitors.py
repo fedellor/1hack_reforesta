@@ -20,8 +20,8 @@ PRIVATE_FOUNDATION_SOURCES: list[dict[str, str]] = [
         "id": "priv-web-lacaixa",
         "fuente": "FUNDACION_PRIVADA",
         "tipo_oportunidad": "CONVOCATORIA_PRIVADA",
-        "nombre": "Fundación ”la Caixa” (Medio Ambiente)",
-        "url": "https://fundacionlacaixa.org/es/convocatorias-medioambiente",
+        "nombre": "Fundación ”la Caixa” (Medio Ambiente y Convocatorias)",
+        "url": "https://fundacionlacaixa.org/es/",
         "region_hint": "Privada / RSC España",
     },
     {
@@ -29,7 +29,7 @@ PRIVATE_FOUNDATION_SOURCES: list[dict[str, str]] = [
         "fuente": "FUNDACION_PRIVADA",
         "tipo_oportunidad": "CONVOCATORIA_PRIVADA",
         "nombre": "Fundación Repsol & Grupo Sylvestris (Motor Verde)",
-        "url": "https://www.fundacionrepsol.com/es/motor-verde/",
+        "url": "https://www.fundacionrepsol.com/es/que-hacemos/motor-verde/",
         "region_hint": "Privada / RSC España",
     },
     {
@@ -37,7 +37,7 @@ PRIVATE_FOUNDATION_SOURCES: list[dict[str, str]] = [
         "fuente": "FUNDACION_PRIVADA",
         "tipo_oportunidad": "CONVOCATORIA_PRIVADA",
         "nombre": "Fundación Banco Santander (Acción Sostenible)",
-        "url": "https://www.fundacionbancosantander.com/es/accion-sostenible",
+        "url": "https://www.fundacionbancosantander.com/es/inicio",
         "region_hint": "Privada / RSC España",
     },
     {
@@ -45,7 +45,7 @@ PRIVATE_FOUNDATION_SOURCES: list[dict[str, str]] = [
         "fuente": "FUNDACION_PRIVADA",
         "tipo_oportunidad": "CONVOCATORIA_PRIVADA",
         "nombre": "Fundación BBVA (Ayudas Ecología y Conservación)",
-        "url": "https://www.fbbva.es/ayudas/",
+        "url": "https://www.fbbva.es/",
         "region_hint": "Privada / RSC España",
     },
     {
@@ -53,7 +53,7 @@ PRIVATE_FOUNDATION_SOURCES: list[dict[str, str]] = [
         "fuente": "FUNDACION_BIODIVERSIDAD",
         "tipo_oportunidad": "SUBVENCION",
         "nombre": "Fundación Biodiversidad F.S.P. (MITECO)",
-        "url": "https://www.fundacion-biodiversidad.es/convocatorias/",
+        "url": "https://fundacion-biodiversidad.es/fb_en_los_medios/convocatorias",
         "region_hint": "ES - España",
     },
     {

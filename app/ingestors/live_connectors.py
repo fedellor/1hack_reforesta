@@ -1,9 +1,11 @@
 """Live Async Connectors for Official Public & Private Sources: BDNS, PLACSP Atom, BOE, EU SEDIA, 19 CCAA Web/RSS & Private Foundations."""
 import asyncio
-import logging
-import xml.etree.ElementTree as ET
 from datetime import date, timedelta
+import json
+import logging
+import ssl
 from typing import Any
+import xml.etree.ElementTree as ET
 import httpx
 from app.ingestors.web_monitors import (
     PRIVATE_FOUNDATION_SOURCES,
@@ -13,6 +15,28 @@ from app.ingestors.web_monitors import (
 from app.pipeline.orchestrator import RawCandidate
 
 logger = logging.getLogger(__name__)
+
+
+def _build_ssl_context() -> ssl.SSLContext | bool:
+    """Use native OS certificate store via truststore when available (fixes Windows/corporate CAs cleanly)."""
+    try:
+        import truststore  # type: ignore
+
+        return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    except Exception:
+        return True
+
+
+_SSL_VERIFY = _build_ssl_context()
+
+
+def _make_async_client(timeout: float, headers: dict[str, str] | None = None) -> httpx.AsyncClient:
+    return httpx.AsyncClient(
+        timeout=timeout,
+        headers=headers,
+        verify=_SSL_VERIFY,
+        follow_redirects=True,
+    )
 
 BDNS_SEARCH_URL = "https://www.pap.hacienda.gob.es/bdnstrans/api/convocatorias/busqueda"
 BOE_SUMARIO_URL = "https://www.boe.es/datosabiertos/api/boe/sumario/{ymd}"
@@ -160,7 +184,7 @@ async def fetch_live_bdns_candidates(
                 logger.debug("BDNS live query for '%s' skipped: %s", term, exc)
                 return []
 
-    async with httpx.AsyncClient(timeout=timeout, headers=headers, follow_redirects=True) as client:
+    async with _make_async_client(timeout=timeout, headers=headers) as client:
         results_lists = await asyncio.gather(*[_query_term(client, t) for t in search_terms])
 
     for items in results_lists:
@@ -303,7 +327,7 @@ async def fetch_live_boe_candidates(
                 logger.debug("BOE live summary for %s skipped: %s", ymd, exc)
         return day_items
 
-    async with httpx.AsyncClient(timeout=timeout, headers=headers, follow_redirects=True) as client:
+    async with _make_async_client(timeout=timeout, headers=headers) as client:
         batches = await asyncio.gather(
             *[_fetch_day(client, today - timedelta(days=offset)) for offset in range(days_back)]
         )
@@ -320,17 +344,30 @@ async def fetch_live_boe_candidates(
 async def fetch_live_eu_sedia_candidates(
     timeout: float = 6.0,
 ) -> list[RawCandidate]:
-    """Query the European Commission Funding & Tenders Portal (SEDIA API) concurrently."""
-    candidates: list[RawCandidate] = []
-    seen_ids: set[str] = set()
+    """
+    Query the European Commission Funding & Tenders Portal (SEDIA Search POST API) concurrently
+    for open and forthcoming EU calls (LIFE, Horizon Europe, Interreg, EMFAF) in ES/EN.
+    """
+    candidates_by_id: dict[str, RawCandidate] = {}
     queries = [
-        "reforestation wildfire forest restoration LIFE",
-        "biodiversity Natura 2000 forest fire Horizon Europe",
-        "silviculture afforestation carbon farming soil",
-        "nature restoration green infrastructure riparian",
-        "Interreg forest climate adaptation Spain",
+        "reforestation OR wildfire OR forest restoration OR LIFE",
+        "biodiversity OR Natura 2000 OR forest OR fire OR Horizon",
+        "silviculture OR afforestation OR carbon farming OR soil",
+        "nature restoration OR green infrastructure OR riparian",
+        "Interreg OR forest OR climate adaptation",
     ]
     sem = asyncio.Semaphore(5)
+    query_blob = json.dumps(
+        {
+            "bool": {
+                "must": [
+                    {"terms": {"type": ["1", "2"]}},
+                    {"terms": {"status": ["31094501", "31094502"]}},
+                ]
+            }
+        }
+    )
+    languages_blob = json.dumps(["en", "es"])
 
     async def _query_sedia(client: httpx.AsyncClient, q: str) -> list[RawCandidate]:
         batch: list[RawCandidate] = []
@@ -342,19 +379,27 @@ async def fetch_live_eu_sedia_candidates(
                     "pageSize": "15",
                     "pageNumber": "1",
                 }
-                resp = await client.get(EU_SEDIA_SEARCH_URL, params=params)
+                files = {
+                    "query": ("blob", query_blob, "application/json"),
+                    "languages": ("blob", languages_blob, "application/json"),
+                }
+                resp = await client.post(EU_SEDIA_SEARCH_URL, params=params, files=files)
                 if resp.status_code != 200:
                     return []
                 data = resp.json()
                 for r in data.get("results", []):
                     meta = r.get("metadata", {})
-                    ident_list = meta.get("identifier", []) or [r.get("reference", "")]
+                    ident_list = (
+                        meta.get("identifier")
+                        or meta.get("callIdentifier")
+                        or ([r.get("reference")] if r.get("reference") else [])
+                    )
                     ident = str(ident_list[0]).strip() if ident_list else ""
-                    title_list = meta.get("title", []) or [r.get("summary", "")]
+                    title_list = meta.get("title") or ([r.get("summary")] if r.get("summary") else [])
                     title = str(title_list[0]).strip() if title_list else ""
                     if not ident or not title:
                         continue
-                    desc_list = meta.get("descriptionByte", []) or meta.get("callTitle", []) or []
+                    desc_list = meta.get("descriptionByte") or meta.get("callTitle") or []
                     desc = " ".join(str(x) for x in desc_list)
                     deadline_list = meta.get("deadlineDate", [])
                     deadline_raw = str(deadline_list[0])[:10] if deadline_list else None
@@ -394,16 +439,16 @@ async def fetch_live_eu_sedia_candidates(
                 logger.debug("EU SEDIA live query for '%s' skipped: %s", q, exc)
         return batch
 
-    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+    async with _make_async_client(timeout=timeout, headers={"User-Agent": "1hack_reforesta/2.0"}) as client:
         batches = await asyncio.gather(*[_query_sedia(client, q) for q in queries])
 
     for batch in batches:
         for cand in batch:
-            if cand.id not in seen_ids:
-                seen_ids.add(cand.id)
-                candidates.append(cand)
+            prev = candidates_by_id.get(cand.id)
+            if prev is None or len(cand.texto) > len(prev.texto):
+                candidates_by_id[cand.id] = cand
 
-    return candidates
+    return list(candidates_by_id.values())
 
 
 def _parse_codice_entry_metadata(entry: ET.Element) -> tuple[list[str], str | None, float | None, str | None]:
@@ -499,7 +544,7 @@ async def fetch_live_placsp_candidates(timeout: float = 6.0) -> list[RawCandidat
             logger.debug("PLACSP Atom live feed '%s' skipped: %s", url, exc)
         return items
 
-    async with httpx.AsyncClient(timeout=timeout, headers=headers, follow_redirects=True) as client:
+    async with _make_async_client(timeout=timeout, headers=headers) as client:
         batches = await asyncio.gather(
             _fetch_feed(client, PLACSP_ATOM_STATE_URL),
             _fetch_feed(client, PLACSP_ATOM_LOCAL_URL),
@@ -534,7 +579,7 @@ async def _gather_web_monitors(
                     item.fecha_publicacion = date.today()
             return batch
 
-    async with httpx.AsyncClient(timeout=timeout, headers=headers, follow_redirects=True) as client:
+    async with _make_async_client(timeout=timeout, headers=headers) as client:
         batches = await asyncio.gather(*[_run_one(client, s) for s in sources])
 
     for batch in batches:
@@ -606,7 +651,7 @@ async def enrich_candidates_with_linked_pdfs(
                 api_key_override=api_key_override,
             )
 
-    async with httpx.AsyncClient(timeout=timeout, headers=headers, follow_redirects=True) as client:
+    async with _make_async_client(timeout=timeout, headers=headers) as client:
         results = await asyncio.gather(*[_enrich_one(client, c) for c in targets])
 
     return sum(1 for r in results if r)
