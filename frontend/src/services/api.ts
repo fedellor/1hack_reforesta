@@ -131,6 +131,39 @@ export async function fetchEmbudo(): Promise<EmbudoReal | null> {
   }
 }
 
+export interface ReforestaProfile {
+  nombre: string;
+  nif: string;
+  anio_fundacion: number;
+  registro_nacional: string;
+  utilidad_publica: boolean;
+  domicilio_social: string;
+  email: string;
+  telefono: string;
+  web: string;
+  documentos: {
+    estatutos_pdf: string;
+    utilidad_publica_pdf: string;
+    memoria_2024_pdf: string;
+  };
+  fines_estatutarios: string[];
+  proyectos_activos_espana: string[];
+  deducciones_fiscales: {
+    personas_juridicas: string;
+    personas_fisicas: string;
+  };
+}
+
+export async function fetchReforestaProfile(): Promise<ReforestaProfile | null> {
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/v1/reforesta/profile`, { cache: 'no-store' });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
 /** Persiste el estado interno (pipeline) en el backend. Devuelve false si no se pudo. */
 export async function actualizarEstadoBackend(id: string, estadoInterno: EstadoInterno): Promise<boolean> {
   try {

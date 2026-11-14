@@ -1,7 +1,15 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { actualizarEstadoBackend, fetchConvocatorias, fetchEmbudo, fetchHistorico, EmbudoReal } from '@/services/api';
+import {
+  actualizarEstadoBackend,
+  fetchConvocatorias,
+  fetchEmbudo,
+  fetchHistorico,
+  fetchReforestaProfile,
+  EmbudoReal,
+  ReforestaProfile,
+} from '@/services/api';
 import { Convocatoria, FiltrosState, EstadoInterno } from '@/types/convocatoria';
 import { Header, Seccion, EstadoDatos } from '@/components/Header';
 import { Hero, Embudo } from '@/components/Hero';
@@ -18,23 +26,29 @@ import { puntajeBusqueda } from '@/lib/search';
 import { ESTATAL, TODOS, filtrarPorTerritorio } from '@/lib/territorio';
 
 const BANNER: Record<Seccion, { titulo: string; migas: string }> = {
-  mapa: { titulo: 'Dónde está la financiación', migas: 'Reforesta / Mapa' },
-  plan: { titulo: 'Plan de ataque', migas: 'Reforesta / Plan de ataque' },
-  prevision: { titulo: 'Previsión de aperturas', migas: 'Reforesta / Previsión' },
-  historico: { titulo: 'Histórico de convocatorias', migas: 'Reforesta / Histórico' },
-  empresas: { titulo: 'Empresas y fundaciones que financian', migas: 'Reforesta / Empresas' },
+  mapa: { titulo: 'Dónde está la financiación forestal en España', migas: 'Uso Interno / Mapa' },
+  plan: { titulo: 'Plan de ataque y plazos', migas: 'Uso Interno / Plan de ataque' },
+  prevision: { titulo: 'Previsión de aperturas', migas: 'Uso Interno / Previsión' },
+  historico: { titulo: 'Histórico de convocatorias (desde 2016)', migas: 'Uso Interno / Histórico' },
+  empresas: { titulo: 'Empresas y fundaciones que financian', migas: 'Uso Interno / Empresas RSC' },
 };
 
 export default function Home() {
   const [convocatorias, setConvocatorias] = useState<Convocatoria[]>([]);
   const [datos, setDatos] = useState<EstadoDatos>({ fuente: 'cargando', actualizado: null });
   const [embudo, setEmbudo] = useState<EmbudoReal | null>(null);
+  const [perfil, setPerfil] = useState<ReforestaProfile | null>(null);
   // Carga desde el backend real y se refresca cada minuto (y al volver a la pestaña)
   const cargar = useCallback(async () => {
-    const [r, e] = await Promise.all([fetchConvocatorias(), fetchEmbudo()]);
+    const [r, e, p] = await Promise.all([
+      fetchConvocatorias(),
+      fetchEmbudo(),
+      fetchReforestaProfile(),
+    ]);
     // Si el backend no responde se conserva lo último cargado (no se vacía la pantalla por un corte puntual)
     setConvocatorias((prev) => (r.fuente === 'backend' ? r.convocatorias : prev));
-    setEmbudo(e);
+    if (e) setEmbudo(e);
+    if (p) setPerfil(p);
     setDatos({ fuente: r.fuente, actualizado: new Date(r.timestamp) });
   }, []);
 
@@ -185,6 +199,7 @@ export default function Home() {
         onRefresh={cargar}
         nuevas={idsNuevas.size}
         proximaSync={embudo?.proximaSincronizacion ?? null}
+        estatutosPdfUrl={perfil?.documentos.estatutos_pdf}
       />
 
       <Hero titulo={BANNER[seccion].titulo} migas={BANNER[seccion].migas} />
@@ -194,10 +209,25 @@ export default function Home() {
         <FilterBar
           filtros={filtros}
           setFiltros={setFiltros}
+          totalResultados={convocatoriasFiltradas.length}
+          onResetFiltros={() =>
+            setFiltros({
+              busqueda: '',
+              ambito: TODOS,
+              provincia: '',
+              tipoFuente: 'todos',
+              soloElegibles: true,
+              minMatching: 0,
+              soloUrgentes: false,
+              minCuantia: 0,
+              ventanaDias: 30,
+              anio: 0,
+            })
+          }
         />
       )}
 
-      <main className="flex-1 max-w-[1300px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-5">
+      <main className="flex-1 max-w-[1300px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
         {datos.fuente === 'sin_conexion' && (
           <div className="border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-900">
             <strong>Sin conexión con el radar.</strong> No hay datos de respaldo: las convocatorias aparecerán en cuanto el backend esté disponible
@@ -275,10 +305,42 @@ export default function Home() {
         onCambiarEstado={handleCambiarEstado}
       />
 
-      <footer className="bg-[#141414] text-zinc-400 mt-8">
-        <div className="max-w-[1300px] mx-auto px-4 sm:px-6 lg:px-8 py-4 text-xs flex flex-wrap items-center justify-between gap-2">
-          <span>Radar de financiación · uso interno de Reforesta</span>
-          <span>Fuentes: BDNS · BOE · boletines autonómicos · fundaciones y programas de empresas</span>
+      <footer className="bg-[#191919] text-[#b8b8b8] mt-10 border-t border-white/10 py-3 px-4 sm:px-6 lg:px-8 text-xs">
+        <div className="max-w-[1300px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
+          <div className="flex items-center gap-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/reforesta/logo-reforesta-blanco-pie.png"
+              alt="Reforesta"
+              className="h-5 w-auto object-contain opacity-90"
+            />
+            <span>Uso interno · Radar de financiación forestal (BDNS · BOE · CCAA · PLACSP · SEDIA · 07:00h)</span>
+          </div>
+          <div className="flex items-center gap-3 text-[11px] text-zinc-400">
+            <a
+              href={
+                perfil?.documentos.estatutos_pdf ??
+                'https://reforesta.es/wp-content/uploads/2026/09/Estatutos-2026-Web.pdf'
+              }
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-[#7cc142] transition-colors"
+            >
+              Estatutos (PDF)
+            </a>
+            <span>·</span>
+            <a
+              href={
+                perfil?.documentos.utilidad_publica_pdf ??
+                'https://reforesta.es/wp-content/uploads/2024/02/UTILIDAD-PUBLICA-2024.pdf'
+              }
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-[#7cc142] transition-colors"
+            >
+              Utilidad Pública (PDF)
+            </a>
+          </div>
         </div>
       </footer>
     </div>
