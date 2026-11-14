@@ -1,8 +1,7 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Convocatoria, EstadoInterno } from '@/types/convocatoria';
-import { Kanban } from 'lucide-react';
 
 interface PipelineViewProps {
   convocatorias: Convocatoria[];
@@ -17,6 +16,8 @@ interface ColumnaConfig {
 }
 
 export function PipelineView({ convocatorias, onSeleccionar, onCambiarEstado }: PipelineViewProps) {
+  const [abiertas, setAbiertas] = useState<Record<string, boolean>>({});
+  const TOPE = 5;
   const columnas: ColumnaConfig[] = [
     { id: 'nueva', titulo: 'Nuevas', dotColor: 'bg-zinc-400' },
     { id: 'priorizada', titulo: 'Priorizadas', dotColor: 'bg-blue-600' },
@@ -28,29 +29,17 @@ export function PipelineView({ convocatorias, onSeleccionar, onCambiarEstado }: 
   return (
     <div className="space-y-4">
       
-      {/* Header del Pipeline */}
-      <div className="bg-white border border-zinc-200 rounded-none p-3.5 shadow-2xs flex items-center justify-between">
-        <div>
-          <h2 className="text-sm font-bold text-zinc-900 flex items-center gap-2">
-            <Kanban className="h-4 w-4 text-zinc-700" />
-            Pipeline de Tramitación
-          </h2>
-          <p className="text-xs text-zinc-500 mt-0.5">
-            Flujo de trabajo para coordinar las candidaturas del equipo de Reforesta
-          </p>
-        </div>
-      </div>
-
       {/* Columnas Kanban */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-3 items-start">
         {columnas.map((col) => {
-          const items = convocatorias.filter((c) => c.estadoInterno === col.id);
-          const totalColumna = items.reduce((acc, c) => acc + c.cuantiaMaximaProyecto, 0);
+          const todas = convocatorias.filter((c) => c.estadoInterno === col.id).sort((a, b) => a.diasRestantes - b.diasRestantes);
+          const items = abiertas[col.id] ? todas : todas.slice(0, TOPE);
+          const totalColumna = todas.reduce((acc, c) => acc + c.cuantiaMaximaProyecto, 0);
 
           return (
             <div
               key={col.id}
-              className="bg-zinc-100/70 border border-zinc-200/80 rounded-none p-2.5 flex flex-col space-y-2 min-h-[460px]"
+              className="bg-zinc-100/70 border border-zinc-200/80 rounded-none p-2.5 flex flex-col space-y-2 min-h-[200px]"
             >
               {/* Header de Columna */}
               <div className="flex items-center justify-between border-b border-zinc-200 pb-1.5">
@@ -59,12 +48,12 @@ export function PipelineView({ convocatorias, onSeleccionar, onCambiarEstado }: 
                   <span className="font-semibold text-xs text-zinc-800">{col.titulo}</span>
                 </div>
                 <span className="text-[11px] font-semibold text-zinc-500 bg-white px-1.5 py-0.2 rounded border border-zinc-200">
-                  {items.length}
+                  {todas.length}
                 </span>
               </div>
 
               {/* Total económico */}
-              {items.length > 0 && (
+              {todas.length > 0 && (
                 <div className="text-[11px] text-zinc-500 pb-0.5">
                   {new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(
                     totalColumna
@@ -93,8 +82,8 @@ export function PipelineView({ convocatorias, onSeleccionar, onCambiarEstado }: 
                           c.cuantiaMaximaProyecto
                         )}
                       </span>
-                      <span className={c.diasRestantes <= 7 ? 'text-rose-700 font-bold' : 'text-zinc-500'}>
-                        {c.diasRestantes}d
+                      <span className={c.diasRestantes < 7 ? 'text-rose-700 font-bold' : c.diasRestantes < 20 ? 'text-amber-700 font-semibold' : 'text-zinc-500'}>
+                        cierra en {c.diasRestantes} d
                       </span>
                     </div>
 
@@ -119,7 +108,16 @@ export function PipelineView({ convocatorias, onSeleccionar, onCambiarEstado }: 
                   </div>
                 ))}
 
-                {items.length === 0 && (
+                {todas.length > TOPE && (
+                  <button
+                    onClick={() => setAbiertas((p) => ({ ...p, [col.id]: !p[col.id] }))}
+                    className="w-full py-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 hover:text-zinc-900"
+                  >
+                    {abiertas[col.id] ? 'Ver menos' : `Ver ${todas.length - TOPE} más`}
+                  </button>
+                )}
+
+                {todas.length === 0 && (
                   <div className="h-20 flex items-center justify-center text-zinc-400 text-xs italic border border-dashed border-zinc-200 rounded">
                     Sin convocatorias
                   </div>

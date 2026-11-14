@@ -217,7 +217,7 @@ class _HTMLOpportunityParser(HTMLParser):
             ctx = re.sub(r"\s+", " ", " ".join(self._block_chunks)).strip()
             if not ctx and self._last_heading:
                 ctx = self._last_heading
-            elif self._last_heading and self._last_heading not in ctx:
+            elif self._last_heading and len(ctx) < 25 and self._last_heading not in ctx:
                 ctx = f"{self._last_heading}. {ctx}"
             if self._anchor_href:
                 self.anchors.append((self._anchor_href, a_text[:260], ctx[:360]))

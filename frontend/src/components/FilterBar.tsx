@@ -10,6 +10,8 @@ interface FilterBarProps {
   setFiltros: React.Dispatch<React.SetStateAction<FiltrosState>>;
   ordenarPor: 'matching' | 'cuantia' | 'urgencia';
   setOrdenarPor: (orden: 'matching' | 'cuantia' | 'urgencia') => void;
+  /** Qué controles tienen sentido en cada sección */
+  modo: 'mapa' | 'lista' | 'calendario';
 }
 
 export function FilterBar({
@@ -17,6 +19,7 @@ export function FilterBar({
   setFiltros,
   ordenarPor,
   setOrdenarPor,
+  modo,
 }: FilterBarProps) {
   const chip = (activo: boolean) =>
     `px-5 py-2.5 rounded-full border font-semibold uppercase text-xs tracking-wide transition-colors ${
@@ -44,7 +47,7 @@ export function FilterBar({
           {/* Chip de Ámbito */}
           <select
             value={filtros.ambito}
-            onChange={(e) => setFiltros((prev) => ({ ...prev, ambito: e.target.value }))}
+            onChange={(e) => setFiltros((prev) => ({ ...prev, ambito: e.target.value, provincia: '' }))}
             className="px-4 py-2 rounded-full border border-zinc-200 text-zinc-700 bg-white font-medium focus:outline-hidden focus:border-zinc-400 shadow-2xs"
           >
             <option value="todos">Todo el territorio</option>
@@ -68,13 +71,13 @@ export function FilterBar({
           </button>
 
           {/* Ventana de 30 días */}
-          <button
+          {modo !== 'calendario' && <button
             type="button"
             onClick={() => setFiltros((prev) => ({ ...prev, ventanaDias: prev.ventanaDias === 30 ? 0 : 30 }))}
             className={chip(filtros.ventanaDias === 30)}
           >
             Cierre ≤ 30 días
-          </button>
+          </button>}
 
           {/* Encaje alto */}
           <button
@@ -97,7 +100,7 @@ export function FilterBar({
           </select>
 
           {/* Ordenación */}
-          <div className="flex items-center gap-1.5 pl-2 border-l border-zinc-200 text-zinc-500">
+          {modo === 'lista' && <div className="flex items-center gap-1.5 pl-2 border-l border-zinc-200 text-zinc-500">
             <span>Ordenar:</span>
             <select
               value={ordenarPor}
@@ -108,7 +111,7 @@ export function FilterBar({
               <option value="cuantia">Mayor cuantía</option>
               <option value="urgencia">Cierre próximo</option>
             </select>
-          </div>
+          </div>}
 
         </div>
 

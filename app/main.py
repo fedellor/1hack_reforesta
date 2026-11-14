@@ -6,11 +6,13 @@ from typing import Any
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
+from pathlib import Path
 from sqlalchemy import func, or_
 from sqlmodel import Session, select
-from app.config import settings
+from app.config import FUENTES_DIR, settings
 from app.database import engine, get_session, init_db, query_cache
+from app.domain.reforesta_profile import get_reforesta_profile
 from app.geo import CCAA_CATALOG
 from app.ingestors.fuentes_local import pdf_doc_to_candidate
 from app.ingestors.live_connectors import SOURCES_REGISTRY
@@ -19,6 +21,7 @@ from app.ingestors.runner import (
     ensure_initial_seed,
     refresh_live_database_states,
     run_full_ingestion,
+    seconds_until_next_daily_sync,
 )
 from app.models import (
     AnalyzeTextRequest,
@@ -235,11 +238,15 @@ def health_check(session: Session = Depends(get_session)) -> dict[str, Any]:
         )
     )
 
+    _, next_sync_dt = seconds_until_next_daily_sync()
     return {
         "status": "ok",
         "version": settings.app_version,
         "database_engine": "postgresql" if "postgres" in settings.database_url else "sqlite_wal",
         "auto_sync_daemon_active": settings.auto_sync_enabled,
+        "daily_sync_schedule": f"{settings.daily_sync_hour:02d}:{settings.daily_sync_minute:02d} {settings.daily_sync_timezone}",
+        "next_daily_sync_at": next_sync_dt.isoformat(),
+        "include_catalog_templates": settings.include_catalog_templates,
         "llm_judge_tier": active_llm_tier,
         "llm_model": settings.gemini_model,
         "counts": {
@@ -260,7 +267,7 @@ def health_check(session: Session = Depends(get_session)) -> dict[str, Any]:
 
 @app.get("/api/convocatorias", tags=["Puente Directo Frontend (Next.js roialtra)"])
 def get_frontend_convocatorias(
-    estado: str | None = Query(default="ACTIVA", description="ACTIVA | CERRADA | TODAS"),
+    estado: str | None = Query(default="ABIERTAS", description="ABIERTAS (ACTIVA+PROXIMA) | ACTIVA | PROXIMA | CERRADA | TODAS"),
     ccaa: str | None = Query(default=None, description="Filtrar por CCAA (ej. ES-MD, ES-GA)"),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
@@ -270,7 +277,10 @@ def get_frontend_convocatorias(
     """
     stmt = select(Opportunity)
     if estado and estado.upper() != "TODAS":
-        stmt = stmt.where(Opportunity.estado == estado.upper())
+        if estado.upper() == "ABIERTAS":
+            stmt = stmt.where(Opportunity.estado.in_(["ACTIVA", "PROXIMA"]))
+        else:
+            stmt = stmt.where(Opportunity.estado == estado.upper())
     if ccaa:
         ccaa_up = ccaa.upper()
         if ccaa_up not in ("ES", "EU"):
@@ -856,6 +866,28 @@ def verify_golden_benchmark(session: Session = Depends(get_session)) -> dict[str
     }
 
 
+@app.get("/api/v1/fuentes/{filename}", tags=["Golden Benchmark (fuentes/)"])
+def serve_local_source_pdf(filename: str) -> FileResponse:
+    """Serve any official PDF stored inside ./fuentes/ directly with inline PDF disposition."""
+    safe_name = Path(filename).name
+    if not safe_name.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Solo se pueden servir documentos PDF oficiales")
+    target = (FUENTES_DIR / safe_name).resolve()
+    if not str(target).startswith(str(FUENTES_DIR.resolve())) or not target.is_file():
+        raise HTTPException(status_code=404, detail=f"Documento oficial '{safe_name}' no encontrado en ./fuentes/")
+    return FileResponse(
+        path=target,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{safe_name}"'},
+    )
+
+
+@app.get("/api/v1/reforesta/profile", tags=["Perfil Institucional Reforesta"])
+def read_reforesta_institutional_profile() -> dict[str, Any]:
+    """Return Reforesta's verified NIF, registry ID, 11 statutory fines, tax deductions & PDF URLs."""
+    return get_reforesta_profile()
+
+
 @app.get("/api/v1/ingest/runs", tags=["Ingesta y Pipeline Híbrido"])
 def list_ingestion_runs(
     limit: int = Query(default=10, ge=1, le=50),
@@ -863,8 +895,11 @@ def list_ingestion_runs(
 ) -> dict[str, Any]:
     """Return recent ingestion runs with exact live connector counts, enrichments, and rejected noise samples."""
     rows = session.exec(select(IngestionRun).order_by(IngestionRun.id.desc()).limit(limit)).all()
+    _, next_sync_dt = seconds_until_next_daily_sync()
     return {
         "total_returned": len(rows),
+        "daily_sync_schedule": f"{settings.daily_sync_hour:02d}:{settings.daily_sync_minute:02d} {settings.daily_sync_timezone}",
+        "next_daily_sync_at": next_sync_dt.isoformat(),
         "runs": [
             {
                 "run_id": r.id,

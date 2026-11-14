@@ -17,6 +17,7 @@ export interface Convocatoria {
   organismo: string;              // Ej: "MITECO", "Comunidad de Madrid", "Fundación Santander"
   tipoFuente: TipoFuente;
   ambitoTerritorial: string;      // "Estatal", "Comunidad de Madrid", "Galicia", "Castilla y León", etc.
+  provincia?: string;             // Solo si la convocatoria es provincial (p. ej. diputaciones); si falta, aplica a toda la comunidad
   orografiaPendiente?: string;    // "Pendiente pronunciada (>20%)", "Media ladera", "Llanura / Ribera"
   
   // Finanzas
@@ -73,5 +74,6 @@ export interface FiltrosState {
   minMatching: number;
   soloUrgentes: boolean;
   minCuantia: number;
+  provincia: string;   // '' = sin provincia elegida
   ventanaDias: number; // 0 = sin límite; 30 = solo convocatorias que cierran en los próximos 30 días
 }

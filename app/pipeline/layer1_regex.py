@@ -51,7 +51,8 @@ PATTERNS_REFORESTATION: list[tuple[str, re.Pattern[str]]] = [
         "silvicultura",
         re.compile(
             r"\b("
-            r"silvicult\w*|selvicult\w*|masa[s]?\s+forestal\w*|gesti[oó]n\s+forestal|"
+            r"silvicult\w*|selvicult\w*|s[ei]lv[ií]cola\w*|masa[s]?\s+forestal\w*|gesti[oó]n\s+forestal|"
+            r"trabajos?\s+forestal\w*|inversion(?:es)?\s+forestal\w*|"
             r"monte[s]?\s+(?:p[uú]blico|vecinal|comunal|protector|ordenado|demanial|catalogado)\w*|"
             r"aprovechamiento[s]?\s+forestal\w*|ordenaci[oó]n\s+de\s+montes|arboricult\w*|parcelas?\s+forestal\w*|"
             r"dehesa[s]?|agroforest\w*|sistemas?\s+agroforestal\w*|silvopastor\w*|mosaico\s+agroforestal|"
@@ -276,7 +277,20 @@ HARD_EXCLUSION_PATTERN = re.compile(
     r"hispaled|koiki|gne\s+finance|aventura\s+digital|bases\s+legales\s+ii\s+convocatoria|presenta\s+tu\s+candidatura|"
     r"premios?\s+fronteras\s+del\s+conocimiento|premios?\s+de\s+inform[aá]tica|red\s+leonardo|"
     r"lorem\s+ips\w*|test\s+iframe|proyectos?\s+ganadores?|"
-    r"AYUD0580T01|da[ñn]os\s+ocasionados\s+por\s+especies\s+de\s+la\s+fauna\s+silvestre"
+    r"AYUD0580T01|da[ñn]os\s+ocasionados\s+por\s+especies\s+de\s+la\s+fauna\s+silvestre|"
+    r"ganado\s+(?:bovino|ovino|caprino|porcino)|repoblaci[oó]n\s+en\s+explotaciones?\s+de\s+ganado|"
+    r"subv\.?\s*nom\.|subvenciones?\s+nominativ\w*|becas?\s+(?:de\s+)?(?:aella|deportistas)|"
+    r"deportistas\s+con\s+discapacidad|el\s+prado\s+en\s+las\s+calles|descargar\s+noticia\s+en\s+prensa|"
+    r"veintitr[eé]s\s+conversaciones|programa\s+social\s+\d{4}|"
+    r"servicios?\s+m[ií]nimos?|convocatoria\s+de\s+huelga|derecho\s+de\s+huelga|"
+    r"tibur[oó]n\s+marrajo|flota\s+espa[ñn]ola|\bcites\b|pesca\s+mar[ií]tima|"
+    r"servicio\s+de\s+vigilancia\s+de\s+las?\s+instalaciones|vigilancia\s+y\s+seguridad|"
+    r"exposici[oó]n\s+fotogr[aá]fica|el\s+toro\s+bravo|programas?\s+m[aá]ster|erasmus\s+mundus|"
+    r"becas?\s+para\s+el\s+programa\s+m[aá]ster|ayudas?\s+de\s+movilidad\s+para\s+estudiantes|"
+    r"rapaces\s+nocturnas|aves\s+palustres|\bodonatos\b|"
+    r"pista\s+abriendo\s+pastos|abriendo\s*camino\s*a\s*los\s*pastos|convenio\s+ga\b|"
+    r"becas?\s+de\s+formaci[oó]n|becas?\s+(?:fundaci[oó]n\s+biodiversidad|cop\s+\d{4})|club(?:es)?\s+de\s+caza|asociaciones?\s+de\s+cazadores|"
+    r"promoting\s+sustainable\s+forestry\s+in\s+(?:romania|bulgaria|greece|poland|brazil|vietnam)\b"
     r")",
     re.IGNORECASE,
 )

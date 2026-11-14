@@ -291,12 +291,42 @@ class Opportunity(SQLModel, table=True):
             if s.strip()
         ]
 
-        citas = self.citas_bases or [
-            f"[{self.codigo_oficial}] {self.justificacion_juez}",
-            f"[Plazo Oficial] {self.plazo_texto_original or 'Según bases reguladoras'}",
-        ]
-
+        from app.domain.reforesta_profile import match_statute_alignment
         from app.pipeline.metadata_extractor import build_frontend_metadata_bundle
+
+        est_align = match_statute_alignment(
+            titulo=self.titulo_limpio,
+            texto=f"{self.resumen} {self.gastos_subvencionables or ''}",
+            categorias=self.categorias,
+            ccaa_codigo=self.ccaa_codigo,
+        )
+        citas = list(
+            self.citas_bases
+            or [
+                f"[{self.codigo_oficial}] {self.justificacion_juez}",
+                f"[Plazo Oficial] {self.plazo_texto_original or 'Según bases reguladoras'}",
+            ]
+        )
+        statute_cita = (
+            f"[Estatutos Reforesta] {' · '.join(est_align['fines_alineados'][:2])} "
+            f"({est_align['elegibilidad_juridica']})"
+        )
+        if not any("[Estatutos Reforesta]" in c for c in citas):
+            citas.append(statute_cita)
+        if est_align["presencia_territorial_previa"] and not any("[Presencia Reforesta]" in c for c in citas):
+            citas.append(f"[Presencia Reforesta] {est_align['presencia_territorial_previa']}")
+
+        def _pick_specific_doc_url(*candidates: str | None) -> str:
+            urls = [u.strip() for u in candidates if u and u.strip()]
+            for u in urls:
+                low = u.lower()
+                if ".pdf" in low or "iddocumento=" in low or "/api/v1/fuentes/" in low or "descargararchivo" in low:
+                    return u
+            for u in urls:
+                low = u.lower()
+                if any(tok in low for tok in ("documentid=", "verobj", "referencia=", "txt.php?id=", "/eli/", "topic-details/", "/convocatoria/", "convocatorias/")):
+                    return u
+            return urls[0] if urls else ""
 
         front_meta = build_frontend_metadata_bundle(self)
         ccaa_geojson_map = {
@@ -368,7 +398,11 @@ class Opportunity(SQLModel, table=True):
                 "Gastos financieros, intereses deudores o sanciones administrativas",
             ],
             "requisitosSolvencia": requisitos_list[:4],
-            "urlBasesPdf": self.url_bases_reguladoras or self.url_boletin_extracto or self.url_ficha_oficial,
+            "urlBasesPdf": _pick_specific_doc_url(
+                self.url_bases_reguladoras,
+                self.url_boletin_extracto,
+                self.url_ficha_oficial,
+            ),
             "urlSedeElectronica": self.url_tramitacion or self.url_ficha_oficial,
             "fuenteUrl": self.url_ficha_oficial,
             "estadoInterno": self.estado_interno or ("priorizada" if (self.prioridad_score or 0) >= 85 else "nueva"),

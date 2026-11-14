@@ -23,30 +23,31 @@ def load_candidates_from_fuentes(directory: Path | None = None) -> list[RawCandi
 
 def pdf_doc_to_candidate(doc: ExtractedPDFDocument) -> RawCandidate:
     """Convert an ExtractedPDFDocument into a standardized RawCandidate."""
+    from urllib.parse import quote
+
     today = settings.get_today()
     pub_date = parse_spanish_date(doc.fecha_registro_o_firma)
+    local_pdf_url = f"{settings.public_backend_url.rstrip('/')}/api/v1/fuentes/{quote(doc.filename)}"
 
     # Determine unique ID and official code
     if doc.codigo_bdns:
         cid = f"bdns-{doc.codigo_bdns}"
         codigo_oficial = f"BDNS-{doc.codigo_bdns}"
         fuente = "BDNS"
-        url_ficha = f"https://www.pap.hacienda.gob.es/bdnstrans/ge/es/convocatorias/{doc.codigo_bdns}"
+        url_ficha = f"https://www.infosubvenciones.es/bdnstrans/GE/es/convocatoria/{doc.codigo_bdns}"
     elif doc.codigo_orden:
         slug = re.sub(r"[^a-z0-9]+", "-", doc.codigo_orden.lower()).strip("-")
         is_madrid = "madrid" in (doc.region_detectada + doc.organo_detectado + doc.filename).lower()
         cid = f"bocm-{slug}" if is_madrid else f"pdf-{slug}"
         codigo_oficial = doc.codigo_orden.upper()
         fuente = "BOLETIN_CCAA" if is_madrid or "orden" in doc.codigo_orden.lower() else "FUENTES_PDF"
-        url_ficha = doc.url_tramitacion or (
-            "https://www.comunidad.madrid/servicios/medio-ambiente" if is_madrid else ""
-        )
+        url_ficha = doc.url_tramitacion or local_pdf_url
     else:
         slug = re.sub(r"[^a-z0-9]+", "-", Path(doc.filename).stem.lower()).strip("-")
         cid = f"pdf-{slug}"
         codigo_oficial = Path(doc.filename).stem.upper()
         fuente = "FUENTES_PDF"
-        url_ficha = doc.url_tramitacion or ""
+        url_ficha = doc.url_tramitacion or local_pdf_url
 
     tipo_oportunidad = (
         "LICITACION"
@@ -91,7 +92,8 @@ def pdf_doc_to_candidate(doc: ExtractedPDFDocument) -> RawCandidate:
         plazo_texto_original=doc.plazo_solicitud_texto,
         url_ficha_oficial=url_ficha,
         url_tramitacion=doc.url_tramitacion,
-        url_bases_reguladoras=doc.url_bases_reguladoras,
+        url_bases_reguladoras=doc.url_bases_reguladoras or local_pdf_url,
+        url_boletin_extracto=local_pdf_url,
         archivo_fuente_local=f"fuentes/{doc.filename}",
         criterios_valoracion=doc.criterios_valoracion,
     )

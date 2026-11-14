@@ -12,9 +12,72 @@ from app.ingestors.web_monitors import (
     enrich_candidate_from_linked_pdf,
     poll_web_source,
 )
+from app.pipeline.layer1_regex import evaluate_layer1
 from app.pipeline.orchestrator import RawCandidate
 
 logger = logging.getLogger(__name__)
+
+
+def _is_specific_document_url(url: str | None) -> bool:
+    """Return True only if URL links to a specific document/PDF/call rather than a generic homepage."""
+    if not url or not url.strip().startswith(("http://", "https://")):
+        return False
+    low = url.strip().lower()
+    if any(
+        tok in low
+        for tok in (
+            ".pdf",
+            "iddocumento=",
+            "documentid=",
+            "verobj",
+            "descargararchivo",
+            "referencia=",
+            "txt.php?id=",
+            "/eli/",
+            "topic-details/",
+            "/convocatoria/",
+            "/api/v1/fuentes/",
+        )
+    ):
+        return True
+    from urllib.parse import urlparse
+
+    parsed = urlparse(low)
+    path = parsed.path.strip("/")
+    return bool(path and path.count("/") >= 2 and not path.endswith(("convocatorias", "index.html", "index.htm", "boja", "portada", "bor-portada")))
+
+
+def _extract_bdns_specific_pdf_url(det: dict[str, Any]) -> str | None:
+    """Select the most relevant official downloadable PDF from BDNS `documentos` array."""
+    docs = det.get("documentos") or []
+    if not isinstance(docs, list) or not docs:
+        return None
+    ranked: list[tuple[int, int]] = []
+    for doc in docs:
+        if not isinstance(doc, dict):
+            continue
+        doc_id = doc.get("id")
+        if doc_id is None:
+            continue
+        try:
+            doc_id_int = int(doc_id)
+        except (TypeError, ValueError):
+            continue
+        name = f"{doc.get('nombreFic') or ''} {doc.get('descripcion') or ''}".lower()
+        score = 0
+        if ".pdf" in name:
+            score += 40
+        if any(k in name for k in ("convocatoria", "resolucion", "resolución", "extracto", "bases", "orden", "decreto")):
+            score += 30
+        if any(k in name for k in ("cast", "_es.", " castellano")):
+            score += 10
+        if any(k in name for k in ("certificado", "nominativ", "anexo")):
+            score -= 5
+        ranked.append((score, doc_id_int))
+    if not ranked:
+        return None
+    ranked.sort(key=lambda pair: pair[0], reverse=True)
+    return f"https://www.infosubvenciones.es/bdnstrans/api/convocatorias/documentos?idDocumento={ranked[0][1]}"
 
 
 def _build_ssl_context() -> ssl.SSLContext | bool:
@@ -135,123 +198,175 @@ async def fetch_live_bdns_candidates(
     spanning State, CCAA, Diputaciones, Concellos, Ayuntamientos and Ajuntaments.
     """
     search_terms = keywords or [
-        "reforestacion",
-        "repoblacion forestal",
-        "incendios forestales",
+        "reforestación",
+        "repoblación",
+        "silvícola",
         "silvicultura",
-        "montes vecinales",
-        "prevencion de incendios",
-        "restauracion ambiental",
+        "forestal",
+        "incendios forestales",
+        "montes",
+        "restauración forestal",
         "biodiversidad",
         "natura 2000",
-        "forestal",
-        "bosques",
         "arbolado",
-        "cambio climatico",
-        "biomasa forestal",
         "custodia del territorio",
-        "educacion ambiental",
     ]
     candidates: list[RawCandidate] = []
     seen_codes: set[str] = set()
-    sem = asyncio.Semaphore(6)
+    # Gentle concurrency (<=3) avoids HTTP 429 rate-limits on infosubvenciones.es during batch detail enrichment
+    sem = asyncio.Semaphore(3)
+    recent_desde = (date.today() - timedelta(days=240)).strftime("%d/%m/%Y")
 
     headers = {
         "Accept": "application/json",
         "User-Agent": "1hack_reforesta/2.0 (Radar Vivo de Oportunidades Forestales)",
     }
 
-    async def _query_term(client: httpx.AsyncClient, term: str) -> list[dict[str, Any]]:
-        async with sem:
-            try:
-                params = {
-                    "vpd": "GE",
-                    "descripcion": term,
-                    "descripcionTipoBusqueda": "1",
-                    "page": "0",
-                    "pageSize": str(max_per_keyword),
-                }
-                resp = await client.get(BDNS_SEARCH_URL, params=params)
-                if resp.status_code != 200:
-                    return []
-                data = resp.json()
-                return (
-                    data.get("content")
-                    or data.get("datos")
-                    or (data if isinstance(data, list) else [])
-                )
-            except Exception as exc:
-                logger.debug("BDNS live query for '%s' skipped: %s", term, exc)
+    async def _get_json_with_retry(
+        client: httpx.AsyncClient,
+        url: str,
+        params: dict[str, str],
+        attempts: int = 3,
+    ) -> Any:
+        for attempt in range(attempts):
+            async with sem:
+                try:
+                    await asyncio.sleep(0.08 * (attempt + 1))
+                    resp = await client.get(url, params=params)
+                    if resp.status_code == 200:
+                        return resp.json()
+                    if resp.status_code not in (429, 500, 502, 503, 504):
+                        return None
+                except Exception as exc:
+                    if attempt == attempts - 1:
+                        logger.debug("BDNS GET failed after %d attempts (%s): %s", attempts, url, exc)
+                        return None
+            await asyncio.sleep(0.75 * (attempt + 1))
+        return None
+
+    async def _query_term(client: httpx.AsyncClient, term: str, only_open: bool = False) -> list[dict[str, Any]]:
+        try:
+            params = {
+                "vpd": "GE",
+                "descripcion": term,
+                "descripcionTipoBusqueda": "1",
+                "page": "0",
+                "pageSize": str(max_per_keyword),
+            }
+            if only_open:
+                params["abierto"] = "true"
+            else:
+                params["fechaDesde"] = recent_desde
+            data = await _get_json_with_retry(client, BDNS_SEARCH_URL, params=params, attempts=3)
+            if not data:
                 return []
+            return (
+                data.get("content")
+                or data.get("datos")
+                or (data if isinstance(data, list) else [])
+            )
+        except Exception as exc:
+            logger.debug("BDNS live query for '%s' skipped: %s", term, exc)
+            return []
 
     async def _enrich_bdns_detail(client: httpx.AsyncClient, cand: RawCandidate, num_conv: str) -> None:
-        if cand.presupuesto_total is not None and cand.fecha_fin_solicitud is not None:
+        if cand.presupuesto_total is not None and cand.fecha_fin_solicitud is not None and cand.url_bases_reguladoras:
             return
-        async with sem:
-            try:
-                det_resp = await client.get(
-                    "https://www.pap.hacienda.gob.es/bdnstrans/api/convocatorias",
-                    params={"numConv": num_conv, "vpd": "GE"},
-                )
-                if det_resp.status_code != 200:
-                    return
-                det = det_resp.json()
-                if not isinstance(det, dict):
-                    return
-                if cand.presupuesto_total is None and det.get("presupuestoTotal") is not None:
-                    try:
-                        cand.presupuesto_total = float(det["presupuestoTotal"])
-                    except (TypeError, ValueError):
-                        pass
-                if not cand.fecha_inicio_solicitud and det.get("fechaInicioSolicitud"):
-                    cand.fecha_inicio_solicitud = str(det["fechaInicioSolicitud"])[:10]
-                if not cand.fecha_fin_solicitud and det.get("fechaFinSolicitud"):
-                    cand.fecha_fin_solicitud = str(det["fechaFinSolicitud"])[:10]
-                if not cand.plazo_texto_original and det.get("textFin"):
-                    cand.plazo_texto_original = str(det["textFin"])[:240]
+        try:
+            det = await _get_json_with_retry(
+                client,
+                "https://www.infosubvenciones.es/bdnstrans/api/convocatorias",
+                params={"numConv": num_conv, "vpd": "GE"},
+                attempts=3,
+            )
+            if not isinstance(det, dict):
+                return
+            if cand.presupuesto_total is None and det.get("presupuestoTotal") is not None:
+                try:
+                    cand.presupuesto_total = float(det["presupuestoTotal"])
+                except (TypeError, ValueError):
+                    pass
+            if not cand.fecha_inicio_solicitud and det.get("fechaInicioSolicitud"):
+                cand.fecha_inicio_solicitud = str(det["fechaInicioSolicitud"])[:10]
+            if not cand.fecha_fin_solicitud and det.get("fechaFinSolicitud"):
+                cand.fecha_fin_solicitud = str(det["fechaFinSolicitud"])[:10]
+            raw_text_fin = str(det.get("textFin") or "").strip()
+            if raw_text_fin and raw_text_fin not in (".", "None"):
+                import re as _re
 
-                regiones = det.get("regiones") or []
-                if isinstance(regiones, list) and regiones:
-                    reg_desc = " | ".join(
-                        str(r.get("descripcion") or "") for r in regiones if isinstance(r, dict)
-                    ).strip()
-                    if reg_desc:
-                        cand.region_hint = f"{reg_desc} - {cand.region_hint}".strip(" -")
-                        for r in regiones:
-                            desc_r = str(r.get("descripcion") or "") if isinstance(r, dict) else ""
-                            if desc_r.startswith("ES") and len(desc_r) >= 4 and desc_r[2:4].isdigit():
-                                cand.nuts_code = desc_r[:4]
-                                break
-
-                benefs = det.get("tiposBeneficiarios") or []
-                if isinstance(benefs, list) and benefs and not cand.beneficiarios_hint:
-                    cand.beneficiarios_hint = ", ".join(
-                        str(b.get("descripcion") or "") for b in benefs if isinstance(b, dict)
+                if not cand.fecha_fin_solicitud:
+                    m_dmy = _re.fullmatch(r"(\d{2})/(\d{2})/(\d{4})", raw_text_fin)
+                    if m_dmy:
+                        cand.fecha_fin_solicitud = f"{m_dmy.group(3)}-{m_dmy.group(2)}-{m_dmy.group(1)}"
+                if not cand.plazo_texto_original:
+                    norm_fin = (
+                        _re.sub(r"\b0?(\d+)\s+Mesos\b", r"\1 mes", raw_text_fin, flags=_re.IGNORECASE)
+                        if "mesos" in raw_text_fin.lower()
+                        else raw_text_fin
                     )
-                fondos = det.get("fondos") or []
-                if isinstance(fondos, list) and fondos:
-                    cand.cofinanciado_ue = True
-                    if not cand.fondo_ue:
-                        cand.fondo_ue = ", ".join(
-                            str(f.get("descripcion") or "") for f in fondos if isinstance(f, dict)
-                        )[:120]
-                if not cand.url_bases_reguladoras and det.get("urlBasesReguladoras"):
-                    cand.url_bases_reguladoras = str(det["urlBasesReguladoras"])
-                if not cand.url_tramitacion and det.get("sedeElectronica"):
-                    cand.url_tramitacion = str(det["sedeElectronica"])
-                extra_txt_parts = [
-                    str(det.get("descripcionFinalidad") or ""),
-                    str(det.get("descripcionBasesReguladoras") or ""),
-                    str(det.get("textFin") or ""),
-                ]
-                extra_txt = ". ".join(p.strip() for p in extra_txt_parts if p.strip())
-                if extra_txt:
-                    cand.texto = f"{cand.texto} {extra_txt}".strip()
-            except Exception as exc:
-                logger.debug("BDNS detail enrichment for '%s' skipped: %s", num_conv, exc)
+                    cand.plazo_texto_original = norm_fin[:240]
+
+            regiones = det.get("regiones") or []
+            if isinstance(regiones, list) and regiones:
+                reg_desc = " | ".join(
+                    str(r.get("descripcion") or "") for r in regiones if isinstance(r, dict)
+                ).strip()
+                if reg_desc:
+                    cand.region_hint = f"{reg_desc} - {cand.region_hint}".strip(" -")
+                    for r in regiones:
+                        desc_r = str(r.get("descripcion") or "") if isinstance(r, dict) else ""
+                        if desc_r.startswith("ES") and len(desc_r) >= 4 and desc_r[2:4].isdigit():
+                            cand.nuts_code = desc_r[:4]
+                            break
+
+            benefs = det.get("tiposBeneficiarios") or []
+            if isinstance(benefs, list) and benefs and not cand.beneficiarios_hint:
+                cand.beneficiarios_hint = ", ".join(
+                    str(b.get("descripcion") or "") for b in benefs if isinstance(b, dict)
+                )
+            fondos = det.get("fondos") or []
+            if isinstance(fondos, list) and fondos:
+                cand.cofinanciado_ue = True
+                if not cand.fondo_ue:
+                    cand.fondo_ue = ", ".join(
+                        str(f.get("descripcion") or "") for f in fondos if isinstance(f, dict)
+                    )[:120]
+
+            # Prioritize direct downloadable BDNS call PDF (`idDocumento`), then specific official bases URL
+            specific_pdf_url = _extract_bdns_specific_pdf_url(det)
+            raw_bases_url = str(det.get("urlBasesReguladoras") or "").strip()
+            if specific_pdf_url:
+                cand.url_bases_reguladoras = specific_pdf_url
+                if _is_specific_document_url(raw_bases_url) and not cand.url_boletin_extracto:
+                    cand.url_boletin_extracto = raw_bases_url
+            elif _is_specific_document_url(raw_bases_url):
+                cand.url_bases_reguladoras = raw_bases_url
+
+            for anuncio in det.get("anuncios") or []:
+                if isinstance(anuncio, dict):
+                    an_url = str(anuncio.get("url") or "").strip()
+                    if _is_specific_document_url(an_url) and not cand.url_boletin_extracto:
+                        cand.url_boletin_extracto = an_url
+                        break
+
+            if not cand.url_tramitacion and det.get("sedeElectronica"):
+                cand.url_tramitacion = str(det["sedeElectronica"])
+            extra_txt_parts = [
+                str(det.get("descripcionFinalidad") or ""),
+                str(det.get("descripcionBasesReguladoras") or ""),
+                str(det.get("textFin") or ""),
+            ]
+            extra_txt = ". ".join(p.strip() for p in extra_txt_parts if p.strip())
+            if extra_txt:
+                cand.texto = f"{cand.texto} {extra_txt}".strip()
+        except Exception as exc:
+            logger.debug("BDNS detail enrichment for '%s' skipped: %s", num_conv, exc)
 
     async with _make_async_client(timeout=timeout, headers=headers) as client:
-        results_lists = await asyncio.gather(*[_query_term(client, t) for t in search_terms])
+        queries = [_query_term(client, t, only_open=False) for t in search_terms] + [
+            _query_term(client, t, only_open=True) for t in search_terms[:6]
+        ]
+        results_lists = await asyncio.gather(*queries)
 
         to_enrich: list[tuple[RawCandidate, str]] = []
         for items in results_lists:
@@ -312,14 +427,20 @@ async def fetch_live_bdns_candidates(
                     fecha_publicacion=f_rec,
                     fecha_inicio_solicitud=item.get("fechaInicioSolicitud"),
                     fecha_fin_solicitud=item.get("fechaFinSolicitud"),
-                    url_ficha_oficial=f"https://www.pap.hacienda.gob.es/bdnstrans/ge/es/convocatorias/{num_conv}",
+                    url_ficha_oficial=f"https://www.infosubvenciones.es/bdnstrans/GE/es/convocatoria/{num_conv}",
                 )
                 candidates.append(cand)
-                if "nominativa" not in titulo.lower() and len(to_enrich) < 25:
+                l1_pre = evaluate_layer1(titulo=titulo, texto=cand.texto, organo=organo)
+                if l1_pre.passed:
                     to_enrich.append((cand, num_conv))
 
         if to_enrich:
-            await asyncio.gather(*[_enrich_bdns_detail(client, c, n) for c, n in to_enrich])
+            # Sort newest BDNS IDs first so 2026 active calls always get priority detail & PDF enrichment
+            to_enrich.sort(
+                key=lambda pair: int(pair[1]) if pair[1].isdigit() else 0,
+                reverse=True,
+            )
+            await asyncio.gather(*[_enrich_bdns_detail(client, c, n) for c, n in to_enrich[:120]])
 
     return candidates
 
@@ -511,6 +632,12 @@ async def fetch_live_eu_sedia_candidates(
                 data = resp.json()
                 for r in data.get("results", []):
                     meta = r.get("metadata", {})
+                    status_vals = {str(s) for s in (meta.get("status") or [])}
+                    if status_vals == {"31094503"}:  # Closed topic
+                        continue
+                    langs = [str(l).lower() for l in (meta.get("language") or [])]
+                    if langs and "en" not in langs and "es" not in langs:
+                        continue
                     ident_list = (
                         meta.get("identifier")
                         or meta.get("callIdentifier")
@@ -529,6 +656,9 @@ async def fetch_live_eu_sedia_candidates(
                     start_raw = str(start_list[0])[:10] if start_list else None
 
                     pres_b, max_proy_b, open_b, end_b, act_type = _parse_sedia_budget_overview(meta, ident)
+                    resolved_deadline = end_b or deadline_raw
+                    if resolved_deadline and resolved_deadline < date.today().isoformat():
+                        continue
                     types_of_action = " ".join(str(x) for x in (meta.get("typesOfAction") or []))
                     action_info = f"{act_type} {types_of_action}".strip()
 
@@ -542,6 +672,7 @@ async def fetch_live_eu_sedia_candidates(
                     else:
                         fondo = "Horizon Europe"
 
+                    topic_url = f"https://ec.europa.eu/info/funding-tenders/opportunities/portal/screen/opportunities/topic-details/{ident}"
                     batch.append(
                         RawCandidate(
                             id=f"eu-{ident.lower().replace('_', '-')}",
@@ -559,8 +690,9 @@ async def fetch_live_eu_sedia_candidates(
                             fondo_ue=fondo,
                             fecha_publicacion=open_b or start_raw,
                             fecha_inicio_solicitud=open_b or start_raw,
-                            fecha_fin_solicitud=end_b or deadline_raw,
-                            url_ficha_oficial=f"https://ec.europa.eu/info/funding-tenders/opportunities/portal/screen/opportunities/topic-details/{ident}",
+                            fecha_fin_solicitud=resolved_deadline,
+                            url_ficha_oficial=topic_url,
+                            url_bases_reguladoras=topic_url,
                         )
                     )
             except Exception as exc:

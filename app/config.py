@@ -30,9 +30,14 @@ class Settings(BaseSettings):
     ingest_end_year: int = 2026
     ingest_concurrency: int = 12
     layer1_threshold: int = 25
+    include_catalog_templates: bool = False  # Production uses ONLY real live sources + ./fuentes/*.pdf
     auto_sync_enabled: bool = True
-    auto_sync_interval_minutes: int = 30
+    daily_sync_hour: int = 7
+    daily_sync_minute: int = 0
+    daily_sync_timezone: str = "Europe/Madrid"
+    auto_sync_interval_minutes: int = 1440
     cache_ttl_seconds: int = 60
+    public_backend_url: str = "http://localhost:8000"
 
     # Reference date for calculating active/closed status
     reference_date: date | None = None

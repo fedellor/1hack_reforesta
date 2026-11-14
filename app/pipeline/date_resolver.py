@@ -366,9 +366,10 @@ def compute_dates_and_status(
     f_fin = parse_spanish_date(fecha_fin_solicitud)
     es_calculado = False
 
-    if f_pub and not f_fin and plazo_texto_original:
+    anchor_date = f_ini or f_pub
+    if anchor_date and not f_fin and plazo_texto_original:
         calc_ini, calc_fin, calc_flag = resolve_deadline_from_text(
-            f_pub,
+            anchor_date,
             plazo_texto_original,
             ccaa_codigo=ccaa_codigo,
         )

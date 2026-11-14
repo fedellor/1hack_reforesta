@@ -1,8 +1,9 @@
 """Master Ingestion Runner & Live Background Sync Worker."""
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 from sqlmodel import Session, select
 from app.config import settings
 from app.database import engine, query_cache
@@ -56,7 +57,9 @@ async def run_full_ingestion(
     fuentes_candidates = load_candidates_from_fuentes()
     candidates.extend(fuentes_candidates)
 
-    catalog_candidates = get_multilevel_candidates()
+    catalog_candidates = (
+        get_multilevel_candidates() if settings.include_catalog_templates else []
+    )
     candidates.extend(catalog_candidates)
 
     live_counts: dict[str, int] = {
@@ -70,15 +73,15 @@ async def run_full_ingestion(
     }
     if include_live_apis:
         bdns_live, placsp_live, boe_live, eu_live, rss_live, priv_live = await asyncio.gather(
-            fetch_live_bdns_candidates(max_per_keyword=15, timeout=5.0),
-            fetch_live_placsp_candidates(timeout=5.0),
-            fetch_live_boe_candidates(days_back=5, timeout=5.0),
-            fetch_live_eu_sedia_candidates(timeout=5.0),
-            fetch_live_ccaa_rss_candidates(timeout=4.0),
-            fetch_live_private_foundation_candidates(timeout=4.5),
+            fetch_live_bdns_candidates(max_per_keyword=30, timeout=8.0),
+            fetch_live_placsp_candidates(timeout=6.0),
+            fetch_live_boe_candidates(days_back=12, timeout=7.0),
+            fetch_live_eu_sedia_candidates(timeout=7.0),
+            fetch_live_ccaa_rss_candidates(timeout=5.0),
+            fetch_live_private_foundation_candidates(timeout=5.5),
         )
         live_batch = bdns_live + placsp_live + boe_live + eu_live + rss_live + priv_live
-        enriched_pdfs = await enrich_candidates_with_linked_pdfs(live_batch, timeout=4.5, max_downloads=15)
+        enriched_pdfs = await enrich_candidates_with_linked_pdfs(live_batch, timeout=5.0, max_downloads=30)
         live_counts = {
             "bdns_live": len(bdns_live),
             "placsp_live": len(placsp_live),
@@ -138,8 +141,10 @@ async def run_full_ingestion(
 
 
 def ensure_initial_seed(session: Session) -> None:
-    """Populate or synchronize database with all local PDFs and multilevel catalog on startup."""
-    candidates = load_candidates_from_fuentes() + get_multilevel_candidates()
+    """Populate or synchronize database with all local PDFs (and optional catalog fixtures in test mode)."""
+    candidates = load_candidates_from_fuentes() + (
+        get_multilevel_candidates() if settings.include_catalog_templates else []
+    )
     existing_ids = set(session.exec(select(Opportunity.id)).all())
 
     total_scanned = 0
@@ -250,21 +255,54 @@ def refresh_live_database_states(session: Session) -> int:
     return updated
 
 
+def seconds_until_next_daily_sync(
+    now: datetime | None = None,
+    hour: int | None = None,
+    minute: int | None = None,
+    tz_name: str | None = None,
+) -> tuple[float, datetime]:
+    """
+    Compute remaining seconds and exact timestamp until the next daily 07:00 AM sync
+    in the configured timezone (Europe/Madrid by default).
+    """
+    target_hour = settings.daily_sync_hour if hour is None else hour
+    target_minute = settings.daily_sync_minute if minute is None else minute
+    zone_name = tz_name or settings.daily_sync_timezone
+    try:
+        tz = ZoneInfo(zone_name)
+    except Exception:
+        tz = timezone(timedelta(hours=1))
+
+    current = now.astimezone(tz) if now is not None else datetime.now(tz)
+    target = current.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0)
+    if current >= target:
+        target = target + timedelta(days=1)
+
+    wait_seconds = max(1.0, (target - current).total_seconds())
+    return wait_seconds, target
+
+
 async def background_live_sync_daemon() -> None:
     """
-    Background asyncio loop keeping the database alive:
-    - Hot-reloads any new PDFs added to ./fuentes/
-    - Recalculates deadline countdowns (dias_restantes) & statuses
-    - Periodically syncs live official endpoints (BDNS, PLACSP, BOE, EU SEDIA)
+    Background asyncio scheduler that synchronizes live official sources
+    every day specifically at 07:00 AM (Europe/Madrid), hot-reloading ./fuentes/,
+    updating BDNS/BOE/PLACSP/EU/CCAA/Foundations, and recalculating deadlines.
     """
-    interval_sec = max(60, settings.auto_sync_interval_minutes * 60)
     while True:
         try:
-            await asyncio.sleep(interval_sec)
+            wait_sec, next_run = seconds_until_next_daily_sync()
+            logger.info(
+                "Próxima actualización automática diaria programada: %s (en %.0f s)",
+                next_run.isoformat(),
+                wait_sec,
+            )
+            await asyncio.sleep(wait_sec)
+            logger.info("Iniciando actualización diaria automática de las 07:00h (Europe/Madrid)...")
             with Session(engine) as session:
                 await run_full_ingestion(session=session, include_live_apis=True)
                 refresh_live_database_states(session)
         except asyncio.CancelledError:
             break
         except Exception as exc:
-            logger.debug("Background live sync cycle skipped: %s", exc)
+            logger.warning("Error en ciclo diario de sincronización (reintento en 5 min): %s", exc)
+            await asyncio.sleep(300)

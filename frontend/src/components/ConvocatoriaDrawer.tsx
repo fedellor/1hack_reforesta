@@ -307,27 +307,47 @@ Enlace oficial: ${c.urlBasesPdf}`;
               </div>
             )}
 
-            {/* Enlaces Oficiales */}
-            <div className="flex items-center gap-2">
-              <a
-                href={c.urlBasesPdf}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded border border-zinc-200 text-zinc-700 bg-white hover:bg-zinc-50 transition-colors text-xs font-medium shadow-2xs"
-              >
-                <FileDown className="h-3.5 w-3.5 text-zinc-500" />
-                <span>Bases Oficiales (PDF)</span>
-              </a>
+            {/* Enlaces Oficiales Específicos */}
+            <div className="flex flex-wrap items-center gap-2">
+              {c.urlBasesPdf && (
+                <a
+                  href={c.urlBasesPdf}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded border border-[#6aa43a] text-[#2d5a27] bg-[#f4faef] hover:bg-[#6aa43a] hover:text-white transition-colors text-xs font-semibold shadow-2xs"
+                >
+                  <FileDown className="h-3.5 w-3.5" />
+                  <span>
+                    {/(\.pdf|iddocumento=|\/api\/v1\/fuentes\/|descargararchivo)/i.test(c.urlBasesPdf)
+                      ? 'Bases Oficiales (PDF)'
+                      : 'Documento de la Convocatoria'}
+                  </span>
+                </a>
+              )}
 
-              <a
-                href={c.urlSedeElectronica}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-zinc-900 text-white hover:bg-zinc-800 transition-colors text-xs font-medium shadow-2xs"
-              >
-                <span>Sede Electrónica</span>
-                <ExternalLink className="h-3 w-3" />
-              </a>
+              {c.fuenteUrl && c.fuenteUrl !== c.urlBasesPdf && (
+                <a
+                  href={c.fuenteUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded border border-zinc-200 text-zinc-700 bg-white hover:bg-zinc-50 transition-colors text-xs font-medium shadow-2xs"
+                >
+                  <span>Ficha Oficial</span>
+                  <ExternalLink className="h-3 w-3 text-zinc-500" />
+                </a>
+              )}
+
+              {c.urlSedeElectronica && (
+                <a
+                  href={c.urlSedeElectronica}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-zinc-900 text-white hover:bg-zinc-800 transition-colors text-xs font-medium shadow-2xs"
+                >
+                  <span>Sede Electrónica</span>
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              )}
             </div>
 
           </div>
