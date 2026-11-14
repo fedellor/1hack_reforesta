@@ -1,7 +1,7 @@
 import { normalizarPlazos } from '@/lib/plazo';
 import { Convocatoria, EstadoInterno } from '@/types/convocatoria';
 import { ESTATAL, PROVINCIAS_POR_COMUNIDAD } from '@/lib/territorio';
-import { humanizar } from '@/lib/texto';
+import { humanizar, limpiarOrganismo } from '@/lib/texto';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -40,6 +40,7 @@ export function adaptarConvocatoria(raw: ConvocatoriaApi): Convocatoria {
 
   return {
     ...(raw as Convocatoria),
+    organismo: limpiarOrganismo(raw.organismo),
     ambitoTerritorial,
     provincia,
     dealbreakers: raw.dealbreakers ?? [],

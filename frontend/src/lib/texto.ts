@@ -27,6 +27,9 @@ export function humanizar(texto: string | null | undefined): string {
   let t = texto;
   for (const [codigo, legible] of Object.entries(CODIGOS)) t = t.split(codigo).join(legible);
   for (const [patron, legible] of TEMAS) t = t.replace(patron, legible);
+  t = t.replace(/\(DIRECTA\)/g, '(relevancia directa)');
+  // Códigos en mayúsculas con guion bajo (INDIRECTA_ELEGIBLE…) y en minúsculas (prevencion_incendios…)
+  t = t.replace(/\b[A-Z]{3,}(?:_[A-Z]+)+\b/g, (m) => m.toLowerCase().replace(/_/g, ' '));
   return t.replace(/\b[a-z]+(?:_[a-z]+)+\b/g, (m) => m.replace(/_/g, ' '));
 }
 
@@ -41,4 +44,33 @@ export function limpiarJustificacion(texto: string): string {
   const m = t.match(/actuaciones de (.+?) promovidas por/i);
   if (m) t = `Aborda directamente: ${m[1]}.`;
   return humanizar(t).trim();
+}
+
+const MINUSCULAS = new Set(['para', 'por', 'con', 'de', 'del', 'la', 'las', 'los', 'el', 'y', 'e', 'en', 'a', 'al', 'i', 'per', 'd', 'l']);
+const SIGLAS = new Set(['mITECO', 'miteco', 'ue', 'boe', 'sl', 'sa', 'cyl']);
+
+const aTitulo = (s: string) =>
+  s
+    .toLowerCase()
+    .split(/(\s+|(?<=[-/(])|(?=[)/]))/)
+    .map((p, i) => {
+      const k = p.trim();
+      if (!k || /^\W+$/.test(k)) return p;
+      if (SIGLAS.has(k)) return p.toUpperCase();
+      if (i > 0 && MINUSCULAS.has(k)) return p;
+      return p.charAt(0).toUpperCase() + p.slice(1);
+    })
+    .join('');
+
+/**
+ * El backend envía el órgano con su clasificación interna y en mayúsculas
+ * («AUTONOMICA - COMUNIDAD FORAL DE NAVARRA - DEPARTAMENTO DE…»). Se quita el prefijo y se pasa a mayúscula inicial.
+ */
+export function limpiarOrganismo(org: string | null | undefined): string {
+  if (!org) return '';
+  let t = org.replace(/^\s*(AUTONOMICA|AUTONÓMICA|LOCAL|ESTADO|OTROS|PROVINCIAL|MUNICIPAL)\s*-\s*/, '');
+  const letras = t.replace(/[^A-Za-zÀ-ÿ]/g, '');
+  const mayus = letras.replace(/[^A-ZÀ-Þ]/g, '').length;
+  if (letras.length > 0 && mayus / letras.length > 0.7) t = aTitulo(t);
+  return t.replace(/\s+/g, ' ').trim();
 }
