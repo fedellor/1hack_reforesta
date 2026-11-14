@@ -21,6 +21,7 @@ import { MapView } from '@/components/MapView';
 import { CalendarView } from '@/components/CalendarView';
 import { AlertCircle } from 'lucide-react';
 import { ESTATAL, TODOS, filtrarPorTerritorio, formatoEuros } from '@/lib/territorio';
+import { puntajeBusqueda } from '@/lib/search';
 
 const BANNER: Record<Seccion, { titulo: string; migas: string }> = {
   mapa: { titulo: 'Dónde está la financiación forestal en España', migas: 'Uso Interno / Mapa' },
@@ -112,20 +113,32 @@ export default function Home() {
   }, [convocatoriasHistoricas]);
 
   // Filtros comunes SIN territorio (el mapa se colorea con esta lista)
+  const resetFiltros = useCallback(() => {
+    setFiltros({
+      busqueda: '',
+      ambito: TODOS,
+      provincia: '',
+      tipoFuente: 'todos',
+      soloElegibles: true,
+      minMatching: 0,
+      soloUrgentes: false,
+      minCuantia: 0,
+      ventanaDias: 0,
+      anio: 0,
+    });
+  }, []);
+
   const baseFiltrada = useMemo(() => {
     const pool = seccion === 'historico' ? convocatoriasHistoricas : convocatoriasAbiertas;
-    return pool
-      .filter((c) => {
-        if (filtros.busqueda.trim()) {
-          const q = filtros.busqueda.toLowerCase();
-          const coincide =
-            c.titulo.toLowerCase().includes(q) ||
-            c.organismo.toLowerCase().includes(q) ||
-            c.codigoOficial.toLowerCase().includes(q) ||
-            (c.orografiaPendiente && c.orografiaPendiente.toLowerCase().includes(q)) ||
-            c.accionesSubvencionables.some((a) => a.toLowerCase().includes(q));
-          if (!coincide) return false;
-        }
+    const hayBusqueda = Boolean(filtros.busqueda.trim());
+    const puntajes = new Map<string, number>();
+
+    const filtradas = pool.filter((c) => {
+      if (hayBusqueda) {
+        const s = puntajeBusqueda(c, filtros.busqueda);
+        if (s <= 0) return false;
+        puntajes.set(c.id, s);
+      }
 
         if (seccion === 'historico' && filtros.anio > 0) {
           const y = c.anio ?? Number(String(c.fechaCierre).slice(0, 4));
@@ -148,17 +161,22 @@ export default function Home() {
         if (c.cuantiaMaximaProyecto < filtros.minCuantia) return false;
 
         return true;
-      })
-      .sort((a, b) => {
-        if (ordenarPor === 'matching') return b.matchingGlobal - a.matchingGlobal;
-        if (ordenarPor === 'cuantia') return b.cuantiaMaximaProyecto - a.cuantiaMaximaProyecto;
-        if (ordenarPor === 'urgencia') {
-          return seccion === 'historico'
-            ? b.fechaCierre.localeCompare(a.fechaCierre)
-            : a.diasRestantes - b.diasRestantes;
-        }
-        return 0;
       });
+
+    return filtradas.sort((a, b) => {
+      if (hayBusqueda) {
+        const rel = (puntajes.get(b.id) ?? 0) - (puntajes.get(a.id) ?? 0);
+        if (rel !== 0) return rel;
+      }
+      if (ordenarPor === 'matching') return b.matchingGlobal - a.matchingGlobal;
+      if (ordenarPor === 'cuantia') return b.cuantiaMaximaProyecto - a.cuantiaMaximaProyecto;
+      if (ordenarPor === 'urgencia') {
+        return seccion === 'historico'
+          ? b.fechaCierre.localeCompare(a.fechaCierre)
+          : a.diasRestantes - b.diasRestantes;
+      }
+      return 0;
+    });
   }, [convocatoriasAbiertas, convocatoriasHistoricas, filtros, ordenarPor, seccion]);
 
   const convocatoriasFiltradas = useMemo(
@@ -197,6 +215,8 @@ export default function Home() {
                   ? 'calendario'
                   : 'mapa'
           }
+          totalResultados={convocatoriasFiltradas.length}
+          onResetFiltros={resetFiltros}
         />
       )}
 
@@ -211,6 +231,8 @@ export default function Home() {
             onCambiarProvincia={(pv) => setFiltros((p) => ({ ...p, provincia: pv }))}
             onSeleccionar={abrir}
             onVerConvocatorias={() => setSeccion('convocatorias')}
+            busqueda={filtros.busqueda}
+            onLimpiarBusqueda={() => setFiltros((p) => ({ ...p, busqueda: '' }))}
           />
         )}
 
@@ -253,12 +275,27 @@ export default function Home() {
                 />
               ))}
               {convocatoriasFiltradas.length === 0 && (
-                <div className="border border-dashed border-zinc-300 p-10 text-center">
-                  <AlertCircle className="h-6 w-6 text-zinc-400 mx-auto mb-2" />
+                <div className="border border-dashed border-zinc-300 p-10 text-center space-y-3">
+                  <AlertCircle className="h-6 w-6 text-zinc-400 mx-auto" />
                   <h4 className="font-bold text-zinc-700">No hay convocatorias abiertas con los filtros seleccionados</h4>
-                  <p className="text-sm text-zinc-500 mt-1">
+                  <p className="text-sm text-zinc-500">
                     Amplía la ventana temporal, baja el encaje mínimo o desactiva &ldquo;Solo aptas ONG&rdquo; para incluir licitaciones públicas.
                   </p>
+                  {filtros.busqueda.trim() && (() => {
+                    const enHist = convocatoriasHistoricas.filter(
+                      (c) => puntajeBusqueda(c, filtros.busqueda) > 0
+                    ).length;
+                    if (enHist === 0) return null;
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => setSeccion('historico')}
+                        className="inline-flex items-center gap-1.5 rounded-full bg-[#2f6f3e] px-4 py-1.5 text-xs font-semibold text-white hover:bg-[#255731] transition-colors cursor-pointer"
+                      >
+                        Ver {enHist} {enHist === 1 ? 'resultado' : 'resultados'} en Histórico (2020–2026) →
+                      </button>
+                    );
+                  })()}
                 </div>
               )}
             </div>

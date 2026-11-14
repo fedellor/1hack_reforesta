@@ -8,16 +8,19 @@ export async function GET(request: Request) {
   const ambito = searchParams.get('ambito');
   const tipo = searchParams.get('tipo');
   const estado = searchParams.get('estado') || 'TODAS';
+  const q = searchParams.get('q') || '';
   const soloElegibles = searchParams.get('soloElegibles') === 'true';
 
   let results = [...MOCK_CONVOCATORIAS];
   let fuente = 'api_route_mock';
 
   try {
-    const res = await fetch(`${BACKEND_URL}/api/convocatorias?estado=${encodeURIComponent(estado)}`, { cache: 'no-store' });
+    const qs = new URLSearchParams({ estado });
+    if (q.trim()) qs.set('q', q.trim());
+    const res = await fetch(`${BACKEND_URL}/api/convocatorias?${qs.toString()}`, { cache: 'no-store' });
     if (res.ok) {
       const data = await res.json();
-      if (Array.isArray(data.convocatorias) && data.convocatorias.length > 0) {
+      if (Array.isArray(data.convocatorias) && (data.convocatorias.length > 0 || q.trim().length > 0)) {
         results = data.convocatorias;
         fuente = 'backend_diego';
       }

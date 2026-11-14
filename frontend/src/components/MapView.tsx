@@ -46,14 +46,29 @@ interface MapViewProps {
   onCambiarProvincia: (provincia: string) => void;
   onSeleccionar: (convocatoria: Convocatoria) => void;
   onVerConvocatorias: () => void;
+  busqueda?: string;
+  onLimpiarBusqueda?: () => void;
 }
 
-/** Sección «¿Dónde?»: reparto territorial de los fondos. No lista convocatorias: las resume. */
-export function MapView({ convocatorias, filtradas, territorio, provincia, onCambiarTerritorio, onCambiarProvincia, onSeleccionar, onVerConvocatorias }: MapViewProps) {
+/** Sección «¿Dónde?»: reparto territorial de los fondos y acceso rápido estatal / búsqueda. */
+export function MapView({
+  convocatorias,
+  filtradas,
+  territorio,
+  provincia,
+  onCambiarTerritorio,
+  onCambiarProvincia,
+  onSeleccionar,
+  onVerConvocatorias,
+  busqueda = '',
+  onLimpiarBusqueda,
+}: MapViewProps) {
+  const hayBusqueda = Boolean(busqueda && busqueda.trim().length > 0);
   const total = filtradas.reduce((a, c) => a + c.cuantiaMaximaProyecto, 0);
   const urgentes = filtradas.filter((c) => c.diasRestantes <= 15).length;
   const proximo = filtradas.length ? Math.min(...filtradas.map((c) => c.diasRestantes)) : null;
-  const top = [...filtradas].sort((a, b) => b.matchingGlobal - a.matchingGlobal).slice(0, 3);
+  const top = (hayBusqueda ? filtradas : [...filtradas].sort((a, b) => b.matchingGlobal - a.matchingGlobal)).slice(0, 6);
+  const estatales = filtrarPorTerritorio(convocatorias, ESTATAL).sort((a, b) => b.matchingGlobal - a.matchingGlobal);
 
   // Ranking de fondos por territorio (solo con todo el territorio seleccionado)
   const ranking = [ESTATAL, ...COMUNIDADES]
@@ -108,35 +123,101 @@ export function MapView({ convocatorias, filtradas, territorio, provincia, onCam
         </dl>
 
         {territorio === TODOS && (
-          <div>
-            <h3 className="text-sm font-bold uppercase tracking-wide text-zinc-900">Dónde está el dinero</h3>
-            <ul className="mt-3 space-y-2.5">
-              {ranking.map((r) => (
-                <li key={r.t}>
-                  <button onClick={() => onCambiarTerritorio(r.t)} className="w-full text-left group">
-                    <span className="flex justify-between text-sm text-zinc-700 group-hover:text-zinc-900">
-                      <span>{r.t === ESTATAL ? 'Estatal' : r.t}</span>
-                      <span className="font-semibold">{formatoEuros(r.euros)}</span>
-                    </span>
-                    <span className="mt-1 block h-1.5 bg-zinc-100">
-                      <span className="block h-full bg-brand" style={{ width: `${(r.euros / maxEuros) * 100}%` }} />
-                    </span>
+          <>
+            {hayBusqueda && (
+              <div>
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-bold uppercase tracking-wide text-zinc-900">
+                    Resultados de búsqueda ({filtradas.length})
+                  </h3>
+                  {onLimpiarBusqueda && (
+                    <button
+                      type="button"
+                      onClick={onLimpiarBusqueda}
+                      className="text-xs text-zinc-500 hover:text-zinc-900 underline underline-offset-2"
+                    >
+                      Limpiar búsqueda
+                    </button>
+                  )}
+                </div>
+                <Lista
+                  onSeleccionar={onSeleccionar}
+                  items={filtradas.slice(0, 8)}
+                  vacio="Sin convocatorias con esos términos de búsqueda."
+                />
+              </div>
+            )}
+
+            <div>
+              <h3 className="text-sm font-bold uppercase tracking-wide text-zinc-900">Dónde está el dinero</h3>
+              <ul className="mt-3 space-y-2.5">
+                {ranking.map((r) => (
+                  <li key={r.t}>
+                    <button onClick={() => onCambiarTerritorio(r.t)} className="w-full text-left group">
+                      <span className="flex justify-between text-sm text-zinc-700 group-hover:text-zinc-900">
+                        <span>{r.t === ESTATAL ? 'Estatal (MITECO, Ministerios y BOE)' : r.t}</span>
+                        <span className="font-semibold">{formatoEuros(r.euros)}</span>
+                      </span>
+                      <span className="mt-1 block h-1.5 bg-zinc-100">
+                        <span className="block h-full bg-brand" style={{ width: `${(r.euros / maxEuros) * 100}%` }} />
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {!hayBusqueda && estatales.length > 0 && (
+              <div>
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-bold uppercase tracking-wide text-zinc-900">
+                    Ámbito estatal ({estatales.length})
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => onCambiarTerritorio(ESTATAL)}
+                    className="text-xs font-medium text-[#2f6f3e] hover:underline"
+                  >
+                    Filtrar estatales →
                   </button>
-                </li>
-              ))}
-            </ul>
-          </div>
+                </div>
+                <p className="text-xs text-zinc-500">Aplican en toda España (no se pintan en una sola comunidad)</p>
+                <Lista
+                  onSeleccionar={onSeleccionar}
+                  items={estatales.slice(0, 4)}
+                  vacio="Sin convocatorias estatales."
+                />
+              </div>
+            )}
+          </>
         )}
 
         {territorio === ESTATAL && (
           <div>
-            <h3 className="text-sm font-bold uppercase tracking-wide text-zinc-900">Mejor encaje</h3>
+            <h3 className="text-sm font-bold uppercase tracking-wide text-zinc-900">
+              {hayBusqueda ? `Estatales encontradas (${top.length})` : 'Mejor encaje estatal'}
+            </h3>
             <Lista onSeleccionar={onSeleccionar} items={top} vacio="Sin convocatorias con los filtros actuales." />
           </div>
         )}
 
         {enComunidad && (
           <>
+            {hayBusqueda && filtradas.length === 0 && convocatorias.length > 0 && (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 p-3 text-xs text-emerald-950">
+                <p>
+                  No hay coincidencias autonómicas en <strong>{territorio}</strong>, pero sí{' '}
+                  <strong>{convocatorias.length}</strong> en el resto de España (incluido ámbito estatal).
+                </p>
+                <button
+                  type="button"
+                  onClick={() => onCambiarTerritorio(TODOS)}
+                  className="mt-2 font-semibold text-[#2f6f3e] underline underline-offset-2"
+                >
+                  Ver resultados en toda España →
+                </button>
+              </div>
+            )}
             {provincia && (
               <div>
                 <h3 className="text-sm font-bold uppercase tracking-wide text-zinc-900">Propias de {provincia}</h3>

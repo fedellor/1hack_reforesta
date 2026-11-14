@@ -37,6 +37,7 @@ from app.pipeline.predictive_and_export import (
     export_opportunities_ics,
     export_opportunity_markdown,
 )
+from app.search_utils import score_convocatoria_dict
 
 # Global lock to prevent concurrent ingestion runs from colliding
 _INGEST_LOCK = asyncio.Lock()
@@ -269,6 +270,7 @@ def health_check(session: Session = Depends(get_session)) -> dict[str, Any]:
 def get_frontend_convocatorias(
     estado: str | None = Query(default="ABIERTAS", description="ABIERTAS (ACTIVA+PROXIMA) | ACTIVA | PROXIMA | CERRADA | TODAS"),
     ccaa: str | None = Query(default=None, description="Filtrar por CCAA (ej. ES-MD, ES-GA)"),
+    q: str | None = Query(default=None, description="Búsqueda normalizada tolerante a tildes, guiones y sinónimos (ej. miteco, bdns 923290)"),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     """
@@ -299,6 +301,14 @@ def get_frontend_convocatorias(
         reverse=True,
     )
     convocatorias = [o.to_frontend_convocatoria() for o in opps]
+    if q and q.strip():
+        scored = [
+            (score_convocatoria_dict(c, q), c)
+            for c in convocatorias
+        ]
+        scored = [(sc, c) for sc, c in scored if sc > 0]
+        scored.sort(key=lambda pair: (pair[0], pair[1].get("matchingGlobal", 0)), reverse=True)
+        convocatorias = [c for _, c in scored]
     return {
         "total": len(convocatorias),
         "convocatorias": convocatorias,
