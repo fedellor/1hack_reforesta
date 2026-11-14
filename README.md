@@ -1,7 +1,7 @@
 # Radar Reforesta (`1hack_reforesta`)
 
 > **Herramienta interna de captación y priorización de financiación** para **Asociación Reforesta** (ONG ambiental declarada de Utilidad Pública, CIF `G80428204`).
-> **Rama actual:** `test` (integración Full-Stack previa a `main`).
+> **Rama actual:** `main` (producción consolidada Full-Stack).
 
 Radar Reforesta automatiza la detección, el filtrado jurídico para ESAL y la priorización técnica/financiera de subvenciones públicas, licitaciones forestales, fondos europeos y convocatorias privadas de mecenazgo/RSC en España (**histórico real desde `2016` y convocatorias vigentes hacia `2027+`**, sin datos simulados).
 
