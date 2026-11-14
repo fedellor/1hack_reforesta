@@ -52,15 +52,25 @@ Interfaz corporativa con la identidad de reforesta.es (verde `#6aa43a`, crema `#
 
 | Sección | Pregunta | Qué muestra |
 | :--- | :--- | :--- |
-| **Mapa** (inicio) | ¿Dónde? | Coropleta por comunidad autónoma (Leaflet + GeoJSON propio, sin teselas externas), resumen del territorio (fondos, nº de convocatorias, próximo cierre) y ranking «Dónde está el dinero». Va precedido del embudo *detectadas → aptas → cierran en 30 días → encaje ≥ 80%*. |
-| **Convocatorias** | ¿Cuáles? | El único listado detallado: veredicto, cuantía y cofinanciación, plazo, cita literal de las bases y afinidad en las 3 líneas de Reforesta. Filtros: territorio, solo aptas, cierre ≤ 30 días, encaje ≥ 80%, cuantía y orden. |
-| **Calendario** | ¿Cuándo? | Cierres agrupados por cercanía (≤ 10 d, 11–25 d, > 25 d). |
-| **Empresas** | ¿Quién financia? | Tarjetas por entidad para el canal de mecenazgo RSC (hoy a cero). |
-| **Pipeline** | ¿En qué estado? | Seguimiento del equipo: *Nueva*, *Priorizada*, *En preparación*, *Presentada*, *Descartada*. |
+| **Mapa** (inicio) | ¿Dónde? | Coropleta por comunidad autónoma (Leaflet + GeoJSON propio, sin teselas externas). Al pulsar una comunidad el mapa hace zoom animado y la divide en **provincias**, coloreadas por sus convocatorias *propias* (diputaciones, ayuntamientos). El panel lateral separa «En toda la comunidad» (aplica a todas las provincias) de «Por provincia». Va precedido del embudo *detectadas → aptas → cierran en 30 días → encaje ≥ 80%*, con la cifra de detectadas real de la última ingesta. |
+| **Convocatorias** | ¿Cuáles? | El único listado detallado. Orden de lectura de cada fila: plazo (días en grande, con color de urgencia) → qué es y por qué encaja (cita literal de las bases, o la justificación del radar si no hay cita) → dinero y coste real (cofinanciación y modalidad de pago) → veredicto, encaje y afinidad en las 3 líneas. Filtros: territorio, solo aptas, cierre ≤ 30 días, encaje ≥ 80%, cuantía y orden. |
+| **Calendario** | ¿Cuándo? | **Plan de ataque**: línea de tiempo (30/60/90 días) con una fila por convocatoria, tramo de margen para decidir, tramo de preparación estimada (14 días, constante `PREPARACION_DIAS`), rombo de cierre, aviso «Empezar ya» y carga de cierres por semana. La vista **Mes** es un calendario clásico con panel de próximos cierres. |
+| **Empresas** | ¿Quién financia? | Tarjetas por entidad para el canal de mecenazgo RSC (hoy a cero), con qué cubre, encaje, plazo y cofinanciación. Sin filtros de ventana temporal. |
+| **Pipeline** | ¿En qué estado? | Seguimiento del equipo: *Nueva*, *Priorizada*, *En preparación*, *Presentada*, *Descartada*. Cada columna ordenada por urgencia y con tope de 5 tarjetas. El cambio de estado se guarda en el backend. |
 
 * **Ficha ejecutiva (panel lateral):** detalle completo con elegibilidad, citas, gastos subvencionables, solvencia, orografía y exportación a Markdown.
 * La plataforma trabaja por defecto con una ventana de **30 días**.
-* **Datos simulados:** el total de convocatorias «detectadas» del embudo y las convocatorias de ejemplo de `src/data/mockMapaCompleto.ts` (desactivables con `USAR_DATOS_MAPA_COMPLETO`).
+
+### Datos en vivo
+* La web lee del backend (`GET /api/convocatorias` y `GET /api/v1/ingest/runs`) y se **refresca sola cada minuto** y al volver a la pestaña. Un indicador arriba a la derecha muestra el estado: *En vivo · actualizado hace N min*, *Datos de ejemplo · radar sin conexión* (ámbar) o *Cargando…*.
+* `src/services/api.ts` adapta el contrato del backend al del front: códigos `ES-XX` → nombre de comunidad, `ES`/`EU`/privadas → *Estatal*, y `ubicacion.provincia_nombre` → provincia.
+* `src/lib/texto.ts` limpia los textos del backend: separa las citas literales de la justificación generada por el radar, y convierte códigos internos (`ONG_FUNDACIONES`, `prevencion_incendios`…) en texto legible.
+* **Si el backend no responde**, la web usa datos de ejemplo (`src/data/mockConvocatorias.ts` y `src/data/mockMapaCompleto.ts`, desactivables con `USAR_DATOS_MAPA_COMPLETO`) y lo indica con claridad.
+
+### Limitaciones conocidas
+* **Pipeline:** el backend marca como *priorizada* toda convocatoria con puntuación ≥ 85, de modo que con datos reales casi todo cae en esa columna y se mezcla recomendación del radar con decisión del equipo. Propuesta (rama `back`): dejar todo en *nueva* y enviar la prioridad como campo aparte para mostrarla como etiqueta.
+* **Mapa:** las convocatorias estatales (más europeas y privadas) dominan el ranking de dinero y las comunidades quedan con barras pequeñas.
+* Pendiente de decidir: capas acumuladas en el mapa (estatal + autonómica + diputación = total disponible para un proyecto en una provincia).
 
 ---
 
@@ -119,6 +129,7 @@ El sistema incluye y valida casos reales facilitados por la organización y enti
 ### Requisitos previos
 * Node.js v18+ (probado en v26)
 * npm v9+
+* Para datos reales: Python 3.10+ (el Python 3.9 del sistema en macOS no sirve para el backend)
 
 ### Puesta en marcha rápida
 ```bash
@@ -137,7 +148,15 @@ npm run dev
 
 Abre en tu navegador: **`http://localhost:3000`**
 
-> El mapa funciona sin conexión: los límites autonómicos están en `frontend/public/data/ccaa.geojson`.
+### Conectar con el backend (datos reales)
+```bash
+# En otra terminal, desde la rama back (requiere Python 3.10 o superior)
+pip install -r requirements.txt
+uvicorn app.main:app --port 8000
+```
+La web busca el backend en `http://localhost:8000`. Para otra dirección, define `NEXT_PUBLIC_API_URL` (por ejemplo en `frontend/.env.local`). Sin backend funciona con datos de ejemplo.
+
+> El mapa funciona sin conexión: los límites están en `frontend/public/data/ccaa.geojson` (comunidades) y `frontend/public/data/provincias.geojson` (provincias).
 
 ### Compilar para producción
 ```bash

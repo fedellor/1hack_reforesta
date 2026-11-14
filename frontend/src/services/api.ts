@@ -1,6 +1,7 @@
 import { Convocatoria, EstadoInterno } from '@/types/convocatoria';
 import { MOCK_CONVOCATORIAS } from '@/data/mockConvocatorias';
 import { ESTATAL, PROVINCIAS_POR_COMUNIDAD } from '@/lib/territorio';
+import { humanizar } from '@/lib/texto';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -43,7 +44,10 @@ export function adaptarConvocatoria(raw: ConvocatoriaApi): Convocatoria {
     provincia,
     dealbreakers: raw.dealbreakers ?? [],
     citasBasesJustificacion: raw.citasBasesJustificacion ?? [],
-    accionesSubvencionables: raw.accionesSubvencionables ?? [],
+    accionesSubvencionables: (raw.accionesSubvencionables ?? []).map(humanizar),
+    orografiaPendiente: raw.orografiaPendiente ? humanizar(raw.orografiaPendiente) : undefined,
+    motivoElegibilidad: humanizar(raw.motivoElegibilidad),
+    resumenEjecutivo: humanizar(raw.resumenEjecutivo),
     matchingGlobal: Math.round(raw.matchingGlobal ?? 0),
   };
 }

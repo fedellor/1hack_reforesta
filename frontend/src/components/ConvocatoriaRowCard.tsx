@@ -4,6 +4,7 @@ import React from 'react';
 import { ChevronRight } from 'lucide-react';
 import { Convocatoria } from '@/types/convocatoria';
 import { formatoEuros } from '@/lib/territorio';
+import { esCitaLiteral, limpiarJustificacion } from '@/lib/texto';
 
 interface ConvocatoriaRowCardProps {
   convocatoria: Convocatoria;
@@ -19,7 +20,10 @@ const colorPlazo = (dias: number) =>
  */
 export function ConvocatoriaRowCard({ convocatoria, onSeleccionar, seleccionada }: ConvocatoriaRowCardProps) {
   const c = convocatoria;
-  const motivo = c.elegible ? c.citasBasesJustificacion[0] : c.dealbreakers[0] ?? c.motivoElegibilidad;
+  const literal = c.citasBasesJustificacion.find(esCitaLiteral);
+  const generada = c.citasBasesJustificacion[0] ? limpiarJustificacion(c.citasBasesJustificacion[0]) : '';
+  const motivo = c.elegible ? literal ?? generada : c.dealbreakers[0] ?? c.motivoElegibilidad;
+  const esCita = c.elegible && !!literal;
   const lineas: [string, number][] = [
     ['Restauración', c.matchingLineas.restauracionEcosistemas],
     ['Hábitats', c.matchingLineas.conservacionHabitats],
@@ -51,8 +55,8 @@ export function ConvocatoriaRowCard({ convocatoria, onSeleccionar, seleccionada 
           {c.titulo}
         </h3>
         {motivo && (
-          <p className={`mt-2 text-sm italic line-clamp-2 border-l-2 pl-3 ${c.elegible ? 'border-brand text-zinc-600' : 'border-rose-400 text-rose-700 not-italic font-medium'}`}>
-            {c.elegible ? `“${motivo}”` : `Excluida: ${motivo}`}
+          <p className={`mt-2 text-sm line-clamp-2 border-l-2 pl-3 ${c.elegible ? `border-brand text-zinc-600 ${esCita ? 'italic' : ''}` : 'border-rose-400 text-rose-700 font-medium'}`}>
+            {c.elegible ? (esCita ? `“${motivo}”` : motivo) : `Excluida: ${motivo}`}
           </p>
         )}
       </div>

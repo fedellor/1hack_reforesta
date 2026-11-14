@@ -9,6 +9,7 @@ import {
   Copy,
 } from 'lucide-react';
 import { Convocatoria, EstadoInterno } from '@/types/convocatoria';
+import { esCitaLiteral, limpiarJustificacion } from '@/lib/texto';
 
 interface ConvocatoriaDrawerProps {
   convocatoria: Convocatoria | null;
@@ -122,13 +123,18 @@ Enlace oficial: ${c.urlBasesPdf}`;
                   {c.elegible ? 'Convocatoria Apta para Reforesta' : 'Convocatoria Excluida por Bases'}
                 </span>
               </div>
-              <p className="text-zinc-700 leading-relaxed">{c.motivoElegibilidad}</p>
+              <p className="text-zinc-700 leading-relaxed">{limpiarJustificacion(c.motivoElegibilidad)}</p>
               {c.dealbreakers.length > 0 && (
-                <ul className="mt-2 text-rose-800 list-disc list-inside space-y-0.5">
-                  {c.dealbreakers.map((d, i) => (
-                    <li key={i}>{d}</li>
-                  ))}
-                </ul>
+                <div className={`mt-3 pt-3 border-t ${c.elegible ? 'border-amber-200' : 'border-rose-200'}`}>
+                  <p className={`font-semibold mb-1 ${c.elegible ? 'text-amber-800' : 'text-rose-800'}`}>
+                    {c.elegible ? 'A tener en cuenta' : 'Motivos de exclusión'}
+                  </p>
+                  <ul className={`list-disc list-inside space-y-0.5 ${c.elegible ? 'text-amber-900' : 'text-rose-800'}`}>
+                    {c.dealbreakers.map((d, i) => (
+                      <li key={i}>{d}</li>
+                    ))}
+                  </ul>
+                </div>
               )}
             </div>
 
@@ -232,22 +238,29 @@ Enlace oficial: ${c.urlBasesPdf}`;
               </div>
             </div>
 
-            {/* 5. Citas Textuales Oficiales */}
-            {c.citasBasesJustificacion.length > 0 && (
+            {/* 5. Citas de las bases (literales) y justificación del radar (generada) */}
+            {c.citasBasesJustificacion.some(esCitaLiteral) && (
               <div>
                 <h4 className="text-xs uppercase font-semibold text-zinc-500 tracking-wider mb-1.5">
                   Citas Textuales de las Bases
                 </h4>
                 <div className="space-y-1.5">
-                  {c.citasBasesJustificacion.map((cita, i) => (
-                    <blockquote
-                      key={i}
-                      className="bg-zinc-50 border-l-2 border-zinc-800 pl-3 py-1.5 text-zinc-700 italic rounded-r text-xs"
-                    >
+                  {c.citasBasesJustificacion.filter(esCitaLiteral).map((cita, i) => (
+                    <blockquote key={i} className="bg-zinc-50 border-l-2 border-zinc-800 pl-3 py-1.5 text-zinc-700 italic rounded-r text-xs">
                       &ldquo;{cita}&rdquo;
                     </blockquote>
                   ))}
                 </div>
+              </div>
+            )}
+            {c.citasBasesJustificacion.some((t) => !esCitaLiteral(t)) && (
+              <div>
+                <h4 className="text-xs uppercase font-semibold text-zinc-500 tracking-wider mb-1.5">Por qué lo recomienda el radar</h4>
+                <ul className="space-y-1.5 list-disc list-inside text-zinc-700">
+                  {c.citasBasesJustificacion.filter((t) => !esCitaLiteral(t)).map((t, i) => (
+                    <li key={i}>{limpiarJustificacion(t)}</li>
+                  ))}
+                </ul>
               </div>
             )}
 
