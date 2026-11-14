@@ -18,7 +18,17 @@ export function EmpresasView({ convocatorias, onSeleccionar }: { convocatorias: 
             <Building2 className="h-4 w-4 text-brand" /> {c.organismo}
           </p>
           <h3 className="mt-3 font-serif text-xl font-bold leading-snug text-zinc-900">{c.titulo}</h3>
-          <p className="mt-3 text-sm text-zinc-600 line-clamp-3">{c.resumenEjecutivo}</p>
+          <p className="mt-3 text-sm text-zinc-600 line-clamp-2">{c.resumenEjecutivo}</p>
+          <p className="mt-3 text-sm text-zinc-700">
+            <strong>Cubre:</strong> {c.accionesSubvencionables.slice(0, 2).join(' · ') || 'Ver ficha'}
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold">
+            <span className="rounded-full bg-brand px-3 py-1 text-white">Encaje {c.matchingGlobal}%</span>
+            <span className="rounded-full border border-zinc-300 px-3 py-1 text-zinc-700">Cierra en {c.diasRestantes} d</span>
+            <span className="rounded-full border border-zinc-300 px-3 py-1 text-zinc-700">
+              {c.porcentajeCofinanciacion === 0 ? 'Sin cofinanciación' : `Aportas ${c.porcentajeCofinanciacion}%`}
+            </span>
+          </div>
           <div className="mt-auto pt-6 flex items-end justify-between gap-4">
             <div>
               <span className="block text-xs uppercase tracking-wide text-zinc-500">Aportación máxima</span>

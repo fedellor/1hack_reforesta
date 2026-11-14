@@ -1,5 +1,6 @@
 import React from 'react';
 import { Convocatoria } from '@/types/convocatoria';
+import { EmbudoReal } from '@/services/api';
 import { formatoEuros } from '@/lib/territorio';
 import { Bosque } from '@/components/Bosque';
 
@@ -7,8 +8,9 @@ import { Bosque } from '@/components/Bosque';
 const DETECTADAS_SIMULADO = 214;
 const HORAS_LECTURA_POR_CONVOCATORIA = 3; // dato del reto: ~3 h de lectura por convocatoria
 
-export function Embudo({ convocatorias }: { convocatorias: Convocatoria[] }) {
-  const detectadas = Math.max(DETECTADAS_SIMULADO, convocatorias.length);
+export function Embudo({ convocatorias, embudo }: { convocatorias: Convocatoria[]; embudo: EmbudoReal | null }) {
+  const real = embudo !== null && embudo.detectadas > 0;
+  const detectadas = real ? Math.max(embudo.detectadas, convocatorias.length) : Math.max(DETECTADAS_SIMULADO, convocatorias.length);
   const aptas = convocatorias.filter((c) => c.elegible);
   const en30 = aptas.filter((c) => c.diasRestantes <= 30);
   const altoEncaje = en30.filter((c) => c.matchingGlobal >= 80);
@@ -16,7 +18,7 @@ export function Embudo({ convocatorias }: { convocatorias: Convocatoria[] }) {
   const horasAhorradas = (detectadas - aptas.length) * HORAS_LECTURA_POR_CONVOCATORIA;
 
   const pasos = [
-    { n: detectadas, etiqueta: 'Detectadas', nota: 'en BDNS, boletines y RSC*' },
+    { n: detectadas, etiqueta: 'Detectadas', nota: real ? 'en la última ingesta del radar' : 'en BDNS, boletines y RSC*' },
     { n: aptas.length, etiqueta: 'Aptas para Reforesta', nota: 'sin cláusulas excluyentes' },
     { n: en30.length, etiqueta: 'Cierran en 30 días', nota: 'ventana de decisión' },
     { n: altoEncaje.length, etiqueta: 'Encaje ≥ 80%', nota: `${formatoEuros(fondos30)} en juego` },
@@ -35,7 +37,7 @@ export function Embudo({ convocatorias }: { convocatorias: Convocatoria[] }) {
             ))}
           </ol>
           <p className="mt-8 px-6 text-xs text-zinc-400">
-            ≈ {horasAhorradas} h de lectura de bases evitadas ({HORAS_LECTURA_POR_CONVOCATORIA} h por convocatoria descartada). *Total detectado simulado para la demo.
+            ≈ {horasAhorradas} h de lectura de bases evitadas ({HORAS_LECTURA_POR_CONVOCATORIA} h por convocatoria descartada). {real ? '' : '*Total detectado simulado: el radar no está conectado.'}
           </p>
         </div>
       </section>

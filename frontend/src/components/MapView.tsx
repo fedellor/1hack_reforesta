@@ -4,7 +4,7 @@ import React from 'react';
 import dynamic from 'next/dynamic';
 import { Convocatoria } from '@/types/convocatoria';
 import { ArrowRight } from 'lucide-react';
-import { COMUNIDADES, ESTATAL, TODOS, filtrarPorTerritorio, formatoEuros } from '@/lib/territorio';
+import { COMUNIDADES, ESTATAL, PROVINCIAS_POR_COMUNIDAD, TODOS, filtrarPorTerritorio, formatoEuros, perteneceAComunidad } from '@/lib/territorio';
 
 // Leaflet necesita window: carga solo en cliente
 const LeafletMap = dynamic(() => import('@/components/LeafletMap'), {
@@ -16,19 +16,40 @@ const LeafletMap = dynamic(() => import('@/components/LeafletMap'), {
   ),
 });
 
+function Lista({ items, vacio, onSeleccionar }: { items: Convocatoria[]; vacio: string; onSeleccionar: (c: Convocatoria) => void }) {
+  return (
+    <ul className="mt-3 divide-y divide-zinc-200 border-y border-zinc-200">
+      {items.slice(0, 3).map((c) => (
+        <li key={c.id}>
+          <button onClick={() => onSeleccionar(c)} className="w-full py-3 flex items-start justify-between gap-4 text-left hover:text-emerald-800">
+            <span className="text-sm leading-snug line-clamp-2">{c.titulo}</span>
+            <span className="text-right shrink-0">
+              <span className="block text-sm font-bold text-brand">{c.matchingGlobal}%</span>
+              <span className="block text-xs text-zinc-500">{formatoEuros(c.cuantiaMaximaProyecto)}</span>
+            </span>
+          </button>
+        </li>
+      ))}
+      {items.length === 0 && <li className="py-4 text-sm text-zinc-400">{vacio}</li>}
+    </ul>
+  );
+}
+
 interface MapViewProps {
   /** Lista SIN filtrar por territorio: colorea el mapa */
   convocatorias: Convocatoria[];
   /** Lista ya filtrada (incluido el territorio) */
   filtradas: Convocatoria[];
   territorio: string;
+  provincia: string;
   onCambiarTerritorio: (territorio: string) => void;
+  onCambiarProvincia: (provincia: string) => void;
   onSeleccionar: (convocatoria: Convocatoria) => void;
   onVerConvocatorias: () => void;
 }
 
 /** Sección «¿Dónde?»: reparto territorial de los fondos. No lista convocatorias: las resume. */
-export function MapView({ convocatorias, filtradas, territorio, onCambiarTerritorio, onSeleccionar, onVerConvocatorias }: MapViewProps) {
+export function MapView({ convocatorias, filtradas, territorio, provincia, onCambiarTerritorio, onCambiarProvincia, onSeleccionar, onVerConvocatorias }: MapViewProps) {
   const total = filtradas.reduce((a, c) => a + c.cuantiaMaximaProyecto, 0);
   const urgentes = filtradas.filter((c) => c.diasRestantes <= 15).length;
   const proximo = filtradas.length ? Math.min(...filtradas.map((c) => c.diasRestantes)) : null;
@@ -42,17 +63,32 @@ export function MapView({ convocatorias, filtradas, territorio, onCambiarTerrito
     .slice(0, 6);
   const maxEuros = ranking[0]?.euros ?? 1;
 
+  // Detalle de una comunidad: lo que aplica a toda ella vs. lo propio de cada provincia
+  const enComunidad = COMUNIDADES.includes(territorio);
+  const deComunidad = enComunidad ? convocatorias.filter((c) => perteneceAComunidad(c.ambitoTerritorial, territorio)) : [];
+  const regionales = deComunidad.filter((c) => !c.provincia).sort((a, b) => b.matchingGlobal - a.matchingGlobal);
+  const provinciasDe = PROVINCIAS_POR_COMUNIDAD[territorio] ?? [];
+  const porProvincia = provinciasDe
+    .map((p) => {
+      const propias = deComunidad.filter((c) => c.provincia === p);
+      return { p, n: propias.length, euros: propias.reduce((a, c) => a + c.cuantiaMaximaProyecto, 0) };
+    })
+    .filter((r) => r.n > 0)
+    .sort((a, b) => b.euros - a.euros);
+  const maxProv = porProvincia[0]?.euros ?? 1;
+  const propiasDeProvincia = provincia ? deComunidad.filter((c) => c.provincia === provincia).sort((a, b) => b.matchingGlobal - a.matchingGlobal) : [];
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
       <div className="lg:col-span-7">
-        <LeafletMap convocatorias={convocatorias} territorio={territorio} onCambiarTerritorio={onCambiarTerritorio} />
-        <p className="mt-2 text-xs text-zinc-400">Pulsa una comunidad para ver su resumen. Las convocatorias estatales se cuentan aparte.</p>
+        <LeafletMap convocatorias={convocatorias} territorio={territorio} provincia={provincia} onCambiarTerritorio={onCambiarTerritorio} onCambiarProvincia={onCambiarProvincia} />
+        <p className="mt-2 text-xs text-zinc-400">Pulsa una comunidad para ampliarla y ver sus provincias. Las convocatorias estatales se cuentan aparte.</p>
       </div>
 
       <aside className="lg:col-span-5 space-y-6">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.15em] text-brand">Resumen territorial</p>
-          <h2 className="mt-1 text-2xl font-bold text-zinc-900">{territorio === TODOS ? 'España' : territorio === ESTATAL ? 'Ámbito estatal' : territorio}</h2>
+          <h2 className="mt-1 text-2xl font-bold text-zinc-900">{territorio === TODOS ? 'España' : territorio === ESTATAL ? 'Ámbito estatal' : provincia ? `${territorio} › ${provincia}` : territorio}</h2>
         </div>
 
         <dl className="grid grid-cols-3 gap-4 border-y border-zinc-200 py-5">
@@ -71,7 +107,7 @@ export function MapView({ convocatorias, filtradas, territorio, onCambiarTerrito
           </div>
         </dl>
 
-        {territorio === TODOS ? (
+        {territorio === TODOS && (
           <div>
             <h3 className="text-sm font-bold uppercase tracking-wide text-zinc-900">Dónde está el dinero</h3>
             <ul className="mt-3 space-y-2.5">
@@ -90,21 +126,50 @@ export function MapView({ convocatorias, filtradas, territorio, onCambiarTerrito
               ))}
             </ul>
           </div>
-        ) : (
+        )}
+
+        {territorio === ESTATAL && (
           <div>
             <h3 className="text-sm font-bold uppercase tracking-wide text-zinc-900">Mejor encaje</h3>
-            <ul className="mt-3 divide-y divide-zinc-200 border-y border-zinc-200">
-              {top.map((c) => (
-                <li key={c.id}>
-                  <button onClick={() => onSeleccionar(c)} className="w-full py-3 flex items-start justify-between gap-4 text-left hover:text-emerald-800">
-                    <span className="text-sm leading-snug line-clamp-2">{c.titulo}</span>
-                    <span className="text-sm font-bold text-brand shrink-0">{c.matchingGlobal}%</span>
-                  </button>
-                </li>
-              ))}
-              {top.length === 0 && <li className="py-4 text-sm text-zinc-400">Sin convocatorias con los filtros actuales.</li>}
-            </ul>
+            <Lista onSeleccionar={onSeleccionar} items={top} vacio="Sin convocatorias con los filtros actuales." />
           </div>
+        )}
+
+        {enComunidad && (
+          <>
+            {provincia && (
+              <div>
+                <h3 className="text-sm font-bold uppercase tracking-wide text-zinc-900">Propias de {provincia}</h3>
+                <Lista onSeleccionar={onSeleccionar} items={propiasDeProvincia} vacio={`${provincia} no tiene convocatorias propias (diputación) ahora.`} />
+              </div>
+            )}
+            <div>
+              <h3 className="text-sm font-bold uppercase tracking-wide text-zinc-900">En toda {territorio}</h3>
+              <p className="text-xs text-zinc-500">Aplican a todas las provincias</p>
+              <Lista onSeleccionar={onSeleccionar} items={regionales} vacio="No hay convocatorias autonómicas con los filtros actuales." />
+            </div>
+            {!provincia && porProvincia.length > 0 && (
+              <div>
+                <h3 className="text-sm font-bold uppercase tracking-wide text-zinc-900">Por provincia</h3>
+                <p className="text-xs text-zinc-500">Solo las propias de cada provincia · pulsa una para verlas</p>
+                <ul className="mt-3 space-y-2.5">
+                  {porProvincia.map((r) => (
+                    <li key={r.p}>
+                      <button onClick={() => onCambiarProvincia(r.p)} className="w-full text-left group">
+                        <span className="flex justify-between text-sm text-zinc-700 group-hover:text-zinc-900">
+                          <span>{r.p} <span className="text-zinc-400">· {r.n}</span></span>
+                          <span className="font-semibold">{formatoEuros(r.euros)}</span>
+                        </span>
+                        <span className="mt-1 block h-1.5 bg-zinc-100">
+                          <span className="block h-full bg-brand" style={{ width: `${(r.euros / maxProv) * 100}%` }} />
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </>
         )}
 
         <button

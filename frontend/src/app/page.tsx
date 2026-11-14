@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
-import { MOCK_CONVOCATORIAS } from '@/data/mockConvocatorias';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { actualizarEstadoBackend, fetchConvocatorias, fetchEmbudo, EmbudoReal } from '@/services/api';
 import { Convocatoria, FiltrosState, EstadoInterno } from '@/types/convocatoria';
-import { Header, Seccion } from '@/components/Header';
+import { Header, Seccion, EstadoDatos } from '@/components/Header';
 import { Hero, Embudo } from '@/components/Hero';
 import { EmpresasView } from '@/components/EmpresasView';
 import { FilterBar } from '@/components/FilterBar';
@@ -24,7 +24,30 @@ const BANNER: Record<Seccion, { titulo: string; migas: string }> = {
 };
 
 export default function Home() {
-  const [convocatorias, setConvocatorias] = useState<Convocatoria[]>(MOCK_CONVOCATORIAS);
+  const [convocatorias, setConvocatorias] = useState<Convocatoria[]>([]);
+  const [datos, setDatos] = useState<EstadoDatos>({ fuente: 'cargando', actualizado: null });
+  const [embudo, setEmbudo] = useState<EmbudoReal | null>(null);
+  // Carga desde el backend real y se refresca cada minuto (y al volver a la pestaña)
+  const cargar = useCallback(async () => {
+    const [r, e] = await Promise.all([fetchConvocatorias(), fetchEmbudo()]);
+    // Con datos de ejemplo no se pisan los cambios locales del pipeline
+    setConvocatorias((prev) => (r.fuente === 'backend' || prev.length === 0 ? r.convocatorias : prev));
+    setEmbudo(e);
+    setDatos({ fuente: r.fuente, actualizado: new Date(r.timestamp) });
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    cargar();
+    const intervalo = setInterval(cargar, 60_000);
+    const alVolver = () => document.visibilityState === 'visible' && cargar();
+    document.addEventListener('visibilitychange', alVolver);
+    return () => {
+      clearInterval(intervalo);
+      document.removeEventListener('visibilitychange', alVolver);
+    };
+  }, [cargar]);
+
   const [convocatoriaSeleccionada, setConvocatoriaSeleccionada] = useState<Convocatoria | null>(null);
   const [seccion, setSeccion] = useState<Seccion>('mapa');
   
@@ -32,6 +55,7 @@ export default function Home() {
   const [filtros, setFiltros] = useState<FiltrosState>({
     busqueda: '',
     ambito: 'todos',
+    provincia: '',
     tipoFuente: 'todos',
     soloElegibles: true, // Por defecto ocultamos exclusiones para ahorrar tiempo
     minMatching: 0,
@@ -42,6 +66,7 @@ export default function Home() {
 
   // Manejador para actualizar el estado interno en el pipeline
   const handleCambiarEstado = (id: string, nuevoEstado: EstadoInterno) => {
+    if (datos.fuente === 'backend') actualizarEstadoBackend(id, nuevoEstado);
     setConvocatorias((prev) =>
       prev.map((c) => (c.id === id ? { ...c, estadoInterno: nuevoEstado } : c))
     );
@@ -77,7 +102,7 @@ export default function Home() {
 
         // Ventana temporal, encaje, urgencia y cuantía (no aplican al canal de empresas)
         if (seccion === 'empresas') return true;
-        if (filtros.ventanaDias > 0 && c.diasRestantes > filtros.ventanaDias) return false;
+        if (seccion !== 'calendario' && filtros.ventanaDias > 0 && c.diasRestantes > filtros.ventanaDias) return false;
         if (c.matchingGlobal < filtros.minMatching) return false;
         if (filtros.soloUrgentes && c.diasRestantes > 15) return false;
         if (c.cuantiaMaximaProyecto < filtros.minCuantia) return false;
@@ -99,8 +124,8 @@ export default function Home() {
   }, [convocatorias, filtros, ordenarPor, seccion]);
 
   const convocatoriasFiltradas = useMemo(
-    () => filtrarPorTerritorio(baseFiltrada, filtros.ambito),
-    [baseFiltrada, filtros.ambito]
+    () => filtrarPorTerritorio(baseFiltrada, filtros.ambito, filtros.provincia),
+    [baseFiltrada, filtros.ambito, filtros.provincia]
   );
 
   const abrir = (c: Convocatoria) => setConvocatoriaSeleccionada(c);
@@ -112,16 +137,21 @@ export default function Home() {
         convocatorias={convocatorias}
         seccion={seccion}
         setSeccion={setSeccion}
-        onRefresh={() => {
-          alert('Convocatorias sincronizadas con fuentes oficiales (BDNS, BOE y CCAA).');
-        }}
+        datos={datos}
+        onRefresh={cargar}
       />
 
       <Hero titulo={BANNER[seccion].titulo} migas={BANNER[seccion].migas} />
-      {seccion === 'mapa' && <Embudo convocatorias={convocatorias} />}
+      {seccion === 'mapa' && <Embudo convocatorias={convocatorias} embudo={embudo} />}
 
       {conFiltros && (
-        <FilterBar filtros={filtros} setFiltros={setFiltros} ordenarPor={ordenarPor} setOrdenarPor={setOrdenarPor} />
+        <FilterBar
+          filtros={filtros}
+          setFiltros={setFiltros}
+          ordenarPor={ordenarPor}
+          setOrdenarPor={setOrdenarPor}
+          modo={seccion === 'convocatorias' ? 'lista' : seccion === 'calendario' ? 'calendario' : 'mapa'}
+        />
       )}
 
       <main className="flex-1 max-w-[1300px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-6">
@@ -130,7 +160,9 @@ export default function Home() {
             convocatorias={baseFiltrada}
             filtradas={convocatoriasFiltradas}
             territorio={filtros.ambito}
-            onCambiarTerritorio={(t) => setFiltros((p) => ({ ...p, ambito: t }))}
+            provincia={filtros.provincia}
+            onCambiarTerritorio={(t) => setFiltros((p) => ({ ...p, ambito: t, provincia: '' }))}
+            onCambiarProvincia={(pv) => setFiltros((p) => ({ ...p, provincia: pv }))}
             onSeleccionar={abrir}
             onVerConvocatorias={() => setSeccion('convocatorias')}
           />
@@ -143,8 +175,8 @@ export default function Home() {
               {filtros.ambito !== TODOS && (
                 <>
                   {' · '}
-                  <button onClick={() => setFiltros((p) => ({ ...p, ambito: TODOS }))} className="underline hover:text-zinc-900">
-                    {filtros.ambito === ESTATAL ? 'Ámbito estatal' : filtros.ambito} ✕
+                  <button onClick={() => setFiltros((p) => ({ ...p, ambito: TODOS, provincia: '' }))} className="underline hover:text-zinc-900">
+                    {filtros.ambito === ESTATAL ? 'Ámbito estatal' : filtros.ambito}{filtros.provincia && ` › ${filtros.provincia}`} ✕
                   </button>
                 </>
               )}

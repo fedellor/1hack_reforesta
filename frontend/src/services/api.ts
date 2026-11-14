@@ -1,57 +1,116 @@
-import { Convocatoria } from '@/types/convocatoria';
+import { Convocatoria, EstadoInterno } from '@/types/convocatoria';
 import { MOCK_CONVOCATORIAS } from '@/data/mockConvocatorias';
+import { ESTATAL, PROVINCIAS_POR_COMUNIDAD } from '@/lib/territorio';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
+/** Código ISO de comunidad que usa el backend → nombre que usa el mapa. */
+const CCAA_POR_CODIGO: Record<string, string> = {
+  'ES-AN': 'Andalucía', 'ES-AR': 'Aragón', 'ES-AS': 'Principado de Asturias', 'ES-CB': 'Cantabria',
+  'ES-CE': 'Ceuta', 'ES-CL': 'Castilla y León', 'ES-CM': 'Castilla-La Mancha', 'ES-CN': 'Canarias',
+  'ES-CT': 'Cataluña', 'ES-EX': 'Extremadura', 'ES-GA': 'Galicia', 'ES-IB': 'Illes Balears',
+  'ES-MC': 'Región de Murcia', 'ES-MD': 'Comunidad de Madrid', 'ES-ML': 'Melilla',
+  'ES-NC': 'Navarra', 'ES-PV': 'País Vasco', 'ES-RI': 'La Rioja', 'ES-VC': 'Comunitat Valenciana',
+};
+
+const normalizar = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+
+/** Forma de una convocatoria tal y como la envía el backend (campos extra respecto al contrato base). */
+type ConvocatoriaApi = Partial<Convocatoria> & {
+  ccaaCodigo?: string;
+  nivelTerritorial?: string;
+  ubicacion?: { ccaa_nombre?: string | null; provincia_nombre?: string | null };
+};
+
+/** Convierte el payload del backend al contrato del front: ámbito = comunidad (o Estatal) y provincia aparte. */
+export function adaptarConvocatoria(raw: ConvocatoriaApi): Convocatoria {
+  const codigo = raw.ccaaCodigo ?? '';
+  const comunidad = CCAA_POR_CODIGO[codigo] ?? (codigo && codigo !== 'ES' && codigo !== 'EU' ? raw.ubicacion?.ccaa_nombre ?? undefined : undefined);
+  const ambitoTerritorial = comunidad ?? ESTATAL;
+
+  // Provincia: solo si la comunidad es pluriprovincial y el nombre del backend casa con una de sus provincias
+  let provincia: string | undefined;
+  const provBackend = raw.ubicacion?.provincia_nombre;
+  const lista = comunidad ? PROVINCIAS_POR_COMUNIDAD[comunidad] : undefined;
+  if (provBackend && lista) {
+    const n = normalizar(provBackend);
+    provincia = lista.find((p) => n.includes(normalizar(p)) || normalizar(p).includes(n.split('/')[0].trim()));
+  }
+
+  return {
+    ...(raw as Convocatoria),
+    ambitoTerritorial,
+    provincia,
+    dealbreakers: raw.dealbreakers ?? [],
+    citasBasesJustificacion: raw.citasBasesJustificacion ?? [],
+    accionesSubvencionables: raw.accionesSubvencionables ?? [],
+    matchingGlobal: Math.round(raw.matchingGlobal ?? 0),
+  };
+}
+
 export interface FetchConvocatoriasResponse {
   convocatorias: Convocatoria[];
-  fuente: 'backend_diego' | 'api_route_mock' | 'fallback_local';
+  /** 'backend' = datos reales del radar; 'ejemplo' = backend no disponible, datos de demostración */
+  fuente: 'backend' | 'ejemplo';
   timestamp: string;
 }
 
 export async function fetchConvocatorias(): Promise<FetchConvocatoriasResponse> {
-  // 1. Intentar conectar con la API en vivo de Diego (FastAPI en rama back)
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2000); // 2 segundos timeout
-
-    const res = await fetch(`${BACKEND_URL}/api/convocatorias`, {
-      signal: controller.signal,
-      cache: 'no-store',
-    });
-    clearTimeout(timeoutId);
-
+    const timeout = setTimeout(() => controller.abort(), 6000);
+    const res = await fetch(`${BACKEND_URL}/api/convocatorias`, { signal: controller.signal, cache: 'no-store' });
+    clearTimeout(timeout);
     if (res.ok) {
       const data = await res.json();
+      const lista: ConvocatoriaApi[] = data.convocatorias ?? data;
       return {
-        convocatorias: data.convocatorias || data,
-        fuente: 'backend_diego',
-        timestamp: new Date().toISOString(),
+        convocatorias: lista.map(adaptarConvocatoria),
+        fuente: 'backend',
+        timestamp: data.actualizadoAt ?? new Date().toISOString(),
       };
     }
   } catch {
-    // Si no está corriendo el backend de Diego, pasamos al siguiente fallback
+    // backend no disponible: se avisa en la interfaz y se usan los datos de ejemplo
   }
+  return { convocatorias: MOCK_CONVOCATORIAS, fuente: 'ejemplo', timestamp: new Date().toISOString() };
+}
 
-  // 2. Intentar consumir la API Route interna de Next.js
+/** Cifras reales de la última ingesta del radar (para el embudo de la portada). */
+export interface EmbudoReal {
+  detectadas: number;
+  pasaronFiltro: number;
+  aceptadas: number;
+  ultimaIngesta: string | null;
+}
+
+export async function fetchEmbudo(): Promise<EmbudoReal | null> {
   try {
-    const res = await fetch('/api/convocatorias');
-    if (res.ok) {
-      const data = await res.json();
-      return {
-        convocatorias: data.convocatorias,
-        fuente: 'api_route_mock',
-        timestamp: data.actualizadoAt || new Date().toISOString(),
-      };
-    }
+    const res = await fetch(`${BACKEND_URL}/api/v1/ingest/runs?limit=1`, { cache: 'no-store' });
+    if (!res.ok) return null;
+    const run = (await res.json()).runs?.[0];
+    if (!run) return null;
+    return {
+      detectadas: run.total_scanned ?? 0,
+      pasaronFiltro: run.passed_layer1 ?? 0,
+      aceptadas: run.accepted_layer2 ?? 0,
+      ultimaIngesta: run.finished_at ?? run.started_at ?? null,
+    };
   } catch {
-    // Fallback final
+    return null;
   }
+}
 
-  // 3. Fallback directo a los datos mock estáticos
-  return {
-    convocatorias: MOCK_CONVOCATORIAS,
-    fuente: 'fallback_local',
-    timestamp: new Date().toISOString(),
-  };
+/** Persiste el estado interno (pipeline) en el backend. Devuelve false si no se pudo. */
+export async function actualizarEstadoBackend(id: string, estadoInterno: EstadoInterno): Promise<boolean> {
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/convocatorias/${encodeURIComponent(id)}/estado`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ estadoInterno }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }

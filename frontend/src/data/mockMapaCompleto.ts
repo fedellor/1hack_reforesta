@@ -1,4 +1,5 @@
 import { Convocatoria, EstadoInterno } from '../types/convocatoria';
+import { PROVINCIAS_POR_COMUNIDAD } from '../lib/territorio';
 
 /**
  * Datos de EJEMPLO para visualizar el mapa territorial completo.
@@ -64,11 +65,15 @@ function generar(): Convocatoria[] {
       const matching = Math.round((lineas.restauracionEcosistemas * 0.45 + lineas.conservacionHabitats * 0.35 + lineas.educacionAmbiental * 0.2));
       const slug = comunidad.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z]+/g, '-');
       const codigo = `EJEMPLO-${slug.slice(0, 4).toUpperCase()}-${i + 1}`;
+      // Una de cada dos convocatorias es provincial (diputaciones) en las comunidades pluriprovinciales
+      const provs = PROVINCIAS_POR_COMUNIDAD[comunidad];
+      const provincia = provs && i % 2 === 1 ? provs[Math.floor(rnd() * provs.length)] : undefined;
       salida.push({
         id: `ejemplo-${slug}-${i + 1}`,
+        provincia,
         codigoOficial: codigo,
-        titulo: `${tema.t} · ${comunidad} (dato de ejemplo)`,
-        organismo: `Consejería de Medio Ambiente · ${comunidad}`,
+        titulo: `${tema.t} · ${provincia ?? comunidad} (dato de ejemplo)`,
+        organismo: provincia ? `Diputación de ${provincia}` : `Consejería de Medio Ambiente · ${comunidad}`,
         tipoFuente: 'publica_autonomica',
         ambitoTerritorial: comunidad,
         presupuestoTotal: cuantia * 20,
