@@ -61,6 +61,31 @@ NUTS_TO_CCAA: dict[str, str] = {
     info["nuts"]: code for code, info in CCAA_CATALOG.items()
 }
 
+# Geographic centroids & default map zoom for Frontend interactive map integration
+CCAA_COORDINATES: dict[str, dict[str, float | int]] = {
+    "ES-AN": {"lat": 37.5443, "lon": -4.7278, "zoom": 7},
+    "ES-AR": {"lat": 41.5976, "lon": -0.9057, "zoom": 7},
+    "ES-AS": {"lat": 43.3614, "lon": -5.8593, "zoom": 8},
+    "ES-CB": {"lat": 43.1828, "lon": -3.9878, "zoom": 8},
+    "ES-CE": {"lat": 35.8894, "lon": -5.3213, "zoom": 11},
+    "ES-CL": {"lat": 41.8357, "lon": -4.3976, "zoom": 7},
+    "ES-CM": {"lat": 39.2796, "lon": -3.0977, "zoom": 7},
+    "ES-CN": {"lat": 28.2916, "lon": -16.6291, "zoom": 7},
+    "ES-CT": {"lat": 41.8205, "lon": 1.8676, "zoom": 7},
+    "ES-EX": {"lat": 39.1667, "lon": -6.1667, "zoom": 7},
+    "ES-GA": {"lat": 42.7551, "lon": -7.8662, "zoom": 7},
+    "ES-IB": {"lat": 39.6953, "lon": 3.0176, "zoom": 8},
+    "ES-MC": {"lat": 38.0000, "lon": -1.5000, "zoom": 8},
+    "ES-MD": {"lat": 40.4168, "lon": -3.7038, "zoom": 8},
+    "ES-ML": {"lat": 35.2923, "lon": -2.9381, "zoom": 11},
+    "ES-NC": {"lat": 42.6954, "lon": -1.6761, "zoom": 8},
+    "ES-PV": {"lat": 43.0000, "lon": -2.6167, "zoom": 8},
+    "ES-RI": {"lat": 42.2871, "lon": -2.5396, "zoom": 8},
+    "ES-VC": {"lat": 39.4840, "lon": -0.7533, "zoom": 7},
+    "ES": {"lat": 40.4637, "lon": -3.7492, "zoom": 5},
+    "EU": {"lat": 40.4637, "lon": -3.7492, "zoom": 5},
+}
+
 # Provinces -> (provincia_codigo, provincia_nombre, ccaa_codigo, patterns)
 PROVINCES: list[tuple[str, str, str, list[str]]] = [
     ("ES-A", "Alicante / Alacant", "ES-VC", ["alicante", "alacant", "alcoy", "elche", "elx", "denia"]),
@@ -299,9 +324,15 @@ def resolve_geography(
             return "PROVINCIA"
         return default_lvl
 
-    # 5. Match NUTS code if provided
-    if nuts_code:
-        nuts_clean = nuts_code.strip().upper()[:4]
+    # 5. Match NUTS code if provided or embedded in region_text/organo (e.g. "ES22 - COMUNIDAD FORAL DE NAVARRA")
+    effective_nuts = nuts_code
+    if not effective_nuts:
+        m_nuts = re.search(r"\b(ES[1-7]\d)\b", f"{region_text} {organo}".upper())
+        if m_nuts:
+            effective_nuts = m_nuts.group(1)
+
+    if effective_nuts:
+        nuts_clean = effective_nuts.strip().upper()[:4]
         if nuts_clean in NUTS_TO_CCAA:
             ccaa_code = NUTS_TO_CCAA[nuts_clean]
             prov_code, prov_name = _find_province(combined, filter_ccaa=ccaa_code)
@@ -380,3 +411,104 @@ def _find_province_with_ccaa(text_norm: str) -> tuple[str | None, str | None, st
             if re.search(rf"\b{re.escape(pat)}\b", text_norm):
                 return p_code, p_name, ccaa
     return None, None, None
+
+
+# Foreign-only territories / third-country cooperation (must be rejected unless executing in Spain)
+_INTERNATIONAL_COOP_EXCLUSION_RE = re.compile(
+    r"\b("
+    r"cooperaci[oó]n\s+(?:internacional\s+)?(?:al\s+|para\s+el\s+)?desarrollo|"
+    r"proyectos?\s+en\s+pa[ií]ses\s+en\s+(?:v[ií]as\s+de\s+)?desarrollo|"
+    r"terceros\s+pa[ií]ses|pa[ií]ses\s+del\s+sur|ayuda\s+humanitaria(?:\s+internacional)?|"
+    r"developing\s+countries|low[-\s]and\s+middle[-\s]income\s+countries|global\s+south"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_FOREIGN_TERRITORY_ONLY_RE = re.compile(
+    r"\b("
+    r"ucrania|ukraine|moldavia|moldova|georgia\b|balcanes(?:\s+occidentales)?|western\s+balkans|"
+    r"serbia|bosnia|albania|montenegro|kosovo|macedonia\s+del\s+norte|north\s+macedonia|"
+    r"(?<!virgen de )[aá]frica(?:\s+subsahariana|\s+occidental|\s+oriental)?|sub[-\s]?saharan\s+africa|"
+    r"sahel|marruecos|morocco|argelia|algeria|t[uú]nez|tunisia|senegal|mali\b|n[ií]ger|kenia|kenya|"
+    r"etiop[ií]a|ethiopia|mozambique|madagascar|ghana|uganda|tanzania|ruanda|rwanda|camer[uú]n|"
+    r"am[eé]rica\s+latina|latin\s+america|iberoam[eé]rica|centroam[eé]rica|amazonia|amazon\s+basin|"
+    r"brasil|brazil|colombia|per[uú]|peru|ecuador|bolivia|venezuela|guatemala|honduras|nicaragua|"
+    r"el\s+salvador|costa\s+rica|m[eé]xico|mexico|argentina|chile|paraguay|uruguay|"
+    r"asia\s+sudoriental|southeast\s+asia|indonesia|india\b|vietnam|filipinas|philippines|china\b|nepal|"
+    r"guadeloupe|martinique|guyane|mayotte|la\s+r[eé]union"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_SPAIN_EXPLICIT_ELIGIBILITY_RE = re.compile(
+    r"\b("
+    r"espa[ñn]a|spain|spanish|pen[ií]nsula\s+ib[eé]rica|iberian\s+(?:peninsula|forests?)|"
+    r"poctep|poctefa|sudoe|mac\s+canarias|canarias|canary\s+islands|baleares|balearic|"
+    r"andaluc[ií]a|arag[oó]n|asturias|cantabria|castilla|catalu[ñn]a|catalunya|extremadura|"
+    r"galicia|madrid|murcia|navarra|pa[ií]s\s+vasco|euskadi|la\s+rioja|valencia"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def check_spanish_territory_eligibility(
+    titulo: str,
+    texto: str = "",
+    organo: str = "",
+    region_hint: str = "",
+) -> tuple[bool, str | None]:
+    """
+    Verify that the opportunity is for execution in Spanish territory (including foreign/EU
+    grants applicable to reforest in Spain). Rejects calls targeting foreign countries
+    (e.g. Ukraine, Africa, Latin America, Asia) or third-country international development cooperation.
+    """
+    combined = f"{titulo}\n{organo}\n{region_hint}\n{texto[:4000]}"
+
+    m_coop = _INTERNATIONAL_COOP_EXCLUSION_RE.search(combined)
+    if m_coop:
+        return False, f"Excluida por ser cooperación en terceros países fuera de España ({m_coop.group(0)})"
+
+    m_foreign = _FOREIGN_TERRITORY_ONLY_RE.search(combined)
+    if m_foreign:
+        # Allow only if Spain / Iberian Peninsula / cross-border Spain programme is explicitly targeted in title/region
+        if not _SPAIN_EXPLICIT_ELIGIBILITY_RE.search(f"{titulo} {region_hint}"):
+            return False, f"Excluida por ámbito territorial fuera de España ({m_foreign.group(0)})"
+
+    return True, None
+
+
+_NATURAL_AREA_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    ("Red Natura 2000 (ZEC / ZEPA)", re.compile(r"\b(?:red\s+natura\s+2000|xarxa\s+natura\s+2000|natura\s+2000)\b", re.I)),
+    ("Sierra de Guadarrama", re.compile(r"\b(?:sierra\s+de\s+guadarrama|guadarrama)\b", re.I)),
+    ("Sierra del Rincón", re.compile(r"\bsierra\s+del\s+rinc[oó]n\b", re.I)),
+    ("Sierra de la Culebra", re.compile(r"\bsierra\s+de\s+la\s+culebra\b", re.I)),
+    ("Cuenca Hidrográfica del Tajo", re.compile(r"\b(?:cuenca\s+(?:hidrogr[aá]fica\s+)?del\s+tajo|confederaci[oó]n\s+hidrogr[aá]fica\s+del\s+tajo)\b", re.I)),
+    ("Cuenca Hidrográfica del Ebro", re.compile(r"\b(?:cuenca\s+(?:hidrogr[aá]fica\s+)?del\s+ebro|confederaci[oó]n\s+hidrogr[aá]fica\s+del\s+ebro)\b", re.I)),
+    ("Cuenca Hidrográfica del Duero", re.compile(r"\b(?:cuenca\s+(?:hidrogr[aá]fica\s+)?del\s+duero|confederaci[oó]n\s+hidrogr[aá]fica\s+del\s+duero)\b", re.I)),
+    ("Cuenca Hidrográfica del Guadalquivir", re.compile(r"\b(?:cuenca\s+(?:hidrogr[aá]fica\s+)?del\s+guadalquivir|confederaci[oó]n\s+hidrogr[aá]fica\s+del\s+guadalquivir)\b", re.I)),
+    ("Doñana", re.compile(r"\bdo[ñn]ana\b", re.I)),
+    ("Sierra Nevada", re.compile(r"\bsierra\s+nevada\b", re.I)),
+    ("Reserva Natural de Muniellos", re.compile(r"\bmuniellos\b", re.I)),
+    ("Reserva de la Biosfera de Urdaibai", re.compile(r"\burdaibai\b", re.I)),
+    ("Monte Valonsadero / Bosque Modelo Urbión", re.compile(r"\b(?:valonsadero|urbi[oó]n)\b", re.I)),
+    ("Picos de Europa", re.compile(r"\bpicos\s+de\s+europa\b", re.I)),
+    ("Pirineos", re.compile(r"\b(?:pirineo[s]?|pirineu[s]?)\b", re.I)),
+    ("Serranía de Cuenca", re.compile(r"\bserran[ií]a\s+de\s+cuenca\b", re.I)),
+    ("Montes de Toledo / Cabañeros", re.compile(r"\b(?:montes\s+de\s+toledo|caba[ñn]eros)\b", re.I)),
+    ("Sierra de Gredos", re.compile(r"\bgredos\b", re.I)),
+    ("Parque Nacional de Monfragüe", re.compile(r"\bmonfrag[uü]e\b", re.I)),
+    ("Parque Nacional de Garajonay / Corona Forestal", re.compile(r"\b(?:garajonay|corona\s+forestal)\b", re.I)),
+    ("Sierra de Cazorla, Segura y Las Villas", re.compile(r"\bcazorla\b", re.I)),
+    ("Parque Natural Los Alcornocales / Sierra Bermeja", re.compile(r"\b(?:los\s+alcornocales|sierra\s+bermeja)\b", re.I)),
+]
+
+
+def extract_natural_area_or_comarca(text: str) -> str | None:
+    """Detect protected natural areas, mountain ranges, river basins or comarcas mentioned in the call."""
+    if not text:
+        return None
+    for label, pat in _NATURAL_AREA_PATTERNS:
+        if pat.search(text):
+            return label
+    return None
+

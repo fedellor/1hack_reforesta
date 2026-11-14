@@ -797,15 +797,15 @@ def get_multilevel_candidates() -> list[RawCandidate]:
             codigo_oficial="FBBVA-ECO-2026",
             fuente="FUNDACION_PRIVADA",
             tipo_oportunidad="CONVOCATORIA_PRIVADA",
-            titulo="Ayudas Fundación BBVA a Proyectos de Investigación Científica y Conservación en Ecología Forestal, Incendios y Cambio Climático 2026",
+            titulo="Ayudas Fundación BBVA a Actuaciones de Conservación de la Biodiversidad, Restauración de Ecosistemas Forestales y Prevención de Incendios en España 2026",
             organo_convocante="Fundación BBVA",
             texto=(
-                "Financiación privada competitiva para equipos universitarios, CSIC y ONGs conservacionistas en proyectos de restauración "
-                "de ecosistemas forestales, piroecología, prevención de megaincendios y biodiversidad en España."
+                "Financiación privada competitiva para ONGs conservacionistas y entidades ambientales en proyectos de restauración "
+                "de ecosistemas forestales, repoblación de hábitats amenazados, prevención de megaincendios y biodiversidad en España."
             ),
             region_hint="Toda España (Estatal / Nacional)",
             nuts_code="ES",
-            beneficiarios_hint="Universidades, Centros de Investigación (CSIC) y ONGs científicas",
+            beneficiarios_hint="Asociaciones sin ánimo de lucro, Fundaciones y ONGs de conservación",
             presupuesto_total=2500000.0,
             importe_max_proyecto=250000.0,
             porcentaje_financiacion=100.0,
@@ -813,7 +813,7 @@ def get_multilevel_candidates() -> list[RawCandidate]:
             fecha_publicacion=today - timedelta(days=12),
             fecha_inicio_solicitud=today - timedelta(days=10),
             fecha_fin_solicitud=today + timedelta(days=33),
-            url_ficha_oficial="https://www.fbbva.es/ayudas/",
+            url_ficha_oficial="https://www.fbbva.es/",
         ),
         RawCandidate(
             id="priv-fundacion-iberdrola-bosques-2026",
@@ -1154,6 +1154,28 @@ def get_multilevel_candidates() -> list[RawCandidate]:
             organo_convocante="Ayuntamiento de Getafe - Concejalía de Deportes",
             texto="Suministro y colocación de césped artificial deportivo y riego por aspersión del estadio municipal.",
             presupuesto_total=380000.0,
+            anio_convocatoria=2026,
+        ),
+        RawCandidate(
+            id="noise-04-investigacion-ucrania",
+            codigo_oficial="HORIZON-CL6-2027-01-CIRCBIO-10",
+            fuente="EU_SEDIA",
+            tipo_oportunidad="PROGRAMA_UE",
+            titulo="Reforzar la investigación forestal para apoyar a Ucrania",
+            organo_convocante="European Commission - Horizon Europe",
+            texto="Strengthening forest research for the support of Ukraine. HORIZON-RIA Research and Innovation Actions.",
+            presupuesto_total=9000000.0,
+            anio_convocatoria=2026,
+        ),
+        RawCandidate(
+            id="noise-05-cooperacion-terceros-paises",
+            codigo_oficial="BDNS-998811",
+            fuente="BDNS",
+            tipo_oportunidad="SUBVENCION",
+            titulo="Subvenciones a ONGD para proyectos de cooperación internacional al desarrollo y agroforestería en África Subsahariana y América Latina",
+            organo_convocante="Agencia Española de Cooperación Internacional para el Desarrollo (AECID)",
+            texto="Proyectos en terceros países en vías de desarrollo en Senegal, Perú y Colombia.",
+            presupuesto_total=1500000.0,
             anio_convocatoria=2026,
         ),
     ]

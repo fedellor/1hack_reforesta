@@ -179,6 +179,30 @@ def add_business_days(
     return current
 
 
+def count_business_days_remaining(
+    start_date: date,
+    end_date: date,
+    ccaa_codigo: str | None = None,
+) -> int:
+    """
+    Count working days (días hábiles LPACAP Art. 30.2) remaining from start_date to end_date,
+    discounting Saturdays, Sundays, national holidays, Sunday->Monday transfers, and CCAA holidays.
+    """
+    if end_date <= start_date:
+        return 0
+    delta_days = (end_date - start_date).days
+    if delta_days > 366:
+        # Fast approximation for multi-year horizons (>1 year)
+        return round(delta_days * 5 / 7)
+    count = 0
+    cur = start_date
+    while cur < end_date:
+        cur += timedelta(days=1)
+        if is_business_day_es(cur, ccaa_codigo=ccaa_codigo):
+            count += 1
+    return count
+
+
 def add_months_lpacap(
     base_date: date,
     months: int,

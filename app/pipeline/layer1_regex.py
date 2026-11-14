@@ -2,6 +2,7 @@
 import re
 from dataclasses import dataclass, field
 from app.config import settings
+from app.geo import check_spanish_territory_eligibility
 
 
 @dataclass
@@ -104,7 +105,7 @@ PATTERNS_WILDFIRES: list[tuple[str, re.Pattern[str]]] = [
             # Basque
             r"baso[-\s]?sute\w*|sute(?:en)?\s+prebentzio\w*|"
             # English
-            r"wildfire[s]?|forest\s+fire[s]?|fire\s+prevention|fuel\s+management|prescribed\s+(?:burning|fire)|"
+            r"wildfire[s]?|forest\s+fire[s]?|wildfire\s+prevention|forest\s+fire\s+prevention|fuel\s+management|prescribed\s+(?:burning|fire)|"
             r"integrated\s+fire\s+management|fire[-\s]?resilient\s+landscape\w*"
             r")\b",
             re.IGNORECASE,
@@ -163,19 +164,37 @@ PATTERNS_BIODIVERSITY_ENV: list[tuple[str, re.Pattern[str]]] = [
             re.IGNORECASE,
         ),
     ),
-    (
-        "investigacion_forestal",
-        re.compile(
-            r"\b("
-            r"investigaci[oó]n\s+forestal|sanidad\s+forestal|plagas\s+forestales|"
-            r"investigaci[oó]n\s+cient[ií]fica\s+y\s+t[eé]cnica.*medio\s+ambiente|"
-            r"bioeconom[ií]a\s+forestal|innovaci[oó]n\s+forestal|"
-            r"forest\s+research|forest\s+health|forest\s+monitoring"
-            r")\b",
-            re.IGNORECASE,
-        ),
-    ),
 ]
+
+# Pure Research / Academic R&D / Networking Exclusion (Reject unless concrete physical planting/reforestation is present)
+PURE_RESEARCH_EXCLUSION_PATTERN = re.compile(
+    r"\b("
+    r"reforzar\s+la\s+investigaci[oó]n(?:\s+forestal)?|strengthening\s+forest\s+research|"
+    r"forest\s+research\s+(?:for|to\s+support)|apoyar\s+la\s+investigaci[oó]n\s+forestal|"
+    r"becas?\s+(?:de\s+investigaci[oó]n|predoctoral\w*|postdoctoral\w*|fpu\b|fpi\b|doctorado|formaci[oó]n)|"
+    r"contratos?\s+(?:predoctoral\w*|postdoctoral\w*|de\s+investigaci[oó]n)|"
+    r"formaci[oó]n\s+de\s+personal\s+investigador|tesis\s+doctoral\w*|doctorado\s+industrial|"
+    r"proyectos?\s+de\s+investigaci[oó]n\s+(?:b[aá]sica|fundamental|acad[eé]mica|universitaria|cient[ií]fica)|"
+    r"ayudas?\s+.*\s+proyectos?\s+de\s+investigaci[oó]n\s+cient[ií]fica|"
+    r"grupos?\s+de\s+investigaci[oó]n|estancias?\s+de\s+investigaci[oó]n|"
+    r"congreso[s]?\s+cient[ií]fico\w*|jornadas?\s+de\s+investigaci[oó]n|premio[s]?\s+de\s+investigaci[oó]n|"
+    r"innovaci[oó]n\s+t[eé]cnica\s+para\s+proteger|creaci[oó]n\s+de\s+redes\s+para\s+ampliar\s+los\s+laboratorios\s+vivientes|"
+    r"living\s+labs?\s+network\w*|research\s+and\s+innovation\s+actions?|"
+    r"coordination\s+and\s+support\s+actions?|doctoral\s+network\w*|postdoctoral\s+fellowship\w*"
+    r")\b",
+    re.IGNORECASE,
+)
+
+CONCRETE_PLANTING_OVERRIDE_PATTERN = re.compile(
+    r"\b("
+    r"reforest\w*|repoblaci[oó]n\s+forestal|repoboaci[oó]n\s+forestal|repoblaci[oó]\s+forestal|"
+    r"restauraci[oó]n\s+forestal|forest\s+restoration|"
+    r"plantaci[oó]n\s+de\s+[aá]rbol\w*|plantaci[oó]n\s+(?:forestal|de\s+frondosas|con\s+especies\s+aut[oó]ctonas)|"
+    r"tree\s+planting|afforestation|tratamiento[s]?\s+s[ei]lv[ií]cola\w*|baso[-\s]?berritze\w*|"
+    r"zuhaitz\s+landaketa\w*"
+    r")\b",
+    re.IGNORECASE,
+)
 
 # Issuing body & strategic forestry agency boost (+20 pts)
 ORGANO_BOOST_PATTERN = re.compile(
@@ -202,19 +221,22 @@ TIER_A_CPV_PREFIXES = (
     "03121",     # 03121100 Plantas vivas, árboles y arbustos
 )
 
-# Tier B CPVs: Environmental Engineering, Natural Hazards & Green Infrastructure (+35 pts, lets Layer 2 evaluate)
+# Tier B CPVs: Environmental Management & Natural Hazards Protection (+35 pts, lets Layer 2 evaluate)
 TIER_B_CPV_PREFIXES = (
     "9071",      # 90710000-7 Gestión medioambiental
     "9072",      # 90721800-5 Protección contra riesgos o peligros naturales / protección ambiental
+)
+
+# Tier C Support CPVs: Landscaping & Tree Pruning (+15 pts; requires additional forestry/restoration signal to pass >= 25)
+TIER_C_SUPPORT_CPV_PREFIXES = (
     "7731",      # 77310000 Plantación y mantenimiento de zonas verdes
     "7734",      # 77340000 Poda de árboles y setos / arboricultura
-    "451127",    # 45112700 Trabajos de paisajismo / reforestación / anillos verdes
+    "451127",    # 45112700 Trabajos de paisajismo / anillos verdes
     "71313",     # 71313000 Servicios de consultoría en ingeniería ambiental
-    "7311",      # 73110000 Servicios de investigación ambiental
 )
 
 INLINE_CPV_PATTERN = re.compile(
-    r"\b((?:772\d{5}|75251120|9071\d{4}|9072\d{4}|7731\d{4}|7734\d{4}|451127\d{2}|71313\d{3}|7311\d{4}|034\d{5}|03121\d{3})(?:-\d)?)\b"
+    r"\b((?:772\d{5}|75251120|9071\d{4}|9072\d{4}|7731\d{4}|7734\d{4}|451127\d{2}|71313\d{3}|034\d{5}|03121\d{3})(?:-\d)?)\b"
 )
 
 
@@ -222,6 +244,29 @@ def extract_cpv_codes(text: str) -> list[str]:
     """Extract normalized 8-digit relevant forestry/environmental CPV codes from arbitrary text."""
     return sorted({m.split("-")[0] for m in INLINE_CPV_PATTERN.findall(text or "")})
 
+
+# Unconditional hard exclusions (rejected even if an agency or generic fire/forestry word appears)
+HARD_EXCLUSION_PATTERN = re.compile(
+    r"\b("
+    r"anuncio\s+de\s+formalizaci[oó]n\s+de\s+contratos?|"
+    r"subvenci[oó]n\s+nominativa|concesi[oó]n\s+directa\s+nominativa|"
+    r"convocatoria\s+de\s+(?:la\s+)?(?:junta|asamblea)\s+general|comunidad\s+de\s+regantes|"
+    r"somete\s+a\s+informaci[oó]n\s+p[uú]blica|administrador\s+de\s+infraestructuras\s+ferroviarias|"
+    r"levantamiento\s+de\s+actas\s+previas|expropiaci[oó]n\s+forzosa|autorizaci[oó]n\s+administrativa\s+previa|"
+    r"delegaci[oó]n\s+territorial\s+de\s+econom[ií]a,\s+hacienda.*industria,\s+energ[ií]a\s+y\s+minas|"
+    r"embalaje\s*/?\s*desembalaje|"
+    r"fire\s+prevention\s+and\s+mitigation\s+for\s+evs|electric\s+vehicles?\s+in\s+confined\s+areas|2zero\s+partnership|"
+    r"horizon[-\s]miss[-\s]\d{4}[-\s](?:03[-\s])?ocean|ocean\s+mission|european\s+blue\s+parks?|blue\s+parks?|"
+    r"restoration\s+of\s+marine\s+habitats?|marine\s+and\s+coastal\s+ecosystems|blue\s+forest|"
+    r"atlantic\s+and\s+arctic\s+sea\s+basin|biotecnolog[ií]a\s+para\s+ccu|"
+    r"preparedness\s+for\s+large[-\s]?scale\s+cross[-\s]?border\s+disasters?|"
+    r"eficiencia\s+energ[eé]tica\s+con\b|movilidad\s+sostenible\s+con\b|reformas?\s+sostenibles?\s+con\b|te\s+contamos\s+m[aá]s|"
+    r"premios?\s+fronteras\s+del\s+conocimiento|premios?\s+de\s+inform[aá]tica|red\s+leonardo|"
+    r"lorem\s+ips\w*|test\s+iframe|proyectos?\s+ganadores?|"
+    r"AYUD0580T01|da[ñn]os\s+ocasionados\s+por\s+especies\s+de\s+la\s+fauna\s+silvestre"
+    r")\b",
+    re.IGNORECASE,
+)
 
 # Anti-noise negative patterns (Reject ONLY when no explicit forestry/wildfire match)
 NEGATIVE_NOISE_PATTERN = re.compile(
@@ -231,7 +276,12 @@ NEGATIVE_NOISE_PATTERN = re.compile(
     r"detecci[oó]n\s+de\s+incendios\s+en\s+(?:edificio|colegio|hospital|oficina|pabell[oó]n|nave|parking|garaje)|"
     r"protecci[oó]n\s+pasiva\s+contra\s+incendios\s+en\s+edificio\w*|boca[s]?\s+de\s+incendio\s+equipad\w*|"
     r"c[eé]sped\s+artificial|campo\s+de\s+f[uú]tbol|pista\s+de\s+p[aá]del|"
-    r"suministro\s+de\s+plantas\s+de\s+temporada\s+para\s+rotondas|flor\s+cortada"
+    r"suministro\s+de\s+plantas\s+de\s+temporada\s+para\s+rotondas|flor\s+cortada|"
+    r"rehabilitaci[oó]n\s+de\s+(?:cuartel\w*|edificio\w*|fachada\w*|cubierta\w*|vivienda\w*|pabell\w*|local\w*)|"
+    r"paramentos?\s+verticales?|"
+    r"mantenimiento\s+(?:y\s+conservaci[oó]n\s+)?de\s+jardines\s+(?:de\s+|en\s+)?(?:los\s+|las\s+)?(?:centros?|edificios?|hospital\w*|colegios?|instalaciones|dependencias|cuartel\w*|residencias?)|"
+    r"anuncio\s+de\s+formalizaci[oó]n\s+de\s+contratos?|"
+    r"subvenci[oó]n\s+nominativa|concesi[oó]n\s+directa\s+nominativa"
     r")\b",
     re.IGNORECASE,
 )
@@ -281,7 +331,50 @@ def evaluate_layer1(
     """
     min_score = threshold if threshold is not None else settings.layer1_threshold
     combined = f"{titulo}\n{organo}\n{texto}"
+    content_only = f"{titulo}\n{texto}"
     lang = detect_language(f"{titulo} {organo} {texto[:1500]}")
+
+    # 0A. Territorial Rule: Must be in Spanish territory or a foreign/EU grant applicable to reforest in Spain
+    spain_ok, spain_reason = check_spanish_territory_eligibility(titulo=titulo, texto=texto, organo=organo)
+    if not spain_ok:
+        return Layer1Result(
+            passed=False,
+            decision="REJECT",
+            score=0,
+            preliminary_relevance="DESCARTADA",
+            detected_language=lang,
+            matched_categories=[],
+            matched_terms=[],
+            rejection_reason=spain_reason,
+        )
+
+    # 0B. Pure Research / Academic R&D Exclusion (unless concrete tree planting/reforestation execution is present)
+    m_res = PURE_RESEARCH_EXCLUSION_PATTERN.search(combined)
+    if m_res and not CONCRETE_PLANTING_OVERRIDE_PATTERN.search(content_only):
+        return Layer1Result(
+            passed=False,
+            decision="REJECT",
+            score=0,
+            preliminary_relevance="DESCARTADA",
+            detected_language=lang,
+            matched_categories=[],
+            matched_terms=[],
+            rejection_reason=f"Excluida por ser investigación académica/redes sin ejecución de reforestación: {m_res.group(0)}",
+        )
+
+    # 0C. Unconditional Hard Exclusions (closed contract awards, nominative single-beneficiary grants, marine/EV noise)
+    hard_excl = [m.group(0) for m in HARD_EXCLUSION_PATTERN.finditer(combined)]
+    if hard_excl:
+        return Layer1Result(
+            passed=False,
+            decision="REJECT",
+            score=0,
+            preliminary_relevance="DESCARTADA",
+            detected_language=lang,
+            matched_categories=[],
+            matched_terms=[f"EXCLUDED_HARD:{m.lower()}" for m in hard_excl[:2]],
+            rejection_reason=f"Excluida por filtro estricto de reforestación: {', '.join(hard_excl[:2])}",
+        )
 
     score = 0
     categories: set[str] = set()
@@ -292,7 +385,7 @@ def evaluate_layer1(
     detected_cpvs = list(cpv_codes or [])
     detected_cpvs.extend(extract_cpv_codes(combined))
 
-    # 1. Check Tier A & Tier B CPV codes
+    # 1. Check Tier A, Tier B & Tier C Support CPV codes
     seen_cpvs: set[str] = set()
     for cpv in detected_cpvs:
         clean_cpv = cpv.strip()
@@ -312,34 +405,33 @@ def evaluate_layer1(
         elif any(clean_cpv.startswith(pref) for pref in TIER_B_CPV_PREFIXES):
             score += 35
             matched_terms.append(f"CPV:{clean_cpv}")
-            if clean_cpv.startswith("907"):
-                categories.add("restauracion_ecologica")
-            elif clean_cpv.startswith("7311"):
-                categories.add("investigacion_forestal")
-            else:
-                categories.add("reforestacion")
+            categories.add("restauracion_ecologica")
+        elif any(clean_cpv.startswith(pref) for pref in TIER_C_SUPPORT_CPV_PREFIXES):
+            score += 15
+            matched_terms.append(f"CPV:{clean_cpv}")
+            categories.add("reforestacion")
 
-    # 2. Check Block 1 (Reforestation & Silviculture & Carbon)
+    # 2. Check Block 1 (Reforestation & Silviculture & Carbon) on content_only (not organo name)
     for cat, pattern in PATTERNS_REFORESTATION:
-        matches = [m.group(0) for m in pattern.finditer(combined)]
+        matches = [m.group(0) for m in pattern.finditer(content_only)]
         if matches:
             score += 50
             has_direct_match = True
             categories.add(cat)
             matched_terms.extend(sorted({m.lower() for m in matches})[:3])
 
-    # 3. Check Block 2 (Wildfires)
+    # 3. Check Block 2 (Wildfires) on content_only (not organo name)
     for cat, pattern in PATTERNS_WILDFIRES:
-        matches = [m.group(0) for m in pattern.finditer(combined)]
+        matches = [m.group(0) for m in pattern.finditer(content_only)]
         if matches:
             score += 50
             has_direct_match = True
             categories.add(cat)
             matched_terms.extend(sorted({m.lower() for m in matches})[:3])
 
-    # 4. Check Block 3 (Biodiversity, Natura 2000, Environmental Projects, Education)
+    # 4. Check Block 3 (Biodiversity, Natura 2000, Environmental Projects, Education) on content_only
     for cat, pattern in PATTERNS_BIODIVERSITY_ENV:
-        matches = [m.group(0) for m in pattern.finditer(combined)]
+        matches = [m.group(0) for m in pattern.finditer(content_only)]
         if matches:
             score += 25
             categories.add(cat)

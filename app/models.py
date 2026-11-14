@@ -100,7 +100,13 @@ class Opportunity(SQLModel, table=True):
 
     def to_api_dict(self) -> dict[str, Any]:
         """Serialize to the canonical nested JSON contract agreed with the Frontend, including Strategic Prioritization."""
+        from app.pipeline.metadata_extractor import build_frontend_metadata_bundle
         from app.pipeline.prioritizer import calculate_priority
+
+        front_meta = build_frontend_metadata_bundle(self)
+        ubic = front_meta["ubicacion"]
+        plaz = front_meta["plazos"]
+        din = front_meta["dinero"]
 
         prio = calculate_priority(
             estado=self.estado,
@@ -108,9 +114,9 @@ class Opportunity(SQLModel, table=True):
             relevancia_tipo=self.relevancia_tipo,
             relevancia_score=self.relevancia_score,
             beneficiarios_tipos=self.beneficiarios_tipos or [],
-            porcentaje_financiacion=self.porcentaje_max_financiacion,
-            presupuesto_total=self.presupuesto_total,
-            importe_max_proyecto=self.importe_max_proyecto,
+            porcentaje_financiacion=din["porcentaje_max_financiacion"],
+            presupuesto_total=din["presupuesto_total"],
+            importe_max_proyecto=din["importe_max_proyecto"],
             nivel_territorial=self.nivel_territorial,
         )
         return {
@@ -120,6 +126,7 @@ class Opportunity(SQLModel, table=True):
             "estado": self.estado,
             "estado_interno": self.estado_interno,
             "dias_restantes": self.dias_restantes,
+            "dias_habiles_restantes": plaz["dias_habiles_restantes"],
             "idioma_original": self.idioma_original,
             "priorizacion": {
                 "score": prio.prioridad_score,
@@ -140,12 +147,19 @@ class Opportunity(SQLModel, table=True):
             "resumen": self.resumen,
             "ambito_geografico": {
                 "nivel": self.nivel_territorial,
+                "aplica_en_espana": ubic["aplica_en_espana"],
+                "es_ayuda_extranjera_para_espana": ubic["es_ayuda_extranjera_para_espana"],
+                "pais_codigo": ubic["pais_codigo"],
                 "ccaa_codigo": self.ccaa_codigo,
                 "ccaa_nombre": self.ccaa_nombre,
+                "nuts_codigo": ubic["nuts_codigo"],
                 "provincia_codigo": self.provincia_codigo,
                 "provincia_nombre": self.provincia_nombre,
                 "municipio": self.municipio_nombre,
+                "espacio_natural_o_comarca": ubic["espacio_natural_o_comarca"],
                 "orografia_pendiente": self.orografia_pendiente,
+                "coordenadas_mapa": ubic["coordenadas_mapa"],
+                "etiqueta_front": ubic["etiqueta_front"],
             },
             "organo_convocante": {
                 "nivel_administracion": self.nivel_territorial,
@@ -153,15 +167,19 @@ class Opportunity(SQLModel, table=True):
                 "unidad": self.unidad_convocante,
             },
             "economia": {
-                "presupuesto_total": self.presupuesto_total,
-                "importe_max_proyecto": self.importe_max_proyecto,
-                "importe_max_beneficiario": self.importe_max_beneficiario,
-                "porcentaje_max_financiacion": self.porcentaje_max_financiacion,
+                "presupuesto_total": din["presupuesto_total"],
+                "importe_max_proyecto": din["importe_max_proyecto"],
+                "importe_max_beneficiario": din["importe_max_beneficiario"],
+                "importe_min_proyecto": din["importe_min_proyecto"],
+                "ayuda_por_hectarea_euros": din["ayuda_por_hectarea_euros"],
+                "porcentaje_max_financiacion": din["porcentaje_max_financiacion"],
+                "porcentaje_cofinanciacion_requerida": din["porcentaje_cofinanciacion_requerida"],
                 "modalidad_pago": self.modalidad_pago,
                 "pago_anticipado_sin_aval": self.pago_anticipado_sin_aval,
                 "moneda": self.moneda,
                 "cofinanciado_ue": self.cofinanciado_ue,
                 "fondo_ue": self.fondo_ue,
+                "etiqueta_front": din["etiqueta_front"],
             },
             "beneficiarios": {
                 "tipos": self.beneficiarios_tipos or [],
@@ -176,9 +194,13 @@ class Opportunity(SQLModel, table=True):
                 "fecha_publicacion": self.fecha_publicacion.isoformat() if self.fecha_publicacion else None,
                 "fecha_inicio_solicitud": self.fecha_inicio_solicitud.isoformat() if self.fecha_inicio_solicitud else None,
                 "fecha_fin_solicitud": self.fecha_fin_solicitud.isoformat() if self.fecha_fin_solicitud else None,
+                "dias_naturales_restantes": plaz["dias_naturales_restantes"],
+                "dias_habiles_restantes": plaz["dias_habiles_restantes"],
                 "plazo_texto_original": self.plazo_texto_original,
                 "es_plazo_calculado": self.es_plazo_calculado,
+                "etiqueta_front": plaz["etiqueta_front"],
             },
+            "metadatos_front": front_meta,
             "enlaces": {
                 "url_ficha_oficial": self.url_ficha_oficial,
                 "url_tramitacion": self.url_tramitacion,
@@ -274,6 +296,9 @@ class Opportunity(SQLModel, table=True):
             f"[Plazo Oficial] {self.plazo_texto_original or 'Según bases reguladoras'}",
         ]
 
+        from app.pipeline.metadata_extractor import build_frontend_metadata_bundle
+
+        front_meta = build_frontend_metadata_bundle(self)
         return {
             "id": self.id,
             "codigoOficial": self.codigo_oficial,
@@ -293,7 +318,11 @@ class Opportunity(SQLModel, table=True):
             "fechaPublicacion": self.fecha_publicacion.isoformat() if self.fecha_publicacion else f"{self.anio_convocatoria}-01-15",
             "fechaCierre": self.fecha_fin_solicitud.isoformat() if self.fecha_fin_solicitud else f"{self.anio_convocatoria}-12-31",
             "diasRestantes": max(0, dias),
+            "diasHabilesRestantes": front_meta["plazos"]["dias_habiles_restantes"],
             "urgencia": urgencia,
+            "ubicacion": front_meta["ubicacion"],
+            "plazos": front_meta["plazos"],
+            "dinero": front_meta["dinero"],
             "elegible": elegible,
             "motivoElegibilidad": motivo_elegibilidad,
             "dealbreakers": self.dealbreakers or [],

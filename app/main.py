@@ -139,7 +139,7 @@ def live_backend_radar_inspector() -> HTMLResponse:
   <div class="panel"><strong>Última ejecución de ingesta y telemetría por conector</strong><pre id="runLog" style="font-size:0.82rem;white-space:pre-wrap;margin:8px 0 0;"></pre></div>
   <div class="panel">
     <strong>Oportunidades capturadas (<span id="oppCount">0</span>)</strong>
-    <table><thead><tr><th>Fuente</th><th>Nivel / CCAA</th><th>Estado</th><th>Score</th><th>Código & Título</th><th>Enlace</th></tr></thead><tbody id="tbody"></tbody></table>
+    <table><thead><tr><th>Fuente</th><th>Ubicación (España)</th><th>Plazos (Cierre / Días)</th><th>Dinero (Dotación / Máx.)</th><th>Score</th><th>Código & Título</th><th>Enlace</th></tr></thead><tbody id="tbody"></tbody></table>
   </div>
 <script>
 function el(tag, text) { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; return e; }
@@ -176,9 +176,11 @@ async function loadOpps() {
   const tb = document.getElementById('tbody'); tb.innerHTML = '';
   for (const it of rows) {
     const tr = el('tr');
+    const mf = it.metadatos_front || {};
     tr.appendChild(el('td')).appendChild(el('span', it.metadatos_fuente.fuente_primaria)).className = 'tag';
-    tr.appendChild(el('td', it.ambito_geografico.nivel + ' / ' + it.ambito_geografico.ccaa_codigo));
-    tr.appendChild(el('td', it.estado + (it.dias_restantes != null ? ' (' + it.dias_restantes + 'd)' : '')));
+    tr.appendChild(el('td', (mf.ubicacion && mf.ubicacion.etiqueta_front) || (it.ambito_geografico.nivel + ' / ' + it.ambito_geografico.ccaa_codigo)));
+    tr.appendChild(el('td', (mf.plazos && mf.plazos.etiqueta_front) || it.estado));
+    tr.appendChild(el('td', (mf.dinero && mf.dinero.etiqueta_front) || 'Según bases'));
     tr.appendChild(el('td', it.priorizacion.nivel + ' (' + it.priorizacion.score + ')'));
     tr.appendChild(el('td', '[' + it.codigo_oficial + '] ' + it.titulo_limpio));
     const linkTd = el('td');

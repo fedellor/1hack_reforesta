@@ -102,15 +102,28 @@ _HTML_RELEVANT_CUE_RE = re.compile(
     r"(?:subvenci[oó]n|subvencions|ayuda|axuda|ajut|diru-laguntza|convocatoria|"
     r"beca|grant|call|licitaci[oó]n|contrato|orden\b|orde\b|resoluci[oó]n|decreto|"
     r"reforest|forestal|repoblaci|incendio|lume|incendi|biodivers|natura\s*2000|"
-    r"medio\s*ambiente|medi\s*ambient|bosque|monte|carbono|ribera|sostenib|"
+    r"medio\s*ambiente|medi\s*ambient|bosque|monte|carbono|ribera|"
     r"restauraci[oó]n|custodia|\.pdf\b)",
+    re.IGNORECASE,
+)
+
+_HTML_CALL_ACTION_CUE_RE = re.compile(
+    r"(?:subvenci[oó]n|subvencions|ayuda|axuda|ajut|diru-laguntza|convocatoria|"
+    r"bases\b|solicitud|beca|grant|call|licitaci[oó]n|contrato|orden\b|orde\b|"
+    r"resoluci[oó]n|decreto|financiaci[oó]n|\.pdf\b)",
     re.IGNORECASE,
 )
 
 _HTML_NOISE_CUE_RE = re.compile(
     r"(?:cookie|pol[ií]tica\s+de\s+privacidad|aviso\s+legal|accesibilidad|"
     r"mapa\s+web|iniciar\s+sesi[oó]n|cerrar\s+sesi[oó]n|trabaja\s+con\s+nosotros|"
-    r"s[ií]guenos\s+en|twitter\.com|facebook\.com|instagram\.com|youtube\.com|linkedin\.com)",
+    r"s[ií]guenos\s+en|twitter\.com|facebook\.com|instagram\.com|youtube\.com|linkedin\.com|"
+    r"cont[aá]ctanos|qui[eé]nes\s+somos|d[oó]nde\s+actuamos|qu[eé]\s+hacemos|espa[ñn]ol\s+english|"
+    r"sala\s+de\s+prensa|nota\s+de\s+prensa|suscr[ií]bete|newsletter|preguntas\s+frecuentes|"
+    r"eficiencia\s+energ[eé]tica|movilidad\s+sostenible|reformas?\s+sostenibles?|te\s+contamos\s+m[aá]s|"
+    r"premios?\s+fronteras|premios?\s+de\s+inform[aá]tica|red\s+leonardo|"
+    r"objetivos\s+historia|transparencia|relaciones\s+internacionales|causas\s+de\s+p[eé]rdida|"
+    r"generaci[oó]n\s+y\s+gesti[oó]n\s+del\s+conocimiento|estudio\s+complementario)",
     re.IGNORECASE,
 )
 
@@ -138,7 +151,7 @@ def _local_tag(tag: str) -> str:
 class _HTMLOpportunityParser(HTMLParser):
     """Lightweight stdlib HTML parser collecting alternate RSS links and contextual call anchors."""
 
-    _SKIP_TAGS = {"script", "style", "noscript", "svg"}
+    _SKIP_TAGS = {"script", "style", "noscript", "svg", "nav", "header", "footer", "aside", "form"}
     _BLOCK_TAGS = {"article", "li", "tr", "section", "div", "p", "td"}
     _HEADING_TAGS = {"h1", "h2", "h3", "h4"}
 
@@ -315,6 +328,7 @@ def extract_candidates_from_html(
     rss_urls = [urljoin(base_url, u) for u in parser.rss_links]
     candidates: list[RawCandidate] = []
     seen_urls: set[str] = set()
+    seen_titles: set[str] = set()
 
     for href, a_text, ctx in parser.anchors:
         low_href = href.lower().strip()
@@ -324,16 +338,27 @@ def extract_candidates_from_html(
         if abs_url in seen_urls:
             continue
 
+        is_pdf = _is_pdf_link(abs_url)
+        if len(a_text.strip()) < 12 and not is_pdf:
+            continue
+
         combined = f"{a_text} {ctx}".strip()
         if len(combined) < 18 or _HTML_NOISE_CUE_RE.search(combined) or _HTML_NOISE_CUE_RE.search(low_href):
             continue
-        if not _HTML_RELEVANT_CUE_RE.search(combined) and not _is_pdf_link(abs_url):
+        if not _HTML_RELEVANT_CUE_RE.search(combined) and not is_pdf:
+            continue
+        if not _HTML_CALL_ACTION_CUE_RE.search(f"{a_text} {low_href}") and not is_pdf:
+            continue
+
+        clean_title = a_text if len(a_text) >= 18 else (ctx[:200] or a_text)
+        if is_pdf and len(clean_title) < 24 and ctx:
+            clean_title = ctx[:200]
+        norm_t = re.sub(r"\s+", " ", clean_title.lower()).strip()
+        if norm_t in seen_titles:
             continue
 
         seen_urls.add(abs_url)
-        clean_title = a_text if len(a_text) >= 18 else (ctx[:200] or a_text)
-        if _is_pdf_link(abs_url) and len(clean_title) < 24 and ctx:
-            clean_title = ctx[:200]
+        seen_titles.add(norm_t)
 
         uid = f"{source_cfg['id']}-{stable_short_hash(f'{abs_url}|{clean_title}')}"
         candidates.append(

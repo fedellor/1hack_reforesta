@@ -11,8 +11,17 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session
 from app.config import settings
 from app.database import engine
+from app.geo import check_spanish_territory_eligibility
 from app.models import LLMVerdictCache
-from app.pipeline.layer1_regex import Layer1Result
+from app.pipeline.layer1_regex import (
+    CONCRETE_PLANTING_OVERRIDE_PATTERN,
+    PURE_RESEARCH_EXCLUSION_PATTERN,
+    Layer1Result,
+)
+from app.pipeline.metadata_extractor import (
+    extract_deadline_clause_and_date,
+    extract_money_metadata,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -72,11 +81,17 @@ SYSTEM_PROMPT_JUDGE = """Eres el Juez Experto en Financiación Forestal, Refores
 Tu misión es evaluar convocatorias públicas y privadas (subvenciones, licitaciones, programas europeos y fundaciones privadas) que ya han superado un primer filtro de expresiones regulares (Capa 1).
 
 REGLAS CRÍTICAS DE EVALUACIÓN:
-1. NUNCA descartes una convocatoria porque el campo 'Sector económico' de la BDNS diga algo incongruente (ej. 'Actividades inmobiliarias' en una ayuda del MITECO). Evalúa siempre el título, el órgano convocante y el texto de las bases.
-2. Distingue dos niveles de aprobación:
-   - DIRECTA (score 80-100): Convocatorias explícitas de reforestación, repoblación forestal, silvicultura, montes vecinales/públicos, biomasa, cortafuegos, prevención/extinción de incendios forestales o restauración post-incendio.
-   - INDIRECTA_ELEGIBLE (score 65-85): Convocatorias de conservación de la biodiversidad, Red Natura 2000, recuperación del patrimonio natural, árboles singulares, adaptación al cambio climático o investigación medioambiental donde un proyecto de reforestación o restauración forestal es claramente elegible.
-3. Si el original está en inglés (Comisión Europea: LIFE, Horizon, Interreg), catalán, gallego o euskera, traduce SIEMPRE `titulo_limpio_es`, `resumen_es` y `justificacion_juez_es` a español claro y profesional.
+1. SOLO PARA REFORESTAR Y RESTAURAR (NO INVESTIGACIÓN PURA):
+   - Aprueba únicamente convocatorias que sirvan para ejecutar acciones reales de reforestación, repoblación con especies autóctonas, silvicultura, restauración ecológica/fluvial, custodia forestal o prevención/restauración de incendios forestales.
+   - DESCARTA (`es_relevante=false, relevancia_tipo='DESCARTADA'`) becas predoctorales/postdoctorales, tesis, proyectos académicos de investigación básica/redes ("Reforzar la investigación forestal", "Research and Innovation Actions", "Living Labs network"), subvenciones nominativas cerradas a una única entidad y anuncios de formalización de contratos ya adjudicados.
+2. SIEMPRE EN TERRITORIO ESPAÑOL:
+   - Acepta convocatorias ejecutables en España (municipales, provinciales, autonómicas, estatales y privadas) y ayudas del extranjero o de la Unión Europea (LIFE, Interreg, EOCA, One Tree Planted, etc.) que financien reforestación EN territorio español.
+   - DESCARTA (`es_relevante=false, relevancia_tipo='DESCARTADA'`) convocatorias destinadas a países extranjeros fuera de España (Ucrania, África, América Latina, Asia, Balcanes o cooperación internacional al desarrollo en terceros países).
+3. NUNCA descartes una convocatoria porque el campo 'Sector económico' de la BDNS diga algo incongruente (ej. 'Actividades inmobiliarias' en una ayuda del MITECO). Evalúa siempre el título, el órgano convocante y el texto de las bases.
+4. Distingue dos niveles de aprobación:
+   - DIRECTA (score 80-100): Convocatorias explícitas de reforestación, repoblación forestal, silvicultura, montes vecinales/públicos, biomasa, cortafuegos, prevención/extinción de incendios forestales o restauración post-incendio en España.
+   - INDIRECTA_ELEGIBLE (score 65-85): Convocatorias de conservación de la biodiversidad, Red Natura 2000, recuperación del patrimonio natural, árboles singulares o adaptación al cambio climático en España donde un proyecto de reforestación o restauración forestal es claramente elegible.
+5. Si el original está en inglés, catalán, gallego o euskera, traduce SIEMPRE `titulo_limpio_es`, `resumen_es` y `justificacion_juez_es` a español claro y profesional, y extrae importes (`presupuesto_total_detectado`, `importe_max_proyecto_detectado`, `porcentaje_max_financiacion_detectado`) y `plazo_solicitud_detectado`.
 """
 
 
@@ -171,7 +186,7 @@ def evaluate_layer2(
     - Tier 3: Public Zero-Key OpenAI-compatible Endpoint (if ENABLE_PUBLIC_LLM_FALLBACK=true)
     - Tier 4: Instant Local Deterministic Expert Judge (0 ms, 100% autonomous, never fails)
     """
-    cache_key = hashlib.sha256(f"{titulo}|{organo}|{texto[:4000]}".encode("utf-8")).hexdigest()
+    cache_key = hashlib.sha256(f"v3|{titulo}|{organo}|{texto[:4000]}".encode("utf-8")).hexdigest()
     allow_heuristic_cache = not bool(api_key_override and api_key_override.strip())
 
     # Tier 0A: RAM LRU cache
@@ -381,8 +396,35 @@ def _deterministic_expert_judge(
             metodo_evaluacion="HYBRID_HEURISTIC",
         )
 
-    combined_low = f"{titulo} {organo} {texto[:6000]}".lower()
-    cats = list(layer1_result.matched_categories)
+    combined_full = f"{titulo}\n{organo}\n{texto[:6000]}"
+    spain_ok, spain_reason = check_spanish_territory_eligibility(titulo=titulo, texto=texto, organo=organo)
+    if not spain_ok:
+        return JudgeVerdictSchema(
+            es_relevante=False,
+            relevancia_tipo="DESCARTADA",
+            score_relevancia=0,
+            categorias=[],
+            titulo_limpio_es=titulo[:180],
+            resumen_es="Descartada en Capa 2 por ámbito fuera de España.",
+            justificacion_juez_es=spain_reason or "Ámbito fuera del territorio español.",
+            metodo_evaluacion="HYBRID_HEURISTIC",
+        )
+
+    m_res = PURE_RESEARCH_EXCLUSION_PATTERN.search(combined_full)
+    if m_res and not CONCRETE_PLANTING_OVERRIDE_PATTERN.search(combined_full):
+        return JudgeVerdictSchema(
+            es_relevante=False,
+            relevancia_tipo="DESCARTADA",
+            score_relevancia=0,
+            categorias=[],
+            titulo_limpio_es=titulo[:180],
+            resumen_es="Descartada en Capa 2 por ser investigación académica sin ejecución de reforestación.",
+            justificacion_juez_es=f"Excluida: {m_res.group(0)}",
+            metodo_evaluacion="HYBRID_HEURISTIC",
+        )
+
+    combined_low = combined_full.lower()
+    cats = [c for c in layer1_result.matched_categories if c != "investigacion_forestal"]
 
     rel_type: Literal["DIRECTA", "INDIRECTA_ELEGIBLE"] = (
         "DIRECTA" if layer1_result.preliminary_relevance == "DIRECTA" else "INDIRECTA_ELEGIBLE"
@@ -427,38 +469,24 @@ def _deterministic_expert_judge(
             cofinanciado_ue = True
             break
 
-    # Extract financial / deadline fallback hints from raw text if caller didn't supply them
-    if presupuesto_hint is None:
-        m_pres = re.search(
-            r"(?:dotaci[oó]n|dotad[ao]\s+con|presupuesto|importe|cuant[ií]a|budget)[^.\n€]{0,45}?\b([\d.]+(?:,\d{1,2})?)\s*(?:euros|€|EUR)",
-            f"{titulo} {texto[:3000]}",
-            re.IGNORECASE,
-        )
-        if m_pres:
-            raw_num = m_pres.group(1).replace(".", "").replace(",", ".")
-            try:
-                presupuesto_hint = float(raw_num)
-            except ValueError:
-                pass
-    if porcentaje_hint is None:
-        m_pct = re.search(
-            r"(?:hasta\s+(?:el|un)|alcanzar\s+el|cofinanciaci[oó]n\s+del|intensidad\s+del)\s*(\d{1,3})\s*%",
-            f"{titulo} {texto[:3000]}",
-            re.IGNORECASE,
-        )
-        if m_pct:
-            pct_val = float(m_pct.group(1))
-            if 10.0 <= pct_val <= 100.0:
-                porcentaje_hint = pct_val
-    if not plazo_hint:
-        m_plz = re.search(
-            r"\b(\d+\s+(?:d[ií](?:as|es)\s+(?:h[aáà]bil(?:e?s)?|natural(?:e?s)?)|mes(?:es|os)?)|"
-            r"(?:un|dos)\s+mes(?:es)?|hasta\s+el\s+\d{1,2}\s+de\s+[a-záéíóú]+\s+de\s+20\d{2})\b",
-            texto[:3000],
-            re.IGNORECASE,
-        )
-        if m_plz:
-            plazo_hint = m_plz.group(1).strip()
+    # Extract financial / deadline fallback hints from raw text using deep structured extractor
+    money_info = extract_money_metadata(
+        titulo=titulo,
+        texto=texto,
+        presupuesto_hint=presupuesto_hint,
+        max_proy_hint=importe_max_proyecto_hint,
+        max_benef_hint=importe_max_beneficiario_hint,
+        pct_hint=porcentaje_hint,
+    )
+    presupuesto_hint = money_info["presupuesto_total"]
+    importe_max_proyecto_hint = money_info["importe_max_proyecto"]
+    importe_max_beneficiario_hint = money_info["importe_max_beneficiario"]
+    porcentaje_hint = money_info["porcentaje_max_financiacion"]
+
+    plazo_hint, _ = extract_deadline_clause_and_date(
+        texto=texto,
+        existing_clause=plazo_hint,
+    )
 
     titulo_limpio, resumen, justificacion, requisitos, gastos = _craft_spanish_metadata(
         titulo=titulo,
@@ -471,6 +499,14 @@ def _deterministic_expert_judge(
         max_proy=importe_max_proyecto_hint,
         max_ent=importe_max_beneficiario_hint,
     )
+    eur_ha_val = money_info.get("ayuda_por_hectarea_euros")
+    if eur_ha_val:
+        ha_fmt = f"{eur_ha_val:,.0f}".replace(",", ".")
+        gastos = f"{gastos} Módulo: {ha_fmt} €/ha."
+    min_proy_val = money_info.get("importe_min_proyecto")
+    if min_proy_val:
+        min_fmt = f"{min_proy_val:,.0f}".replace(",", ".")
+        gastos = f"{gastos} Importe mínimo de {min_fmt} €."
 
     return JudgeVerdictSchema(
         es_relevante=True,

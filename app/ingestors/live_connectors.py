@@ -184,44 +184,120 @@ async def fetch_live_bdns_candidates(
                 logger.debug("BDNS live query for '%s' skipped: %s", term, exc)
                 return []
 
+    async def _enrich_bdns_detail(client: httpx.AsyncClient, cand: RawCandidate, num_conv: str) -> None:
+        if cand.presupuesto_total is not None and cand.fecha_fin_solicitud is not None:
+            return
+        async with sem:
+            try:
+                det_resp = await client.get(
+                    "https://www.pap.hacienda.gob.es/bdnstrans/api/convocatorias",
+                    params={"numConv": num_conv, "vpd": "GE"},
+                )
+                if det_resp.status_code != 200:
+                    return
+                det = det_resp.json()
+                if not isinstance(det, dict):
+                    return
+                if cand.presupuesto_total is None and det.get("presupuestoTotal") is not None:
+                    try:
+                        cand.presupuesto_total = float(det["presupuestoTotal"])
+                    except (TypeError, ValueError):
+                        pass
+                if not cand.fecha_inicio_solicitud and det.get("fechaInicioSolicitud"):
+                    cand.fecha_inicio_solicitud = str(det["fechaInicioSolicitud"])[:10]
+                if not cand.fecha_fin_solicitud and det.get("fechaFinSolicitud"):
+                    cand.fecha_fin_solicitud = str(det["fechaFinSolicitud"])[:10]
+                if not cand.plazo_texto_original and det.get("textFin"):
+                    cand.plazo_texto_original = str(det["textFin"])[:240]
+
+                regiones = det.get("regiones") or []
+                if isinstance(regiones, list) and regiones:
+                    reg_desc = " | ".join(
+                        str(r.get("descripcion") or "") for r in regiones if isinstance(r, dict)
+                    ).strip()
+                    if reg_desc:
+                        cand.region_hint = f"{reg_desc} - {cand.region_hint}".strip(" -")
+                        for r in regiones:
+                            desc_r = str(r.get("descripcion") or "") if isinstance(r, dict) else ""
+                            if desc_r.startswith("ES") and len(desc_r) >= 4 and desc_r[2:4].isdigit():
+                                cand.nuts_code = desc_r[:4]
+                                break
+
+                benefs = det.get("tiposBeneficiarios") or []
+                if isinstance(benefs, list) and benefs and not cand.beneficiarios_hint:
+                    cand.beneficiarios_hint = ", ".join(
+                        str(b.get("descripcion") or "") for b in benefs if isinstance(b, dict)
+                    )
+                fondos = det.get("fondos") or []
+                if isinstance(fondos, list) and fondos:
+                    cand.cofinanciado_ue = True
+                    if not cand.fondo_ue:
+                        cand.fondo_ue = ", ".join(
+                            str(f.get("descripcion") or "") for f in fondos if isinstance(f, dict)
+                        )[:120]
+                if not cand.url_bases_reguladoras and det.get("urlBasesReguladoras"):
+                    cand.url_bases_reguladoras = str(det["urlBasesReguladoras"])
+                if not cand.url_tramitacion and det.get("sedeElectronica"):
+                    cand.url_tramitacion = str(det["sedeElectronica"])
+                extra_txt_parts = [
+                    str(det.get("descripcionFinalidad") or ""),
+                    str(det.get("descripcionBasesReguladoras") or ""),
+                    str(det.get("textFin") or ""),
+                ]
+                extra_txt = ". ".join(p.strip() for p in extra_txt_parts if p.strip())
+                if extra_txt:
+                    cand.texto = f"{cand.texto} {extra_txt}".strip()
+            except Exception as exc:
+                logger.debug("BDNS detail enrichment for '%s' skipped: %s", num_conv, exc)
+
     async with _make_async_client(timeout=timeout, headers=headers) as client:
         results_lists = await asyncio.gather(*[_query_term(client, t) for t in search_terms])
 
-    for items in results_lists:
-        for item in items:
-            num_conv = str(
-                item.get("numeroConvocatoria")
-                or item.get("codigoBDNS")
-                or item.get("codBdns")
-                or item.get("id")
-                or ""
-            ).strip()
-            if not num_conv or num_conv in seen_codes:
-                continue
-            seen_codes.add(num_conv)
+        to_enrich: list[tuple[RawCandidate, str]] = []
+        for items in results_lists:
+            for item in items:
+                num_conv = str(
+                    item.get("numeroConvocatoria")
+                    or item.get("codigoBDNS")
+                    or item.get("codBdns")
+                    or item.get("id")
+                    or ""
+                ).strip()
+                if not num_conv or num_conv in seen_codes:
+                    continue
+                seen_codes.add(num_conv)
 
-            titulo = str(item.get("descripcion") or item.get("titulo") or "").strip()
-            organo_obj = item.get("organo") if isinstance(item.get("organo"), dict) else {}
-            organo = " - ".join(
-                filter(
-                    None,
-                    [
-                        item.get("nivel1") or organo_obj.get("nivel1"),
-                        item.get("nivel2") or organo_obj.get("nivel2"),
-                        item.get("nivel3") or organo_obj.get("nivel3"),
-                    ],
+                titulo = str(item.get("descripcion") or item.get("titulo") or "").strip()
+                organo_obj = item.get("organo") if isinstance(item.get("organo"), dict) else {}
+                organo = " - ".join(
+                    filter(
+                        None,
+                        [
+                            item.get("nivel1") or organo_obj.get("nivel1"),
+                            item.get("nivel2") or organo_obj.get("nivel2"),
+                            item.get("nivel3") or organo_obj.get("nivel3"),
+                        ],
+                    )
                 )
-            )
-            f_rec = item.get("fechaRecepcion") or item.get("fechaRegistro")
-            presupuesto = item.get("presupuestoTotal") or item.get("importeTotal") or item.get("importe")
-            try:
-                pres_float = float(presupuesto) if presupuesto is not None else None
-            except (TypeError, ValueError):
-                pres_float = None
+                region_str = " - ".join(
+                    filter(
+                        None,
+                        [
+                            str(item.get("nivel2") or ""),
+                            str(item.get("nivel3") or ""),
+                            str(item.get("nivel1") or item.get("region") or ""),
+                        ],
+                    )
+                )
+                f_rec = item.get("fechaRecepcion") or item.get("fechaRegistro")
+                presupuesto = item.get("presupuestoTotal") or item.get("importeTotal") or item.get("importe")
+                try:
+                    pres_float = float(presupuesto) if presupuesto is not None else None
+                except (TypeError, ValueError):
+                    pres_float = None
 
-            mrr_flag = bool(item.get("mrr"))
-            candidates.append(
-                RawCandidate(
+                mrr_flag = bool(item.get("mrr"))
+                cand = RawCandidate(
                     id=f"bdns-{num_conv}",
                     codigo_oficial=f"BDNS-{num_conv}",
                     fuente="BDNS",
@@ -229,7 +305,7 @@ async def fetch_live_bdns_candidates(
                     titulo=titulo,
                     organo_convocante=organo or "Administración Pública (BDNS)",
                     texto=f"{titulo}. Órgano: {organo}.",
-                    region_hint=str(item.get("nivel1") or item.get("region") or ""),
+                    region_hint=region_str,
                     presupuesto_total=pres_float,
                     cofinanciado_ue=mrr_flag,
                     fondo_ue="NextGenerationEU / PRTR" if mrr_flag else None,
@@ -238,7 +314,12 @@ async def fetch_live_bdns_candidates(
                     fecha_fin_solicitud=item.get("fechaFinSolicitud"),
                     url_ficha_oficial=f"https://www.pap.hacienda.gob.es/bdnstrans/ge/es/convocatorias/{num_conv}",
                 )
-            )
+                candidates.append(cand)
+                if "nominativa" not in titulo.lower() and len(to_enrich) < 25:
+                    to_enrich.append((cand, num_conv))
+
+        if to_enrich:
+            await asyncio.gather(*[_enrich_bdns_detail(client, c, n) for c, n in to_enrich])
 
     return candidates
 
@@ -350,11 +431,11 @@ async def fetch_live_eu_sedia_candidates(
     """
     candidates_by_id: dict[str, RawCandidate] = {}
     queries = [
-        "reforestation OR wildfire OR forest restoration OR LIFE",
-        "biodiversity OR Natura 2000 OR forest OR fire OR Horizon",
-        "silviculture OR afforestation OR carbon farming OR soil",
-        "nature restoration OR green infrastructure OR riparian",
-        "Interreg OR forest OR climate adaptation",
+        "reforestation OR afforestation OR tree planting OR forest restoration",
+        "wildfire OR forest fire OR post-fire restoration OR silviculture",
+        "LIFE Nature OR habitat restoration OR riparian restoration OR urban greening",
+        "agroforestry OR carbon sink OR carbon farming OR Natura 2000",
+        "Interreg OR Iberian OR dehesa OR forest management",
     ]
     sem = asyncio.Semaphore(5)
     query_blob = json.dumps(
@@ -368,6 +449,47 @@ async def fetch_live_eu_sedia_candidates(
         }
     )
     languages_blob = json.dumps(["en", "es"])
+
+    def _parse_sedia_budget_overview(
+        meta: dict[str, Any],
+        ident: str,
+    ) -> tuple[float | None, float | None, str | None, str | None, str]:
+        """Extract topic budget, max contribution per grant, dates and action type from SEDIA budgetOverview JSON."""
+        raw_list = meta.get("budgetOverview") or []
+        if not raw_list or not isinstance(raw_list, list):
+            return None, None, None, None, ""
+        try:
+            b_obj = json.loads(str(raw_list[0]))
+            topic_map = b_obj.get("budgetTopicActionMap") or {}
+            chosen_entry: dict[str, Any] | None = None
+            id_up = ident.upper()
+            for entries in topic_map.values():
+                if not isinstance(entries, list):
+                    continue
+                for entry in entries:
+                    if not isinstance(entry, dict):
+                        continue
+                    act_str = str(entry.get("action") or "").upper()
+                    if id_up in act_str:
+                        chosen_entry = entry
+                        break
+                if chosen_entry:
+                    break
+            if not chosen_entry:
+                return None, None, None, None, ""
+
+            year_map = chosen_entry.get("budgetYearMap") or {}
+            total_b = sum(float(v) for v in year_map.values() if str(v).replace(".", "").isdigit())
+            pres_total = total_b if total_b > 0 else None
+            max_contrib = chosen_entry.get("maxContribution")
+            max_proy = float(max_contrib) if max_contrib and float(max_contrib) > 0 else None
+            open_d = str(chosen_entry.get("plannedOpeningDate") or "")[:10] or None
+            d_dates = chosen_entry.get("deadlineDates") or []
+            end_d = str(d_dates[0])[:10] if d_dates else None
+            act_type = str(chosen_entry.get("action") or "")
+            return pres_total, max_proy, open_d, end_d, act_type
+        except Exception:
+            return None, None, None, None, ""
 
     async def _query_sedia(client: httpx.AsyncClient, q: str) -> list[RawCandidate]:
         batch: list[RawCandidate] = []
@@ -406,6 +528,10 @@ async def fetch_live_eu_sedia_candidates(
                     start_list = meta.get("startDate", [])
                     start_raw = str(start_list[0])[:10] if start_list else None
 
+                    pres_b, max_proy_b, open_b, end_b, act_type = _parse_sedia_budget_overview(meta, ident)
+                    types_of_action = " ".join(str(x) for x in (meta.get("typesOfAction") or []))
+                    action_info = f"{act_type} {types_of_action}".strip()
+
                     id_up = ident.upper()
                     if "LIFE" in id_up:
                         fondo = "LIFE"
@@ -424,14 +550,16 @@ async def fetch_live_eu_sedia_candidates(
                             tipo_oportunidad="PROGRAMA_UE",
                             titulo=title,
                             organo_convocante="European Commission - CINEA / REA (EU Funding & Tenders)",
-                            texto=f"{title}. {desc}",
+                            texto=f"{title}. {desc}. {action_info}".strip(),
                             region_hint="Unión Europea (Aplicable en España)",
                             nuts_code="EU",
+                            presupuesto_total=pres_b,
+                            importe_max_proyecto=max_proy_b,
                             cofinanciado_ue=True,
                             fondo_ue=fondo,
-                            fecha_publicacion=start_raw,
-                            fecha_inicio_solicitud=start_raw,
-                            fecha_fin_solicitud=deadline_raw,
+                            fecha_publicacion=open_b or start_raw,
+                            fecha_inicio_solicitud=open_b or start_raw,
+                            fecha_fin_solicitud=end_b or deadline_raw,
                             url_ficha_oficial=f"https://ec.europa.eu/info/funding-tenders/opportunities/portal/screen/opportunities/topic-details/{ident}",
                         )
                     )

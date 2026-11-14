@@ -282,3 +282,67 @@ def test_live_backend_radar_ui_ingest_runs_and_fuente_filter():
         assert bdns_data["total"] >= 1
         assert all(i["metadatos_fuente"]["fuente_primaria"].upper() == "BDNS" for i in bdns_data["items"])
 
+
+def test_frontend_metadata_extraction_ubicacion_plazos_dinero():
+    """Verify deep extraction of Ubicación (España + coords + espacio natural), Plazos (días hábiles LPACAP) and Dinero (€/ha, max proyecto, total)."""
+    with TestClient(app) as client:
+        # 1. Analyze a rich reforestation call with inline € amounts, €/ha, percentage, natural area & deadline
+        resp = client.post(
+            "/api/v1/analyze/text",
+            json={
+                "titulo": "Subvenciones para repoblación forestal con especies autóctonas en la Sierra de Guadarrama (Red Natura 2000)",
+                "organo_convocante": "Comunidad de Madrid - Consejería de Medio Ambiente",
+                "texto": (
+                    "Dotación total de 1.500.000 euros para plantación de frondosas autóctonas. "
+                    "Subvención máxima de 45.000 € por proyecto y 3.200 €/ha repoblada, cubriendo hasta el 100% "
+                    "de los gastos subvencionables con pago anticipado sin exigencia de garantías. "
+                    "El plazo de presentación será de 15 días hábiles a partir del día siguiente a la publicación."
+                ),
+                "fecha_publicacion": (date.today() - timedelta(days=2)).isoformat(),
+                "guardar_en_bd": False,
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["passed_layer1"] is True
+        assert body["accepted_layer2"] is True
+
+        opp = body["opportunity"]
+        mf = opp["metadatos_front"]
+
+        # Verify Ubicación metadata
+        ubic = mf["ubicacion"]
+        assert ubic["aplica_en_espana"] is True
+        assert ubic["pais_codigo"] == "ES"
+        assert ubic["ccaa_codigo"] == "ES-MD"
+        assert ubic["nuts_codigo"] == "ES30"
+        assert ubic["espacio_natural_o_comarca"] is not None
+        assert "lat" in ubic["coordenadas_mapa"] and "lon" in ubic["coordenadas_mapa"]
+        assert "Comunidad de Madrid" in ubic["etiqueta_front"]
+
+        # Verify Plazos metadata
+        plazos = mf["plazos"]
+        assert plazos["estado"] == "ACTIVA"
+        assert plazos["fecha_fin_solicitud"] is not None
+        assert plazos["dias_naturales_restantes"] >= 15
+        assert plazos["dias_habiles_restantes"] >= 10
+        assert "hábiles" in plazos["etiqueta_front"]
+
+        # Verify Dinero metadata
+        dinero = mf["dinero"]
+        assert dinero["presupuesto_total"] == 1500000.0
+        assert dinero["importe_max_proyecto"] == 45000.0
+        assert dinero["ayuda_por_hectarea_euros"] == 3200.0
+        assert dinero["porcentaje_max_financiacion"] == 100.0
+        assert dinero["pago_anticipado_sin_aval"] is True
+        assert "45.000 €" in dinero["etiqueta_front"]
+
+        # 2. Verify /api/convocatorias exposes ubicacion, plazos, dinero for Frontend
+        conv_resp = client.get("/api/convocatorias").json()
+        first_conv = conv_resp["convocatorias"][0]
+        assert "ubicacion" in first_conv
+        assert "plazos" in first_conv
+        assert "dinero" in first_conv
+        assert first_conv["ubicacion"]["aplica_en_espana"] is True
+
+
