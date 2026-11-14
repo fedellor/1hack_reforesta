@@ -249,7 +249,19 @@ def extract_cpv_codes(text: str) -> list[str]:
 HARD_EXCLUSION_PATTERN = re.compile(
     r"\b("
     r"anuncio\s+de\s+formalizaci[oó]n\s+de\s+contratos?|"
-    r"subvenci[oó]n\s+nominativa|concesi[oó]n\s+directa\s+nominativa|"
+    r"subv(?:\.|enci[oó]n)?\s+nominativa|subvenci[oó]n\s+nominada|concesi[oó]n\s+directa\s+nominativa|"
+    r"subvenci[oó]n(?:es)?\s+directa[s]?|concesi[oó]n\s+directa\s+de\s+(?:una\s+)?subvenci[oó]n|"
+    r"autoriza\s+la\s+concesi[oó]n\s+directa|concesi[oó]n\s+directa\s+de\s+ayudas?|ayudas?\s+\d{4}\s+directas?\s+a\s+(?:empresas|explotaciones)|"
+    r"dir_22\.2\.a|subvenci[oó]n\s+federaci[oó]n|ayuda\s+excepcional\s+a\s+la\s+asociaci[oó]n|subv\.\s+seo/birdlife|"
+    r"convenio\s+(?:de\s+)?colaboraci[oó]n|convenio\s+diputaci[oó]n|aprobaci[oó]n\s+del\s+convenio|"
+    r"convenio\s+(?:entre|con\s+la\s+asociaci[oó]n|con\s+la\s+fundaci[oó]n|con\s+la\s+organizaci[oó]n|con\s+la\s+comunidad|para\s+(?:la\s+)?concesi[oó]n)|"
+    r"cuota\s+anual|aportaci[oó]n\s+al\s+csic|"
+    r"trabajos?\s+(?:de\s+)?fin\s+de\s+(?:grado|m[aá]ster|estudios)|beca[s]?\s+de\s+colaboraci[oó]n|beca\s+red\s+natura|"
+    r"miradas\s+veterinarias|escuela\s+de\s+animaci[oó]n|casa\s+penya|actividades\s+de\s+educaci[oó]n\s+ambiental\s+en\s+el\s+municipio|"
+    r"sector\s+tur[ií]stico|explotaciones?\s+agr[ií]colas?\s+(?:y\s+|,\s*)?ganaderas?|vi[ñn]edo\s+secano|pr[eé]stamos?\s+bonificados?|"
+    r"control\s+de\s+la\s+poblaci[oó]n|buena\s+gobernanza|"
+    r"subvenciones?\s+no\s+dinerarias?\s+para\s+la\s+redacci[oó]n|obras?\s+de\s+sellado\s+y\s+restauraci[oó]n|"
+    r"colectivos?\s+de\s+inter[eé]s\s+vecinal|"
     r"convocatoria\s+de\s+(?:la\s+)?(?:junta|asamblea)\s+general|comunidad\s+de\s+regantes|"
     r"somete\s+a\s+informaci[oó]n\s+p[uú]blica|administrador\s+de\s+infraestructuras\s+ferroviarias|"
     r"levantamiento\s+de\s+actas\s+previas|expropiaci[oó]n\s+forzosa|autorizaci[oó]n\s+administrativa\s+previa|"
@@ -261,10 +273,11 @@ HARD_EXCLUSION_PATTERN = re.compile(
     r"atlantic\s+and\s+arctic\s+sea\s+basin|biotecnolog[ií]a\s+para\s+ccu|"
     r"preparedness\s+for\s+large[-\s]?scale\s+cross[-\s]?border\s+disasters?|"
     r"eficiencia\s+energ[eé]tica\s+con\b|movilidad\s+sostenible\s+con\b|reformas?\s+sostenibles?\s+con\b|te\s+contamos\s+m[aá]s|"
+    r"hispaled|koiki|gne\s+finance|aventura\s+digital|bases\s+legales\s+ii\s+convocatoria|presenta\s+tu\s+candidatura|"
     r"premios?\s+fronteras\s+del\s+conocimiento|premios?\s+de\s+inform[aá]tica|red\s+leonardo|"
     r"lorem\s+ips\w*|test\s+iframe|proyectos?\s+ganadores?|"
     r"AYUD0580T01|da[ñn]os\s+ocasionados\s+por\s+especies\s+de\s+la\s+fauna\s+silvestre"
-    r")\b",
+    r")",
     re.IGNORECASE,
 )
 

@@ -201,11 +201,17 @@ def ensure_initial_seed(session: Session) -> None:
 
 
 def refresh_live_database_states(session: Session) -> int:
-    """Recalculate ACTIVA/PROXIMA/CERRADA, dias_restantes and prioridad_score for all records in DB."""
+    """Recalculate ACTIVA/PROXIMA/CERRADA, dias_restantes and prioridad_score for all records in DB, and purge excluded items."""
+    from app.pipeline.layer1_regex import HARD_EXCLUSION_PATTERN
+
     today = settings.get_today()
     opps = session.exec(select(Opportunity)).all()
     updated = 0
     for o in opps:
+        if HARD_EXCLUSION_PATTERN.search(f"{o.titulo_original or ''}\n{o.titulo_limpio or ''}\n{o.organo_convocante or ''}"):
+            session.delete(o)
+            updated += 1
+            continue
         resolved = compute_dates_and_status(
             fecha_publicacion=o.fecha_publicacion,
             fecha_inicio_solicitud=o.fecha_inicio_solicitud,

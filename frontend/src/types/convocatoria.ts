@@ -53,6 +53,16 @@ export interface Convocatoria {
 
   // Estado Interno Reforesta
   estadoInterno: EstadoInterno;
+
+  // Metadatos enriquecidos del Backend (Ubicación, Plazos LPACAP Art. 30, Dinero)
+  ccaaCodigo?: string;
+  nivelTerritorial?: string;
+  estado?: string;
+  pagoAnticipadoSinAval?: boolean | null;
+  diasHabilesRestantes?: number | null;
+  ubicacion?: Record<string, unknown>;
+  plazos?: Record<string, unknown>;
+  dinero?: Record<string, unknown>;
 }
 
 export interface FiltrosState {

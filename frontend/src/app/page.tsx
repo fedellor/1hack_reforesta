@@ -38,7 +38,7 @@ export default function Home() {
     minMatching: 0,
     soloUrgentes: false,
     minCuantia: 0,
-    ventanaDias: 30, // la plataforma trabaja con un horizonte de 30 días
+    ventanaDias: 0, // Mostrar todas las convocatorias reales activas en España por defecto (filtrable a ≤ 30 días)
   });
 
   // Manejador para actualizar el estado interno en el pipeline (y persistirlo en el backend de Diego)
@@ -202,27 +202,161 @@ export default function Home() {
         onCambiarEstado={handleCambiarEstado}
       />
 
-      {/* Footer institucional */}
-      <footer className="bg-[#141414] text-zinc-300 mt-8">
-        <div className="max-w-[1300px] mx-auto px-4 sm:px-6 lg:px-8 py-8 grid gap-6 sm:grid-cols-3 text-xs">
+      {/* Footer corporativo idéntico a https://reforesta.es/ (#Footer) */}
+      <footer className="bg-[#191919] text-[#cccccc] mt-12 border-t border-white/10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 grid gap-8 md:grid-cols-4 text-sm">
+          {/* Columna 1: Logo blanco oficial de Reforesta */}
+          <div className="flex flex-col items-start">
+            <a href="https://reforesta.es/" target="_blank" rel="noopener noreferrer">
+              <img
+                src="/reforesta/logo-reforesta-blanco-pie.png"
+                alt="Reforesta"
+                className="w-[155px] h-auto object-contain"
+              />
+            </a>
+            <a
+              href="https://reforesta.es/wp-content/uploads/2024/02/UTILIDAD-PUBLICA-2024.pdf"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-4 inline-block text-[11px] uppercase tracking-wider text-[#7cc142] hover:underline font-semibold"
+            >
+              Declarada de Utilidad Pública ↗
+            </a>
+          </div>
+
+          {/* Columna 2: Descripción oficial de reforesta.es */}
           <div>
-            <p className="font-serif tracking-[0.2em] text-sm font-bold text-brand">REFORESTA</p>
-            <p className="mt-2 leading-relaxed text-zinc-400">
+            <h4 className="text-white font-semibold text-base mb-3">Descripción</h4>
+            <p className="text-[13px] leading-relaxed text-[#b8b8b8]">
               ONG creada en 1991 para la conservación de la naturaleza, declarada de Utilidad Pública.
+              Jornadas de voluntariado con particulares y empresas. Trabajamos por los bosques.
+            </p>
+            <p className="mt-3 text-[12px] text-[#999999]">
+              Contacto:{' '}
+              <a href="mailto:info@reforesta.es" className="text-[#7cc142] hover:underline">
+                info@reforesta.es
+              </a>
             </p>
           </div>
+
+          {/* Columna 3: Posts recientes y Fuentes Oficiales conectadas */}
           <div>
-            <p className="font-serif font-bold text-white">Contacto</p>
-            <p className="mt-2 text-zinc-400">info@reforesta.es</p>
-            <p className="text-zinc-400">Tres Cantos (Madrid)</p>
+            <h4 className="text-white font-semibold text-base mb-3">Posts recientes &amp; Fuentes</h4>
+            <ul className="space-y-2.5 text-[12px]">
+              <li className="border-b border-white/10 pb-2">
+                <a
+                  href="https://reforesta.es/2026/03/23/21-de-marzo-dia-forestal-mundial/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-white hover:text-[#7cc142] transition-colors font-medium block"
+                >
+                  21 de marzo, Día Forestal Mundial
+                </a>
+                <span className="text-[11px] text-zinc-400">23 marzo, 2026 · Reforesta.es</span>
+              </li>
+              <li className="border-b border-white/10 pb-2">
+                <a
+                  href="https://reforesta.es/2026/02/03/reforesta-restaura-una-importante-zona-de-recarga-del-acuifero-de-madrid/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-white hover:text-[#7cc142] transition-colors font-medium block"
+                >
+                  Reforesta restaura una importante zona de recarga del acuífero de Madrid
+                </a>
+                <span className="text-[11px] text-zinc-400">3 febrero, 2026 · Reforesta.es</span>
+              </li>
+              <li className="text-[11px] text-zinc-400 pt-0.5">
+                Radar conectado a BDNS · BOE · 19 Boletines CCAA · PLACSP · LIFE/SEDIA · Fundaciones RSC
+              </li>
+            </ul>
           </div>
+
+          {/* Columna 4: Redes sociales circulares verdes (#6aa43a) idénticas a reforesta.es */}
           <div>
-            <p className="font-serif font-bold text-white">Fuentes</p>
-            <p className="mt-2 text-zinc-400">BDNS · BOE · Boletines autonómicos · Fundaciones y programas RSC</p>
+            <h4 className="text-white font-semibold text-base mb-3">Síguenos</h4>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <a
+                href="https://www.facebook.com/asociacion.reforesta"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Facebook"
+                className="w-10 h-10 rounded-full bg-[#6aa43a] hover:bg-[#598c30] text-white flex items-center justify-center font-bold text-sm transition-colors"
+              >
+                f
+              </a>
+              <a
+                href="https://twitter.com/Reforesta_ONG"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="X Twitter"
+                className="w-10 h-10 rounded-full bg-[#6aa43a] hover:bg-[#598c30] text-white flex items-center justify-center font-bold text-sm transition-colors"
+              >
+                𝕏
+              </a>
+              <a
+                href="https://www.instagram.com/reforesta_ong/"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Instagram"
+                className="w-10 h-10 rounded-full bg-[#6aa43a] hover:bg-[#598c30] text-white flex items-center justify-center font-bold text-xs transition-colors"
+              >
+                IG
+              </a>
+              <a
+                href="https://www.youtube.com/c/Reforesta_ong"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="YouTube"
+                className="w-10 h-10 rounded-full bg-[#6aa43a] hover:bg-[#598c30] text-white flex items-center justify-center font-bold text-xs transition-colors"
+              >
+                ▶
+              </a>
+              <a
+                href="https://www.linkedin.com/company/asociacion-reforesta/"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="LinkedIn"
+                className="w-10 h-10 rounded-full bg-[#6aa43a] hover:bg-[#598c30] text-white flex items-center justify-center font-bold text-xs transition-colors"
+              >
+                in
+              </a>
+            </div>
           </div>
         </div>
-        <div className="bg-black text-center text-xs text-zinc-400 py-2.5 uppercase tracking-wide">
-          Declarada de utilidad pública · Prototipo 1hack A Coruña (Common Seeds)
+
+        {/* Franja inferior de copyright y enlaces legales de reforesta.es */}
+        <div className="bg-[#111111] border-t border-white/10 py-4 px-4 sm:px-6 lg:px-8 text-xs text-zinc-400">
+          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
+            <div>Copyright © Reforesta. Todos los derechos reservados.</div>
+            <div className="flex items-center gap-2">
+              <a
+                href="https://reforesta.es/politica-de-privacidad/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-[#7cc142] transition-colors"
+              >
+                Política de Privacidad
+              </a>
+              <span>|</span>
+              <a
+                href="https://reforesta.es/aviso-legal/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-[#7cc142] transition-colors"
+              >
+                Aviso legal
+              </a>
+              <span>|</span>
+              <a
+                href="https://reforesta.es/politica-de-cookies/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-[#7cc142] transition-colors"
+              >
+                Política de Cookies
+              </a>
+            </div>
+          </div>
         </div>
       </footer>
     </div>

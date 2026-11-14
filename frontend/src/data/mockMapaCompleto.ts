@@ -4,7 +4,7 @@ import { Convocatoria, EstadoInterno } from '../types/convocatoria';
  * Datos de EJEMPLO para visualizar el mapa territorial completo.
  * Para desactivarlos: ponga USAR_DATOS_MAPA_COMPLETO a false (o borre este archivo y su uso en mockConvocatorias.ts).
  */
-export const USAR_DATOS_MAPA_COMPLETO = true;
+export const USAR_DATOS_MAPA_COMPLETO = false;
 
 // Comunidad (nombre igual al del GeoJSON) → nº de convocatorias de ejemplo
 const POR_COMUNIDAD: Record<string, number> = {
