@@ -1,10 +1,15 @@
-"""Live Async Connectors for Official Public & Private Sources: BDNS, PLACSP Atom (State + CCAA/Local), BOE, EU SEDIA & CCAA RSS."""
+"""Live Async Connectors for Official Public & Private Sources: BDNS, PLACSP Atom, BOE, EU SEDIA, 19 CCAA Web/RSS & Private Foundations."""
 import asyncio
 import logging
 import xml.etree.ElementTree as ET
 from datetime import date, timedelta
 from typing import Any
 import httpx
+from app.ingestors.web_monitors import (
+    PRIVATE_FOUNDATION_SOURCES,
+    enrich_candidate_from_linked_pdf,
+    poll_web_source,
+)
 from app.pipeline.orchestrator import RawCandidate
 
 logger = logging.getLogger(__name__)
@@ -16,11 +21,25 @@ PLACSP_ATOM_STATE_URL = "https://contrataciondelestado.es/sindicacion/sindicacio
 PLACSP_ATOM_LOCAL_URL = "https://contrataciondelestado.es/sindicacion/sindicacion_1044/PlataformasAgregadasSinMenores.atom"
 
 CCAA_RSS_FEEDS: list[dict[str, str]] = [
-    {"id": "rss-dog", "ccaa": "ES-GA", "nombre": "DOG Galicia RSS", "url": "https://www.xunta.gal/diario-oficial-galicia/rss/UltimosDogs_gl.rss"},
-    {"id": "rss-boja", "ccaa": "ES-AN", "nombre": "BOJA Andalucía RSS", "url": "https://www.juntadeandalucia.es/boja/distribucion/boja.xml"},
-    {"id": "rss-dogc", "ccaa": "ES-CT", "nombre": "DOGC Catalunya RSS", "url": "https://dogc.gencat.cat/es/el-dogc/rss/"},
-    {"id": "rss-bocyl", "ccaa": "ES-CL", "nombre": "BOCYL Castilla y León RSS", "url": "https://bocyl.jcyl.es/rss/ultimoboletin.xml"},
-    {"id": "rss-bopa", "ccaa": "ES-AS", "nombre": "BOPA Asturias RSS", "url": "https://sede.asturias.es/bopa-rss"},
+    {"id": "rss-dog", "ccaa": "ES-GA", "nombre": "DOG Galicia", "url": "https://www.xunta.gal/diario-oficial-galicia/rss/UltimosDogs_gl.rss"},
+    {"id": "rss-boja", "ccaa": "ES-AN", "nombre": "BOJA Andalucía", "url": "https://www.juntadeandalucia.es/boja/distribucion/boja.xml"},
+    {"id": "rss-dogc", "ccaa": "ES-CT", "nombre": "DOGC Catalunya", "url": "https://dogc.gencat.cat/es/el-dogc/rss/"},
+    {"id": "rss-bocyl", "ccaa": "ES-CL", "nombre": "BOCYL Castilla y León", "url": "https://bocyl.jcyl.es/rss/ultimoboletin.xml"},
+    {"id": "rss-bopa", "ccaa": "ES-AS", "nombre": "BOPA Asturias", "url": "https://sede.asturias.es/bopa-rss"},
+    {"id": "web-bocm", "ccaa": "ES-MD", "nombre": "BOCM Madrid", "url": "https://www.bocm.es/"},
+    {"id": "web-boa", "ccaa": "ES-AR", "nombre": "BOA Aragón", "url": "https://www.boa.aragon.es/"},
+    {"id": "web-dogv", "ccaa": "ES-VC", "nombre": "DOGV Comunitat Valenciana", "url": "https://dogv.gva.es/"},
+    {"id": "web-bopv", "ccaa": "ES-PV", "nombre": "BOPV País Vasco", "url": "https://www.euskadi.eus/bopv/"},
+    {"id": "web-bon", "ccaa": "ES-NC", "nombre": "BON Navarra", "url": "https://bon.navarra.es/"},
+    {"id": "web-borm", "ccaa": "ES-MC", "nombre": "BORM Región de Murcia", "url": "https://www.borm.es/"},
+    {"id": "web-doe", "ccaa": "ES-EX", "nombre": "DOE Extremadura", "url": "https://doe.juntaex.es/"},
+    {"id": "web-docm", "ccaa": "ES-CM", "nombre": "DOCM Castilla-La Mancha", "url": "https://docm.jccm.es/"},
+    {"id": "web-boib", "ccaa": "ES-IB", "nombre": "BOIB Illes Balears", "url": "https://www.caib.es/eboibfront/"},
+    {"id": "web-boc-cb", "ccaa": "ES-CB", "nombre": "BOC Cantabria", "url": "https://boc.cantabria.es/"},
+    {"id": "web-boc-cn", "ccaa": "ES-CN", "nombre": "BOC Canarias", "url": "https://www.gobiernodecanarias.org/boc/"},
+    {"id": "web-bor", "ccaa": "ES-RI", "nombre": "BOR La Rioja", "url": "https://web.larioja.org/bor-portada"},
+    {"id": "web-bocce", "ccaa": "ES-CE", "nombre": "BOCCE Ceuta", "url": "https://www.ceuta.es/ceuta/bocce"},
+    {"id": "web-bome", "ccaa": "ES-ML", "nombre": "BOME Melilla", "url": "https://bomemelilla.es/"},
 ]
 
 
@@ -495,54 +514,99 @@ async def fetch_live_placsp_candidates(timeout: float = 6.0) -> list[RawCandidat
     return candidates
 
 
-async def fetch_live_ccaa_rss_candidates(timeout: float = 4.0) -> list[RawCandidate]:
-    """
-    Poll official public RSS/Atom feeds of regional bulletins (DOG Galicia, BOJA Andalucía,
-    DOGC Catalunya, BOCYL Castilla y León, BOPA Asturias) concurrently with graceful fallback.
-    """
+async def _gather_web_monitors(
+    sources: list[dict[str, str]],
+    timeout: float,
+    user_agent: str,
+    max_concurrency: int = 8,
+) -> list[RawCandidate]:
+    """Shared concurrent runner for RSS/Atom/HTML bulletin and foundation monitors."""
     candidates: list[RawCandidate] = []
     seen_ids: set[str] = set()
-    headers = {"User-Agent": "1hack_reforesta/2.0 (RSS Monitor)"}
+    sem = asyncio.Semaphore(max_concurrency)
+    headers = {"User-Agent": user_agent}
 
-    async def _poll_rss(client: httpx.AsyncClient, feed: dict[str, str]) -> list[RawCandidate]:
-        items: list[RawCandidate] = []
-        try:
-            resp = await client.get(feed["url"])
-            if resp.status_code != 200 or not resp.text.strip().startswith("<"):
-                return []
-            root = ET.fromstring(resp.text)
-            for idx, item in enumerate(root.findall(".//item")[:40]):
-                title = (item.findtext("title") or "").strip()
-                link = (item.findtext("link") or feed["url"]).strip()
-                desc = (item.findtext("description") or "").strip()
-                if not title:
-                    continue
-                uid = f"{feed['id']}-{abs(hash(link or title)) % 10000000}-{idx}"
-                items.append(
-                    RawCandidate(
-                        id=uid,
-                        codigo_oficial=feed["id"].upper(),
-                        fuente="BOLETIN_CCAA",
-                        tipo_oportunidad="SUBVENCION",
-                        titulo=title,
-                        organo_convocante=feed["nombre"],
-                        texto=f"{title}. {desc}",
-                        region_hint=feed["ccaa"],
-                        fecha_publicacion=date.today(),
-                        url_ficha_oficial=link,
-                    )
-                )
-        except Exception as exc:
-            logger.debug("CCAA RSS '%s' skipped: %s", feed["id"], exc)
-        return items
+    async def _run_one(client: httpx.AsyncClient, cfg: dict[str, str]) -> list[RawCandidate]:
+        async with sem:
+            batch = await poll_web_source(client, cfg)
+            for item in batch:
+                if item.fecha_publicacion is None:
+                    item.fecha_publicacion = date.today()
+            return batch
 
     async with httpx.AsyncClient(timeout=timeout, headers=headers, follow_redirects=True) as client:
-        batches = await asyncio.gather(*[_poll_rss(client, f) for f in CCAA_RSS_FEEDS])
+        batches = await asyncio.gather(*[_run_one(client, s) for s in sources])
 
     for batch in batches:
         for cand in batch:
             if cand.id not in seen_ids:
                 seen_ids.add(cand.id)
                 candidates.append(cand)
-
     return candidates
+
+
+async def fetch_live_ccaa_rss_candidates(timeout: float = 4.0) -> list[RawCandidate]:
+    """
+    Poll all 19 Spanish CCAA & Autonomous City official bulletins (RSS, Atom, or HTML portals
+    with automatic <link rel='alternate' type='application/rss+xml'> discovery).
+    """
+    return await _gather_web_monitors(
+        sources=CCAA_RSS_FEEDS,
+        timeout=timeout,
+        user_agent="1hack_reforesta/2.0 (CCAA Bulletin Monitor)",
+        max_concurrency=8,
+    )
+
+
+async def fetch_live_private_foundation_candidates(timeout: float = 5.0) -> list[RawCandidate]:
+    """
+    Poll official web portals of private foundations and RSC conservation programs without APIs
+    (Fundación la Caixa, Motor Verde Repsol, Santander, BBVA, Biodiversidad, Iberdrola, EOCA, etc.).
+    """
+    return await _gather_web_monitors(
+        sources=PRIVATE_FOUNDATION_SOURCES,
+        timeout=timeout,
+        user_agent="1hack_reforesta/2.0 (Private RSC Monitor)",
+        max_concurrency=6,
+    )
+
+
+async def enrich_candidates_with_linked_pdfs(
+    candidates: list[RawCandidate],
+    timeout: float = 5.0,
+    max_downloads: int = 15,
+    api_key_override: str | None = None,
+) -> int:
+    """
+    Follow linked PDFs for sparse extract candidates (< 900 chars) concurrently, extract full
+    text + CPVs + budgets + deadlines (with OCR fallback), and return the count of enriched records.
+    """
+    targets: list[RawCandidate] = []
+    for cand in candidates:
+        if len(targets) >= max_downloads:
+            break
+        if cand.fuente != "FUENTES_PDF" and len(cand.texto or "") < 900 and (
+            cand.url_bases_reguladoras
+            or cand.url_boletin_extracto
+            or (cand.url_ficha_oficial and ".pdf" in cand.url_ficha_oficial.lower())
+        ):
+            targets.append(cand)
+
+    if not targets:
+        return 0
+
+    sem = asyncio.Semaphore(5)
+    headers = {"User-Agent": "1hack_reforesta/2.0 (PDF Extract Enricher)"}
+
+    async def _enrich_one(client: httpx.AsyncClient, cand: RawCandidate) -> bool:
+        async with sem:
+            return await enrich_candidate_from_linked_pdf(
+                client,
+                cand,
+                api_key_override=api_key_override,
+            )
+
+    async with httpx.AsyncClient(timeout=timeout, headers=headers, follow_redirects=True) as client:
+        results = await asyncio.gather(*[_enrich_one(client, c) for c in targets])
+
+    return sum(1 for r in results if r)

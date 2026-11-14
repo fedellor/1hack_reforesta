@@ -8,11 +8,13 @@ from app.config import settings
 from app.database import engine, query_cache
 from app.ingestors.fuentes_local import load_candidates_from_fuentes
 from app.ingestors.live_connectors import (
+    enrich_candidates_with_linked_pdfs,
     fetch_live_bdns_candidates,
     fetch_live_boe_candidates,
     fetch_live_ccaa_rss_candidates,
     fetch_live_eu_sedia_candidates,
     fetch_live_placsp_candidates,
+    fetch_live_private_foundation_candidates,
 )
 from app.ingestors.multilevel_catalog import get_multilevel_candidates
 from app.models import IngestionRun, Opportunity
@@ -63,31 +65,35 @@ async def run_full_ingestion(
         "boe_live": 0,
         "eu_sedia_live": 0,
         "ccaa_rss_live": 0,
+        "private_foundations_live": 0,
+        "pdf_links_enriched": 0,
     }
     if include_live_apis:
-        bdns_live, placsp_live, boe_live, eu_live, rss_live = await asyncio.gather(
+        bdns_live, placsp_live, boe_live, eu_live, rss_live, priv_live = await asyncio.gather(
             fetch_live_bdns_candidates(max_per_keyword=15, timeout=5.0),
             fetch_live_placsp_candidates(timeout=5.0),
             fetch_live_boe_candidates(days_back=5, timeout=5.0),
             fetch_live_eu_sedia_candidates(timeout=5.0),
             fetch_live_ccaa_rss_candidates(timeout=4.0),
+            fetch_live_private_foundation_candidates(timeout=4.5),
         )
+        live_batch = bdns_live + placsp_live + boe_live + eu_live + rss_live + priv_live
+        enriched_pdfs = await enrich_candidates_with_linked_pdfs(live_batch, timeout=4.5, max_downloads=15)
         live_counts = {
             "bdns_live": len(bdns_live),
             "placsp_live": len(placsp_live),
             "boe_live": len(boe_live),
             "eu_sedia_live": len(eu_live),
             "ccaa_rss_live": len(rss_live),
+            "private_foundations_live": len(priv_live),
+            "pdf_links_enriched": enriched_pdfs,
         }
-        candidates.extend(bdns_live)
-        candidates.extend(placsp_live)
-        candidates.extend(boe_live)
-        candidates.extend(eu_live)
-        candidates.extend(rss_live)
+        candidates.extend(live_batch)
 
     total_scanned = 0
     passed_l1 = 0
     accepted_l2 = 0
+    amendments_applied = 0
     rejected_items: list[dict[str, Any]] = []
 
     for cand in candidates:
@@ -97,6 +103,8 @@ async def run_full_ingestion(
             passed_l1 += 1
         if res.accepted_layer2:
             accepted_l2 += 1
+            if res.amendment_applied:
+                amendments_applied += 1
         else:
             rejected_items.append(
                 {
@@ -118,6 +126,7 @@ async def run_full_ingestion(
         "fuentes_pdf_count": len(fuentes_candidates),
         "catalog_count": len(catalog_candidates),
         "live_api_fetched": live_counts,
+        "amendments_applied": amendments_applied,
         "rejected_count": len(rejected_items),
         "rejected_sample": rejected_items[:10],
     }

@@ -226,11 +226,16 @@ def test_trigger_ingestion_endpoint_with_mocked_live_apis(monkeypatch):
     async def empty_async(*args, **kwargs):
         return []
 
+    async def zero_enrich(*args, **kwargs):
+        return 0
+
     monkeypatch.setattr(runner, "fetch_live_bdns_candidates", fake_bdns)
     monkeypatch.setattr(runner, "fetch_live_placsp_candidates", empty_async)
     monkeypatch.setattr(runner, "fetch_live_boe_candidates", empty_async)
     monkeypatch.setattr(runner, "fetch_live_eu_sedia_candidates", empty_async)
     monkeypatch.setattr(runner, "fetch_live_ccaa_rss_candidates", empty_async)
+    monkeypatch.setattr(runner, "fetch_live_private_foundation_candidates", empty_async)
+    monkeypatch.setattr(runner, "enrich_candidates_with_linked_pdfs", zero_enrich)
 
     with TestClient(app) as client:
         resp = client.post("/api/v1/ingest/trigger?include_live_apis=true")

@@ -323,6 +323,19 @@ class UpdateEstadoInternoRequest(BaseModel):
     )
 
 
+class LLMVerdictCache(SQLModel, table=True):
+    """Persistent Layer 2 verdict cache keyed by normalized content hash (SQLite / PostgreSQL)."""
+
+    __tablename__ = "llm_verdict_cache"
+
+    text_hash: str = Field(primary_key=True, index=True)
+    metodo_evaluacion: str = Field(default="HYBRID_HEURISTIC")
+    verdict_json: str = Field(sa_column=Column(Text))
+    hit_count: int = Field(default=1)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class IngestionRun(SQLModel, table=True):
     """Audit log of ingestion runs across sources."""
 

@@ -1,10 +1,16 @@
-"""PDF Text & Structured Metadata Extractor using PyMuPDF (fitz) — ES/CA/GL/EU/EN."""
-import re
+"""PDF Text & Structured Metadata Extractor using PyMuPDF (fitz) with OCR fallback — ES/CA/GL/EU/EN."""
+from collections.abc import Callable
 from dataclasses import dataclass, field
+import io
+import logging
 from pathlib import Path
+import re
 from typing import Any
 import pymupdf as fitz  # PyMuPDF
+from app.config import settings
 from app.pipeline.layer1_regex import extract_cpv_codes
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -31,6 +37,8 @@ class ExtractedPDFDocument:
     cofinanciado_ue: bool = False
     cpv_codes: list[str] = field(default_factory=list)
     criterios_valoracion: list[dict[str, Any]] = field(default_factory=list)
+    used_ocr: bool = False
+    ocr_engine: str | None = None
 
 
 def _parse_euro_amount(raw: str) -> float | None:
@@ -63,33 +71,151 @@ def _clean_watermark_noise(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
-def extract_pdf_from_path(pdf_path: str | Path) -> ExtractedPDFDocument:
-    """Extract text and structured administrative metadata from a local PDF file."""
+def _run_ocr_fallback(
+    doc: fitz.Document,
+    api_key_override: str | None = None,
+    ocr_handler: Callable[[list[bytes]], str] | None = None,
+    max_pages: int = 5,
+) -> tuple[str, str | None]:
+    """
+    OCR fallback for scanned image-only PDFs (common in older municipal/provincial BOPs).
+    Order: injectable handler -> pytesseract -> PyMuPDF Tesseract -> Gemini Vision OCR.
+    """
+    pages_to_scan = min(len(doc), max_pages)
+    if pages_to_scan <= 0:
+        return "", None
+
+    page_pngs: list[bytes] = []
+    for idx in range(pages_to_scan):
+        pix = doc[idx].get_pixmap(dpi=180)
+        page_pngs.append(pix.tobytes("png"))
+
+    # 1. Injectable OCR handler (custom engine or deterministic unit tests)
+    if ocr_handler is not None:
+        try:
+            text = (ocr_handler(page_pngs) or "").strip()
+            if text:
+                return text, "CUSTOM_OCR"
+        except Exception as exc:
+            logger.debug("Custom OCR handler failed: %s", exc)
+
+    # 2. Optional pytesseract + Pillow local OCR
+    try:
+        import pytesseract  # type: ignore
+        from PIL import Image  # type: ignore
+
+        chunks = [
+            pytesseract.image_to_string(Image.open(io.BytesIO(png)), lang="spa+eng")
+            for png in page_pngs
+        ]
+        joined = "\n".join(c.strip() for c in chunks if c and c.strip())
+        if len(joined) >= 20:
+            return joined, "PYTESSERACT"
+    except Exception:
+        pass
+
+    # 3. PyMuPDF built-in Tesseract integration (works if tessdata is installed on host)
+    try:
+        tess_chunks: list[str] = []
+        for idx in range(pages_to_scan):
+            tp = doc[idx].get_textpage_ocr(language="spa+eng", dpi=180, full=True)
+            page_txt = doc[idx].get_text("text", textpage=tp).strip()
+            if page_txt:
+                tess_chunks.append(page_txt)
+        joined_tess = "\n".join(tess_chunks)
+        if len(joined_tess) >= 20:
+            return joined_tess, "PYMUPDF_TESSERACT"
+    except Exception:
+        pass
+
+    # 4. Cloud Vision OCR via Google Gemini Flash (if API key configured)
+    gemini_key = (api_key_override or settings.gemini_api_key or "").strip()
+    if gemini_key:
+        try:
+            from google import genai
+            from google.genai import types
+
+            client = genai.Client(api_key=gemini_key)
+            parts: list[Any] = [
+                "Transcribe literalmente TODO el texto de estas páginas escaneadas de un boletín oficial o convocatoria (título, organismo, importes, CPV, plazos y artículos) sin resumir."
+            ]
+            for png in page_pngs:
+                parts.append(types.Part.from_bytes(data=png, mime_type="image/png"))
+            resp = client.models.generate_content(
+                model=settings.gemini_model,
+                contents=parts,
+                config=types.GenerateContentConfig(temperature=0.0),
+            )
+            vision_txt = (getattr(resp, "text", None) or "").strip()
+            if len(vision_txt) >= 20:
+                return vision_txt, "GEMINI_VISION_OCR"
+        except Exception as exc:
+            logger.debug("Gemini Vision OCR skipped: %s", exc)
+
+    return "", None
+
+
+def _extract_document_with_ocr_fallback(
+    doc: fitz.Document,
+    filename: str,
+    api_key_override: str | None = None,
+    ocr_handler: Callable[[list[bytes]], str] | None = None,
+) -> ExtractedPDFDocument:
+    """Shared extraction pipeline for both file paths and raw PDF byte streams."""
+    pages_text = [page.get_text("text") for page in doc]
+    num_pages = len(doc)
+    raw_full = "\n".join(pages_text)
+    used_ocr = False
+    ocr_engine: str | None = None
+
+    if len(raw_full.strip()) < 100 and num_pages > 0:
+        ocr_text, ocr_engine = _run_ocr_fallback(
+            doc,
+            api_key_override=api_key_override,
+            ocr_handler=ocr_handler,
+        )
+        if ocr_text:
+            raw_full = f"{raw_full}\n{ocr_text}".strip()
+            used_ocr = True
+
+    doc.close()
+    full_text = _clean_watermark_noise(raw_full)
+    parsed = _parse_document_fields(filename, num_pages, full_text)
+    parsed.used_ocr = used_ocr
+    parsed.ocr_engine = ocr_engine
+    return parsed
+
+
+def extract_pdf_from_path(
+    pdf_path: str | Path,
+    api_key_override: str | None = None,
+    ocr_handler: Callable[[list[bytes]], str] | None = None,
+) -> ExtractedPDFDocument:
+    """Extract text and structured administrative metadata from a local PDF file (with OCR fallback)."""
     path = Path(pdf_path)
     doc = fitz.open(str(path))
-    pages_text: list[str] = []
-    for page in doc:
-        pages_text.append(page.get_text("text"))
-    num_pages = len(doc)
-    doc.close()
-
-    raw_full = "\n".join(pages_text)
-    full_text = _clean_watermark_noise(raw_full)
-    return _parse_document_fields(path.name, num_pages, full_text)
+    return _extract_document_with_ocr_fallback(
+        doc,
+        filename=path.name,
+        api_key_override=api_key_override,
+        ocr_handler=ocr_handler,
+    )
 
 
-def extract_pdf_from_bytes(pdf_bytes: bytes, filename: str = "uploaded.pdf") -> ExtractedPDFDocument:
-    """Extract text and structured administrative metadata from PDF bytes."""
+def extract_pdf_from_bytes(
+    pdf_bytes: bytes,
+    filename: str = "uploaded.pdf",
+    api_key_override: str | None = None,
+    ocr_handler: Callable[[list[bytes]], str] | None = None,
+) -> ExtractedPDFDocument:
+    """Extract text and structured administrative metadata from PDF bytes (with OCR fallback)."""
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    pages_text: list[str] = []
-    for page in doc:
-        pages_text.append(page.get_text("text"))
-    num_pages = len(doc)
-    doc.close()
-
-    raw_full = "\n".join(pages_text)
-    full_text = _clean_watermark_noise(raw_full)
-    return _parse_document_fields(filename, num_pages, full_text)
+    return _extract_document_with_ocr_fallback(
+        doc,
+        filename=filename,
+        api_key_override=api_key_override,
+        ocr_handler=ocr_handler,
+    )
 
 
 def _parse_document_fields(filename: str, num_pages: int, full_text: str) -> ExtractedPDFDocument:
