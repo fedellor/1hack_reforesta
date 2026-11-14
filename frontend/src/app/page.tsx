@@ -7,22 +7,18 @@ import { Header, Seccion, EstadoDatos } from '@/components/Header';
 import { Hero, Embudo } from '@/components/Hero';
 import { EmpresasView } from '@/components/EmpresasView';
 import { FilterBar } from '@/components/FilterBar';
-import { ConvocatoriaRowCard } from '@/components/ConvocatoriaRowCard';
 import { ConvocatoriaDrawer } from '@/components/ConvocatoriaDrawer';
 import { PipelineView } from '@/components/PipelineView';
 import { MapView } from '@/components/MapView';
-import { CalendarView } from '@/components/CalendarView';
+import { PlanView } from '@/components/PlanView';
 import { HistoricoView } from '@/components/HistoricoView';
 import { detectarProgramas } from '@/lib/recurrencia';
 import { guardarVistas, leerVistas } from '@/lib/novedades';
-import { AlertCircle, CalendarDays, List } from 'lucide-react';
-import { plazoSinFijar } from '@/lib/plazo';
 import { ESTATAL, TODOS, filtrarPorTerritorio } from '@/lib/territorio';
 
 const BANNER: Record<Seccion, { titulo: string; migas: string }> = {
   mapa: { titulo: 'Dónde está la financiación', migas: 'Reforesta / Mapa' },
-  convocatorias: { titulo: 'Convocatorias abiertas', migas: 'Reforesta / Convocatorias / Lista' },
-  calendario: { titulo: 'Convocatorias · calendario de cierres', migas: 'Reforesta / Convocatorias / Calendario' },
+  plan: { titulo: 'Plan de ataque', migas: 'Reforesta / Plan de ataque' },
   historico: { titulo: 'Histórico y previsión', migas: 'Reforesta / Histórico' },
   empresas: { titulo: 'Empresas y fundaciones que financian', migas: 'Reforesta / Empresas' },
   pipeline: { titulo: 'Pipeline de solicitudes', migas: 'Reforesta / Pipeline' },
@@ -62,7 +58,6 @@ export default function Home() {
   const [convocatoriaSeleccionada, setConvocatoriaSeleccionada] = useState<Convocatoria | null>(null);
   const [seccion, setSeccion] = useState<Seccion>('mapa');
   
-  const [ordenarPor, setOrdenarPor] = useState<'matching' | 'cuantia' | 'urgencia'>('matching');
   const [filtros, setFiltros] = useState<FiltrosState>({
     busqueda: '',
     ambito: 'todos',
@@ -115,34 +110,20 @@ export default function Home() {
 
         // Ventana temporal, encaje, urgencia y cuantía (no aplican al canal de empresas)
         if (seccion === 'empresas') return true;
-        if (seccion !== 'calendario' && filtros.ventanaDias > 0 && !plazoSinFijar(c) && c.diasRestantes > filtros.ventanaDias) return false;
+        
         if (c.matchingGlobal < filtros.minMatching) return false;
         if (filtros.soloUrgentes && c.diasRestantes > 15) return false;
         if (c.cuantiaMaximaProyecto < filtros.minCuantia) return false;
 
         return true;
       })
-      .sort((a, b) => {
-        if (ordenarPor === 'matching') {
-          return b.matchingGlobal - a.matchingGlobal;
-        }
-        if (ordenarPor === 'cuantia') {
-          return b.cuantiaMaximaProyecto - a.cuantiaMaximaProyecto;
-        }
-        if (ordenarPor === 'urgencia') {
-          return a.diasRestantes - b.diasRestantes;
-        }
-        return 0;
-      });
-  }, [convocatorias, filtros, ordenarPor, seccion, soloNuevas, idsNuevas]);
+      .sort((a, b) => b.matchingGlobal - a.matchingGlobal);
+  }, [convocatorias, filtros, seccion, soloNuevas, idsNuevas]);
 
   const convocatoriasFiltradas = useMemo(
     () => filtrarPorTerritorio(baseFiltrada, filtros.ambito, filtros.provincia),
     [baseFiltrada, filtros.ambito, filtros.provincia]
   );
-
-  const conFechaCierre = useMemo(() => convocatoriasFiltradas.filter((c) => !plazoSinFijar(c)), [convocatoriasFiltradas]);
-  const sinPlazo = convocatoriasFiltradas.length - conFechaCierre.length;
 
   const programas = useMemo(() => (historico.length ? detectarProgramas(historico) : []), [historico]);
 
@@ -197,9 +178,6 @@ export default function Home() {
         <FilterBar
           filtros={filtros}
           setFiltros={setFiltros}
-          ordenarPor={ordenarPor}
-          setOrdenarPor={setOrdenarPor}
-          modo={seccion === 'convocatorias' ? 'lista' : seccion === 'calendario' ? 'calendario' : 'mapa'}
         />
       )}
 
@@ -210,14 +188,14 @@ export default function Home() {
             {convocatorias.length > 0 ? ' (se muestra lo último cargado).' : '.'}
           </div>
         )}
-        {idsNuevas.size > 0 && (seccion === 'mapa' || seccion === 'convocatorias' || seccion === 'calendario') && (
+        {idsNuevas.size > 0 && (seccion === 'mapa' || seccion === 'plan') && (
           <div className="flex flex-wrap items-center justify-between gap-3 border border-brand/40 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-900">
             <span>
               <strong>{idsNuevas.size}</strong> {idsNuevas.size === 1 ? 'convocatoria nueva' : 'convocatorias nuevas'} desde tu última visita
               {vistasDesde && ` (${new Date(vistasDesde).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })})`}
             </span>
             <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide">
-              <button onClick={() => { setSoloNuevas(!soloNuevas); setSeccion('convocatorias'); }} className="px-3 py-1.5 bg-white border border-brand/40 hover:bg-brand hover:text-white transition-colors">
+              <button onClick={() => { setSoloNuevas(!soloNuevas); setSeccion('plan'); }} className="px-3 py-1.5 bg-white border border-brand/40 hover:bg-brand hover:text-white transition-colors">
                 {soloNuevas ? 'Ver todas' : 'Ver solo nuevas'}
               </button>
               <button onClick={marcarVistas} className="px-3 py-1.5 text-emerald-800 hover:underline">Marcar como vistas</button>
@@ -233,65 +211,27 @@ export default function Home() {
             onCambiarTerritorio={(t) => setFiltros((p) => ({ ...p, ambito: t, provincia: '' }))}
             onCambiarProvincia={(pv) => setFiltros((p) => ({ ...p, provincia: pv }))}
             onSeleccionar={abrir}
-            onVerConvocatorias={() => setSeccion('convocatorias')}
+            onVerConvocatorias={() => setSeccion('plan')}
           />
         )}
 
-        {(seccion === 'convocatorias' || seccion === 'calendario') && (
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="inline-flex border border-zinc-200 bg-white text-xs font-semibold uppercase tracking-wide">
-              {([['convocatorias', 'Lista', List], ['calendario', 'Calendario', CalendarDays]] as const).map(([id, etiqueta, Icono]) => (
-                <button
-                  key={id}
-                  onClick={() => setSeccion(id)}
-                  className={`flex items-center gap-2 px-4 py-2 transition-colors ${seccion === id ? 'bg-zinc-900 text-white' : 'text-zinc-600 hover:bg-zinc-50'}`}
-                >
-                  <Icono className="h-3.5 w-3.5" /> {etiqueta}
-                </button>
-              ))}
-            </div>
-            {sinPlazo > 0 && seccion === 'calendario' && (
-              <p className="text-xs text-zinc-500">+ {sinPlazo} abiertas sin plazo fijado (solo en la lista)</p>
-            )}
-          </div>
-        )}
-
-        {seccion === 'convocatorias' && (
+        {seccion === 'plan' && (
           <>
-            <p className="text-sm text-zinc-500">
-              <strong className="text-zinc-900">{convocatoriasFiltradas.length}</strong> de {convocatorias.length} convocatorias
-              {filtros.ambito !== TODOS && (
-                <>
-                  {' · '}
+            {(filtros.ambito !== TODOS || soloNuevas) && (
+              <p className="text-sm text-zinc-500 flex flex-wrap items-center gap-3">
+                {filtros.ambito !== TODOS && (
                   <button onClick={() => setFiltros((p) => ({ ...p, ambito: TODOS, provincia: '' }))} className="underline hover:text-zinc-900">
                     {filtros.ambito === ESTATAL ? 'Ámbito estatal' : filtros.ambito}{filtros.provincia && ` › ${filtros.provincia}`} ✕
                   </button>
-                </>
-              )}
-            </p>
-            <div className="space-y-4">
-              {convocatoriasFiltradas.map((convocatoria) => (
-                <ConvocatoriaRowCard
-                  key={convocatoria.id}
-                  convocatoria={convocatoria}
-                  onSeleccionar={abrir}
-                  seleccionada={convocatoriaSeleccionada?.id === convocatoria.id}
-                />
-              ))}
-              {convocatoriasFiltradas.length === 0 && (
-                <div className="border border-dashed border-zinc-300 p-10 text-center">
-                  <AlertCircle className="h-6 w-6 text-zinc-400 mx-auto mb-2" />
-                  <h4 className="font-bold text-zinc-700">No hay convocatorias con los filtros seleccionados</h4>
-                  <p className="text-sm text-zinc-500 mt-1">
-                    Amplía la ventana de 30 días, baja el encaje mínimo o desactiva &ldquo;Solo aptas&rdquo;.
-                  </p>
-                </div>
-              )}
-            </div>
+                )}
+                {soloNuevas && (
+                  <button onClick={() => setSoloNuevas(false)} className="underline hover:text-zinc-900">Solo nuevas ✕</button>
+                )}
+              </p>
+            )}
+            <PlanView convocatorias={convocatoriasFiltradas} onSeleccionar={abrir} />
           </>
         )}
-
-        {seccion === 'calendario' && <CalendarView convocatorias={conFechaCierre} onSeleccionar={abrir} />}
         {seccion === 'historico' && <HistoricoView historico={historico} disponible={historicoOk} onSeleccionar={abrir} />}
         {seccion === 'empresas' && <EmpresasView convocatorias={convocatoriasFiltradas} onSeleccionar={abrir} programas={programas} />}
         {seccion === 'pipeline' && (

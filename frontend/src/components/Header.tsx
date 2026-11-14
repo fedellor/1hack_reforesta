@@ -9,7 +9,7 @@ export interface EstadoDatos {
   actualizado: Date | null;
 }
 
-export type Seccion = 'mapa' | 'convocatorias' | 'calendario' | 'historico' | 'empresas' | 'pipeline';
+export type Seccion = 'mapa' | 'plan' | 'historico' | 'empresas' | 'pipeline';
 
 interface HeaderProps {
   convocatorias: Convocatoria[];
@@ -25,7 +25,7 @@ interface HeaderProps {
 
 const ITEMS_MENU: { id: Seccion; label: string }[] = [
   { id: 'mapa', label: 'Mapa' },
-  { id: 'convocatorias', label: 'Convocatorias' },
+  { id: 'plan', label: 'Plan de ataque' },
   { id: 'historico', label: 'Histórico' },
   { id: 'empresas', label: 'Empresas' },
   { id: 'pipeline', label: 'Pipeline' },
@@ -72,7 +72,7 @@ export function Header({ convocatorias, seccion, setSeccion, datos, onRefresh, n
 
         <nav className="flex items-center gap-0.5 sm:gap-1 overflow-x-auto min-w-0 shrink-0">
           {ITEMS_MENU.map((item) => {
-            const activo = seccion === item.id || (item.id === 'convocatorias' && seccion === 'calendario');
+            const activo = seccion === item.id;
             return (
               <button
                 key={item.id}
@@ -82,7 +82,7 @@ export function Header({ convocatorias, seccion, setSeccion, datos, onRefresh, n
                 }`}
               >
                 {item.label}
-                {item.id === 'convocatorias' && nuevas > 0 && (
+                {item.id === 'plan' && nuevas > 0 && (
                   <span className="ml-1.5 rounded-full bg-[#6aa43a] px-1.5 py-0.5 text-[10px] font-bold text-white align-middle" title="Nuevas desde tu última visita">
                     {nuevas}
                   </span>

@@ -8,18 +8,11 @@ import { COMUNIDADES } from '@/lib/territorio';
 interface FilterBarProps {
   filtros: FiltrosState;
   setFiltros: React.Dispatch<React.SetStateAction<FiltrosState>>;
-  ordenarPor: 'matching' | 'cuantia' | 'urgencia';
-  setOrdenarPor: (orden: 'matching' | 'cuantia' | 'urgencia') => void;
-  /** Qué controles tienen sentido en cada sección */
-  modo: 'mapa' | 'lista' | 'calendario';
 }
 
 export function FilterBar({
   filtros,
   setFiltros,
-  ordenarPor,
-  setOrdenarPor,
-  modo,
 }: FilterBarProps) {
   const chip = (activo: boolean) =>
     `px-5 py-2.5 rounded-full border font-semibold uppercase text-xs tracking-wide transition-colors ${
@@ -70,15 +63,6 @@ export function FilterBar({
             {filtros.soloElegibles ? 'Solo aptas' : 'Todas (incl. excluidas)'}
           </button>
 
-          {/* Ventana de 30 días */}
-          {modo !== 'calendario' && <button
-            type="button"
-            onClick={() => setFiltros((prev) => ({ ...prev, ventanaDias: prev.ventanaDias === 30 ? 0 : 30 }))}
-            className={chip(filtros.ventanaDias === 30)}
-          >
-            Cierre ≤ 30 días
-          </button>}
-
           {/* Encaje alto */}
           <button
             type="button"
@@ -98,20 +82,6 @@ export function FilterBar({
             <option value={50000}>≥ 50.000 €</option>
             <option value={100000}>≥ 100.000 €</option>
           </select>
-
-          {/* Ordenación */}
-          {modo === 'lista' && <div className="flex items-center gap-1.5 pl-2 border-l border-zinc-200 text-zinc-500">
-            <span>Ordenar:</span>
-            <select
-              value={ordenarPor}
-              onChange={(e) => setOrdenarPor(e.target.value as 'matching' | 'cuantia' | 'urgencia')}
-              className="px-2 py-1.5 rounded-full border border-zinc-200 text-zinc-800 bg-white font-medium focus:outline-hidden focus:border-zinc-400 shadow-2xs"
-            >
-              <option value="matching">Mayor encaje</option>
-              <option value="cuantia">Mayor cuantía</option>
-              <option value="urgencia">Cierre próximo</option>
-            </select>
-          </div>}
 
         </div>
 
