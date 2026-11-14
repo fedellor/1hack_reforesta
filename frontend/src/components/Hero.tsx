@@ -20,37 +20,22 @@ interface SlideItem {
   linea1: string;
   linea2: string;
   subtexto: string;
-  ctaLabel: string;
-  ctaUrl: string;
 }
 
 const REFORESTA_SLIDES: SlideItem[] = [
   {
     id: 'slide-bosques',
     image: '/reforesta/reforesta-slider-01.jpg',
-    linea1: 'Buscamos',
-    linea2: 'tu ayuda',
-    subtexto: 'Para recuperar los bosques · Radar oficial de financiación forestal en España',
-    ctaLabel: 'CONOCER REFORESTA',
-    ctaUrl: 'https://reforesta.es/colabora-hazte-socio-de-reforesta/',
+    linea1: 'Radar de financiación',
+    linea2: 'forestal',
+    subtexto: 'Convocatorias oficiales y licitaciones de reforestación en España · Sincronización diaria 07:00h',
   },
   {
-    id: 'slide-regala-arbol',
+    id: 'slide-reforestacion',
     image: '/reforesta/reforesta-slider-03.jpg',
-    linea1: 'Regala un',
-    linea2: 'árbol',
-    subtexto: 'Reforestación con especies autóctonas · Asociación declarada de Utilidad Pública',
-    ctaLabel: 'NUESTROS PROYECTOS',
-    ctaUrl: 'https://reforesta.es/nuestros-proyectos/',
-  },
-  {
-    id: 'slide-desertificacion',
-    image: '/reforesta/cabecera-desertificacion.jpg',
-    linea1: 'Desertificación',
-    linea2: 'en España',
-    subtexto: 'Lucha contra la deforestación y erosión · Fines Estatutarios Art. 2 (NIF G80428204)',
-    ctaLabel: 'VER ESTATUTOS PDF',
-    ctaUrl: 'https://reforesta.es/wp-content/uploads/2026/09/Estatutos-2026-Web.pdf',
+    linea1: 'Seguimiento de',
+    linea2: 'subvenciones e histórico',
+    subtexto: 'Filtrado estricto de plantación, restauración post-incendio y selvicultura (archivo 2020–2026)',
   },
 ];
 
@@ -75,7 +60,7 @@ export function Hero({ titulo, migas, subtitulo }: HeroProps) {
   return (
     <div className="relative bg-[#1b2c1f] text-white overflow-hidden select-none">
       {/* Carrusel compacto con imágenes reales de https://reforesta.es/ */}
-      <div className="relative h-[220px] sm:h-[250px] md:h-[275px] w-full overflow-hidden">
+      <div className="relative h-[155px] sm:h-[175px] md:h-[190px] w-full overflow-hidden">
         <div
           className="flex h-full w-full transition-transform duration-700 ease-in-out"
           style={{ transform: `translateX(-${activeIndex * 100}%)` }}
@@ -98,35 +83,17 @@ export function Hero({ titulo, migas, subtitulo }: HeroProps) {
           <div className="max-w-7xl mx-auto px-12 sm:px-16 lg:px-20 w-full flex flex-col lg:flex-row lg:items-center justify-between gap-5">
             <div className="max-w-xl">
               <div className="inline-flex items-center gap-2 bg-[#6aa43a] text-white text-[10px] font-bold uppercase tracking-[0.14em] px-2.5 py-0.5 mb-2 shadow-sm">
-                <span>Asociación Reforesta · Desde 1991 · Utilidad Pública</span>
+                <span>Uso Interno · Asociación Reforesta</span>
               </div>
-              <h2 className="text-3xl sm:text-4xl md:text-[42px] font-light leading-[1.05] tracking-tight text-white drop-shadow-md">
+              <h2 className="text-2xl sm:text-3xl md:text-[34px] font-light leading-[1.08] tracking-tight text-white drop-shadow-md">
                 {REFORESTA_SLIDES[activeIndex].linea1}{' '}
                 <span className="font-bold text-[#7cc142]">
                   {REFORESTA_SLIDES[activeIndex].linea2}
                 </span>
               </h2>
-              <p className="mt-2 text-sm sm:text-base text-white/95 font-light drop-shadow">
+              <p className="mt-1.5 text-xs sm:text-sm text-white/95 font-light drop-shadow">
                 {REFORESTA_SLIDES[activeIndex].subtexto}
               </p>
-              <div className="mt-3.5 flex flex-wrap items-center gap-2.5">
-                <a
-                  href={REFORESTA_SLIDES[activeIndex].ctaUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center bg-[#262626]/90 hover:bg-[#6aa43a] text-white text-[11px] font-semibold uppercase tracking-[0.12em] px-4 py-1.5 border border-white/25 hover:border-[#6aa43a] transition-colors"
-                >
-                  {REFORESTA_SLIDES[activeIndex].ctaLabel}
-                </a>
-                <a
-                  href="https://reforesta.es/wp-content/uploads/2026/05/Memoria-Reforesta-2024.pdf"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center bg-black/40 hover:bg-black/70 text-white/90 text-[11px] font-medium uppercase tracking-[0.1em] px-3.5 py-1.5 border border-white/20 transition-colors"
-                >
-                  MEMORIA 2024 PDF
-                </a>
-              </div>
             </div>
 
             {/* Tarjeta derecha con título de sección */}

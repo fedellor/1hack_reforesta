@@ -73,15 +73,15 @@ async def run_full_ingestion(
     }
     if include_live_apis:
         bdns_live, placsp_live, boe_live, eu_live, rss_live, priv_live = await asyncio.gather(
-            fetch_live_bdns_candidates(max_per_keyword=30, timeout=8.0),
-            fetch_live_placsp_candidates(timeout=6.0),
-            fetch_live_boe_candidates(days_back=12, timeout=7.0),
+            fetch_live_bdns_candidates(max_per_keyword=100, timeout=12.0),
+            fetch_live_placsp_candidates(timeout=14.0, max_pages=4),
+            fetch_live_boe_candidates(days_back=21, timeout=8.0),
             fetch_live_eu_sedia_candidates(timeout=7.0),
             fetch_live_ccaa_rss_candidates(timeout=5.0),
             fetch_live_private_foundation_candidates(timeout=5.5),
         )
         live_batch = bdns_live + placsp_live + boe_live + eu_live + rss_live + priv_live
-        enriched_pdfs = await enrich_candidates_with_linked_pdfs(live_batch, timeout=5.0, max_downloads=30)
+        enriched_pdfs = await enrich_candidates_with_linked_pdfs(live_batch, timeout=5.0, max_downloads=45)
         live_counts = {
             "bdns_live": len(bdns_live),
             "placsp_live": len(placsp_live),

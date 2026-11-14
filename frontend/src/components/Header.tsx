@@ -9,7 +9,7 @@ export interface EstadoDatos {
   actualizado: Date | null;
 }
 
-export type Seccion = 'mapa' | 'convocatorias' | 'calendario' | 'empresas' | 'pipeline';
+export type Seccion = 'mapa' | 'convocatorias' | 'historico' | 'calendario' | 'empresas' | 'pipeline';
 
 interface HeaderProps {
   convocatorias: Convocatoria[];
@@ -22,6 +22,7 @@ interface HeaderProps {
 const ITEMS_MENU: { id: Seccion; label: string }[] = [
   { id: 'mapa', label: 'Mapa' },
   { id: 'convocatorias', label: 'Convocatorias' },
+  { id: 'historico', label: 'Histórico 2020–2026' },
   { id: 'calendario', label: 'Calendario' },
   { id: 'empresas', label: 'Empresas RSC' },
   { id: 'pipeline', label: 'Pipeline' },
@@ -56,102 +57,24 @@ export function Header({ convocatorias, seccion, setSeccion, datos, onRefresh }:
     }
   };
 
+  const abiertasCount = convocatorias.filter((c) => c.estado !== 'CERRADA').length;
+  const historicoCount = convocatorias.filter((c) => c.estado === 'CERRADA').length;
+
   return (
     <header className="w-full sticky top-0 z-40 shadow-sm">
-      {/* Barra superior compacta inspirada en https://reforesta.es/ */}
+      {/* Barra superior interna con identidad Reforesta */}
       <div className="bg-[#141414] text-white/90 text-[11px] py-1 px-4 sm:px-6 lg:px-8 border-b border-white/10">
         <div className="max-w-7xl mx-auto flex flex-wrap justify-between items-center gap-2">
-          {/* Izquierda: Contacto + Newsletter + Hazte socio */}
-          <div className="flex items-center flex-wrap gap-2.5 sm:gap-3">
-            <a
-              href="mailto:info@reforesta.es"
-              className="hover:text-[#7cc142] transition-colors flex items-center gap-1"
-            >
-              <span className="text-[#6aa43a]">✉</span>
-              <span>info@reforesta.es</span>
-            </a>
-            <a
-              href="https://reforesta.es/suscripcion-al-boletin-de-reforesta/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="bg-[#6aa43a] hover:bg-[#598c30] text-white font-semibold px-1.5 py-0.5 rounded-[2px] text-[10px] tracking-wider uppercase transition-colors"
-            >
-              NEWSLETTER
-            </a>
-            <a
-              href="https://reforesta.es/colabora-hazte-socio-de-reforesta/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-semibold hover:text-[#7cc142] transition-colors tracking-wide uppercase text-[10px]"
-            >
-              HAZTE SOCIO
-            </a>
+          <div className="flex items-center gap-2 text-[10px] tracking-wider uppercase text-zinc-300">
+            <span className="h-1.5 w-1.5 rounded-full bg-[#6aa43a]" />
+            <span className="font-semibold text-white">Herramienta Interna · Reforesta</span>
+            <span className="hidden md:inline text-white/30">|</span>
+            <span className="hidden md:inline text-zinc-400">
+              Sync automática 07:00h (BDNS · BOE · 19 CCAA · PLACSP · UE)
+            </span>
           </div>
 
-          {/* Centro: Declarada de Utilidad Pública (enlace directo al documento oficial) */}
-          <div className="hidden lg:flex items-center gap-2">
-            <a
-              href="https://reforesta.es/wp-content/uploads/2024/02/UTILIDAD-PUBLICA-2024.pdf"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[#c2c2c2] hover:text-white tracking-wider uppercase text-[10px] font-medium transition-colors"
-            >
-              DECLARADA DE UTILIDAD PÚBLICA
-            </a>
-            <span className="text-white/25">·</span>
-            <a
-              href="https://reforesta.es/wp-content/uploads/2026/09/Estatutos-2026-Web.pdf"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[#c2c2c2] hover:text-[#7cc142] tracking-wider uppercase text-[10px] font-medium transition-colors"
-            >
-              ESTATUTOS PDF
-            </a>
-          </div>
-
-          {/* Derecha: Estado en vivo + Sync 07:00 + Redes */}
-          <div className="flex items-center gap-2.5">
-            <div className="hidden sm:flex items-center gap-1">
-              <a
-                href="https://www.facebook.com/asociacion.reforesta/"
-                target="_blank"
-                rel="noopener noreferrer"
-                title="Facebook Reforesta"
-                className="w-4 h-4 rounded-full bg-white/10 hover:bg-[#6aa43a] flex items-center justify-center text-white text-[9px] font-bold transition-colors"
-              >
-                f
-              </a>
-              <a
-                href="https://x.com/Reforesta_ONG"
-                target="_blank"
-                rel="noopener noreferrer"
-                title="X Reforesta"
-                className="w-4 h-4 rounded-full bg-white/10 hover:bg-[#6aa43a] flex items-center justify-center text-white text-[9px] font-bold transition-colors"
-              >
-                𝕏
-              </a>
-              <a
-                href="https://www.instagram.com/reforesta_ong/?hl=es"
-                target="_blank"
-                rel="noopener noreferrer"
-                title="Instagram Reforesta"
-                className="w-4 h-4 rounded-full bg-white/10 hover:bg-[#6aa43a] flex items-center justify-center text-white text-[8px] font-bold transition-colors"
-              >
-                IG
-              </a>
-              <a
-                href="https://es.linkedin.com/company/asociacion-reforesta"
-                target="_blank"
-                rel="noopener noreferrer"
-                title="LinkedIn Reforesta"
-                className="w-4 h-4 rounded-full bg-white/10 hover:bg-[#6aa43a] flex items-center justify-center text-white text-[9px] font-bold transition-colors"
-              >
-                in
-              </a>
-            </div>
-
-            <span className="text-white/20 hidden sm:inline">|</span>
-
+          <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5 text-[10px] text-zinc-300">
               <span
                 className={`h-1.5 w-1.5 rounded-full ${
@@ -163,11 +86,19 @@ export function Header({ convocatorias, seccion, setSeccion, datos, onRefresh }:
                 }`}
               />
               <span>{etiquetaDatos}</span>
-              <span className="hidden xl:inline text-white/40">· Sync 07:00h</span>
-              <span className="hidden md:inline text-white/70">
-                ({convocatorias.length})
+              <span className="hidden sm:inline text-white/70">
+                · {abiertasCount} abiertas · {historicoCount} histórico
               </span>
             </div>
+
+            <a
+              href="https://reforesta.es/wp-content/uploads/2026/09/Estatutos-2026-Web.pdf"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hidden sm:inline text-[#c2c2c2] hover:text-[#7cc142] tracking-wider uppercase text-[10px] font-medium transition-colors"
+            >
+              Estatutos PDF
+            </a>
 
             <button
               onClick={handleSync}
@@ -185,36 +116,22 @@ export function Header({ convocatorias, seccion, setSeccion, datos, onRefresh }:
       {/* Navegación principal compacta */}
       <div className="bg-[#1a1a1a]/95 backdrop-blur-md border-b border-white/10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-[50px] flex items-center justify-between gap-4">
-          {/* Logo Oficial Reforesta (tamaño compacto) */}
+          {/* Logo corporativo Reforesta */}
           <div className="flex items-center gap-3 shrink-0">
-            <a
-              href="https://reforesta.es/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 group"
-              title="Ir a reforesta.es"
-            >
+            <div className="flex items-center gap-2">
               <img
                 src="/reforesta/logo-reforesta-verde.png"
                 alt="Reforesta"
-                className="h-[24px] sm:h-[26px] w-auto object-contain transition-transform group-hover:scale-[1.02]"
+                className="h-[24px] sm:h-[26px] w-auto object-contain"
               />
-            </a>
+            </div>
             <span className="hidden xl:inline-block text-[10px] font-semibold uppercase tracking-[0.16em] text-[#7cc142] border-l border-white/20 pl-2.5 py-0.5">
-              Radar de Financiación Forestal
+              Radar Interno de Subvenciones
             </span>
           </div>
 
           {/* Navegación principal */}
           <nav className="flex items-center gap-0.5 sm:gap-1 overflow-x-auto">
-            <a
-              href="https://reforesta.es/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hidden md:inline-flex items-center px-2.5 py-1.5 text-[12px] font-semibold uppercase tracking-[0.06em] text-white/75 hover:text-[#7cc142] transition-colors"
-            >
-              Web Reforesta
-            </a>
             {ITEMS_MENU.map((item) => {
               const activo = seccion === item.id;
               return (

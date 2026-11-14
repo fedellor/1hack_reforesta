@@ -290,7 +290,12 @@ def get_frontend_convocatorias(
 
     opps = list(session.exec(stmt).all())
     opps.sort(
-        key=lambda o: (o.estado == "ACTIVA", o.prioridad_score or 0, o.relevancia_score or 0),
+        key=lambda o: (
+            2 if o.estado == "ACTIVA" else (1 if o.estado == "PROXIMA" else 0),
+            o.anio_convocatoria or 0,
+            o.prioridad_score or 0,
+            o.relevancia_score or 0,
+        ),
         reverse=True,
     )
     convocatorias = [o.to_frontend_convocatoria() for o in opps]

@@ -33,13 +33,49 @@ export function ConvocatoriaRowCard({ convocatoria, onSeleccionar, seleccionada 
         seleccionada ? 'border-zinc-900' : 'border-zinc-200 hover:border-zinc-400'
       } ${!c.elegible ? 'bg-zinc-50 opacity-80' : ''}`}
     >
-      {/* 1. Plazo: lo primero que decide si se puede llegar */}
-      <div className={`shrink-0 md:w-24 border-l-4 pl-4 ${colorPlazo(c.diasRestantes)}`}>
-        <span className="block font-serif text-4xl font-bold leading-none">{c.diasRestantes}</span>
-        <span className="block text-xs font-semibold uppercase tracking-wide">días</span>
-        <span className="mt-1 block text-xs text-zinc-500">
-          {new Date(`${c.fechaCierre}T12:00:00`).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}
-        </span>
+      {/* 1. Plazo o estado histórico */}
+      <div
+        className={`shrink-0 md:w-24 border-l-4 pl-4 ${
+          c.estado === 'CERRADA'
+            ? 'border-zinc-400 text-zinc-600'
+            : c.estado === 'PROXIMA'
+              ? 'border-[#1d70b8] text-[#1d70b8]'
+              : colorPlazo(c.diasRestantes)
+        }`}
+      >
+        {c.estado === 'CERRADA' ? (
+          <>
+            <span className="block font-serif text-3xl font-bold leading-none">
+              {c.anio ?? String(c.fechaCierre).slice(0, 4)}
+            </span>
+            <span className="mt-0.5 block text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+              Cerrada
+            </span>
+            <span className="mt-1 block text-xs text-zinc-500">
+              {new Date(`${c.fechaCierre}T12:00:00`).toLocaleDateString('es-ES', {
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric',
+              })}
+            </span>
+          </>
+        ) : c.estado === 'PROXIMA' ? (
+          <>
+            <span className="block font-serif text-4xl font-bold leading-none">{c.diasRestantes}</span>
+            <span className="block text-xs font-semibold uppercase tracking-wide">días · Próx.</span>
+            <span className="mt-1 block text-xs text-zinc-500">
+              {new Date(`${c.fechaCierre}T12:00:00`).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="block font-serif text-4xl font-bold leading-none">{c.diasRestantes}</span>
+            <span className="block text-xs font-semibold uppercase tracking-wide">días</span>
+            <span className="mt-1 block text-xs text-zinc-500">
+              {new Date(`${c.fechaCierre}T12:00:00`).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}
+            </span>
+          </>
+        )}
       </div>
 
       {/* 2. Qué es y por qué encaja (o por qué no) */}

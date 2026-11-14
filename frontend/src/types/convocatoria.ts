@@ -59,6 +59,7 @@ export interface Convocatoria {
   ccaaCodigo?: string;
   nivelTerritorial?: string;
   estado?: string;
+  anio?: number;
   pagoAnticipadoSinAval?: boolean | null;
   diasHabilesRestantes?: number | null;
   ubicacion?: Record<string, unknown>;
@@ -76,4 +77,5 @@ export interface FiltrosState {
   minCuantia: number;
   provincia: string;   // '' = sin provincia elegida
   ventanaDias: number; // 0 = sin límite; 30 = solo convocatorias que cierran en los próximos 30 días
+  anio: number;        // 0 = todos los años (usado en Histórico 2020-2026)
 }

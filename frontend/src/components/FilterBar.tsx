@@ -11,7 +11,7 @@ interface FilterBarProps {
   ordenarPor: 'matching' | 'cuantia' | 'urgencia';
   setOrdenarPor: (orden: 'matching' | 'cuantia' | 'urgencia') => void;
   /** Qué controles tienen sentido en cada sección */
-  modo: 'mapa' | 'lista' | 'calendario';
+  modo: 'mapa' | 'lista' | 'historico' | 'calendario';
 }
 
 export function FilterBar({
@@ -57,6 +57,22 @@ export function FilterBar({
             ))}
           </select>
 
+          {/* Chip de Año (en Histórico) */}
+          {modo === 'historico' && (
+            <select
+              value={filtros.anio}
+              onChange={(e) => setFiltros((prev) => ({ ...prev, anio: Number(e.target.value) }))}
+              className="px-4 py-2 rounded-full border border-zinc-200 text-zinc-700 bg-white font-medium focus:outline-hidden focus:border-zinc-400 shadow-2xs"
+            >
+              <option value={0}>Todos los años (2020–2026)</option>
+              {[2026, 2025, 2024, 2023, 2022, 2021, 2020].map((anio) => (
+                <option key={anio} value={anio}>
+                  Año {anio}
+                </option>
+              ))}
+            </select>
+          )}
+
           {/* Toggle Solo Elegibles */}
           <button
             type="button"
@@ -67,17 +83,19 @@ export function FilterBar({
                 : 'bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-50'
             }`}
           >
-            {filtros.soloElegibles ? 'Solo aptas' : 'Todas (incl. excluidas)'}
+            {filtros.soloElegibles ? 'Solo aptas ONG' : 'Todas (incl. licitaciones)'}
           </button>
 
           {/* Ventana de 30 días */}
-          {modo !== 'calendario' && <button
-            type="button"
-            onClick={() => setFiltros((prev) => ({ ...prev, ventanaDias: prev.ventanaDias === 30 ? 0 : 30 }))}
-            className={chip(filtros.ventanaDias === 30)}
-          >
-            Cierre ≤ 30 días
-          </button>}
+          {modo !== 'calendario' && modo !== 'historico' && (
+            <button
+              type="button"
+              onClick={() => setFiltros((prev) => ({ ...prev, ventanaDias: prev.ventanaDias === 30 ? 0 : 30 }))}
+              className={chip(filtros.ventanaDias === 30)}
+            >
+              Cierre ≤ 30 días
+            </button>
+          )}
 
           {/* Encaje alto */}
           <button
@@ -100,18 +118,20 @@ export function FilterBar({
           </select>
 
           {/* Ordenación */}
-          {modo === 'lista' && <div className="flex items-center gap-1.5 pl-2 border-l border-zinc-200 text-zinc-500">
-            <span>Ordenar:</span>
-            <select
-              value={ordenarPor}
-              onChange={(e) => setOrdenarPor(e.target.value as 'matching' | 'cuantia' | 'urgencia')}
-              className="px-2 py-1.5 rounded-full border border-zinc-200 text-zinc-800 bg-white font-medium focus:outline-hidden focus:border-zinc-400 shadow-2xs"
-            >
-              <option value="matching">Mayor encaje</option>
-              <option value="cuantia">Mayor cuantía</option>
-              <option value="urgencia">Cierre próximo</option>
-            </select>
-          </div>}
+          {(modo === 'lista' || modo === 'historico') && (
+            <div className="flex items-center gap-1.5 pl-2 border-l border-zinc-200 text-zinc-500">
+              <span>Ordenar:</span>
+              <select
+                value={ordenarPor}
+                onChange={(e) => setOrdenarPor(e.target.value as 'matching' | 'cuantia' | 'urgencia')}
+                className="px-2 py-1.5 rounded-full border border-zinc-200 text-zinc-800 bg-white font-medium focus:outline-hidden focus:border-zinc-400 shadow-2xs"
+              >
+                <option value="matching">Mayor encaje</option>
+                <option value="cuantia">Mayor cuantía</option>
+                <option value="urgencia">{modo === 'historico' ? 'Más recientes' : 'Cierre próximo'}</option>
+              </select>
+            </div>
+          )}
 
         </div>
 

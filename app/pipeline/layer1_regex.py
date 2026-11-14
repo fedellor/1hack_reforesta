@@ -214,12 +214,11 @@ ORGANO_BOOST_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-# Tier A CPVs: Direct Forestry, Seeds, Wildfire Prevention & Protection (+60 pts, marks DIRECTA)
+# Tier A CPVs: Direct Forestry, Nursery Plants, Wildfire Prevention & Protection (+60 pts, marks DIRECTA)
 TIER_A_CPV_PREFIXES = (
     "772",       # 77200000-2 Servicios forestales, 77231000 Gestión forestal, 77231600 Repoblación
     "75251120",  # 75251120-7 Servicios de prevención de incendios forestales
-    "034",       # 03400000 Productos de la silvicultura, semillas/plantones forestales
-    "03121",     # 03121100 Plantas vivas, árboles y arbustos
+    "0345",      # 03450000-2 Productos de viveros forestales, plantones y árboles (excludes 0341 timber/flooring)
 )
 
 # Tier B CPVs: Environmental Management & Natural Hazards Protection (+35 pts, lets Layer 2 evaluate)
@@ -228,16 +227,17 @@ TIER_B_CPV_PREFIXES = (
     "9072",      # 90721800-5 Protección contra riesgos o peligros naturales / protección ambiental
 )
 
-# Tier C Support CPVs: Landscaping & Tree Pruning (+15 pts; requires additional forestry/restoration signal to pass >= 25)
+# Tier C Support CPVs: Landscaping, Ornamental Plants & Tree Pruning (+15 pts; requires additional forestry/restoration signal)
 TIER_C_SUPPORT_CPV_PREFIXES = (
     "7731",      # 77310000 Plantación y mantenimiento de zonas verdes
     "7734",      # 77340000 Poda de árboles y setos / arboricultura
     "451127",    # 45112700 Trabajos de paisajismo / anillos verdes
     "71313",     # 71313000 Servicios de consultoría en ingeniería ambiental
+    "03121",     # 03121100 Plantas vivas (solo con señal forestal adicional)
 )
 
 INLINE_CPV_PATTERN = re.compile(
-    r"\b((?:772\d{5}|75251120|9071\d{4}|9072\d{4}|7731\d{4}|7734\d{4}|451127\d{2}|71313\d{3}|034\d{5}|03121\d{3})(?:-\d)?)\b"
+    r"\b((?:772\d{5}|75251120|9071\d{4}|9072\d{4}|7731\d{4}|7734\d{4}|451127\d{2}|71313\d{3}|0345\d{4}|03121\d{3})(?:-\d)?)\b"
 )
 
 
@@ -278,7 +278,7 @@ HARD_EXCLUSION_PATTERN = re.compile(
     r"premios?\s+fronteras\s+del\s+conocimiento|premios?\s+de\s+inform[aá]tica|red\s+leonardo|"
     r"lorem\s+ips\w*|test\s+iframe|proyectos?\s+ganadores?|"
     r"AYUD0580T01|da[ñn]os\s+ocasionados\s+por\s+especies\s+de\s+la\s+fauna\s+silvestre|"
-    r"ganado\s+(?:bovino|ovino|caprino|porcino)|repoblaci[oó]n\s+en\s+explotaciones?\s+de\s+ganado|"
+    r"ganado\s+(?:bovino|ovino|caprino|porcino)|repoblaci[oó]n\s+en\s+explotaciones?\s+de\s+ganado|destinad[oa]s?\s+a\s+(?:los\s+|las\s+)?ganaderos\b|"
     r"subv\.?\s*nom\.|subvenciones?\s+nominativ\w*|becas?\s+(?:de\s+)?(?:aella|deportistas)|"
     r"deportistas\s+con\s+discapacidad|el\s+prado\s+en\s+las\s+calles|descargar\s+noticia\s+en\s+prensa|"
     r"veintitr[eé]s\s+conversaciones|programa\s+social\s+\d{4}|"
@@ -290,6 +290,20 @@ HARD_EXCLUSION_PATTERN = re.compile(
     r"rapaces\s+nocturnas|aves\s+palustres|\bodonatos\b|"
     r"pista\s+abriendo\s+pastos|abriendo\s*camino\s*a\s*los\s*pastos|convenio\s+ga\b|"
     r"becas?\s+de\s+formaci[oó]n|becas?\s+(?:fundaci[oó]n\s+biodiversidad|cop\s+\d{4})|club(?:es)?\s+de\s+caza|asociaciones?\s+de\s+cazadores|"
+    r"enajenaci[oó]n\s+de\s+(?:\w+\s+){0,3}(?:lotes?|aprovechamientos?|madera)|suministro\s+de\s+tuber[ií]as|"
+    r"juegos\s+infantiles|carta\s+europea\s+de\s+turismo|limpieza\s+integral\s+de\s+zonas\s+comunes|senda\s+peatonal|"
+    r"complementos\s+y\s+accesorios\s+de\s+cascos|repuestos\s+y\s+consumibles|atenci[oó]n\s+al\s+p[uú]blico.*visitantes|"
+    r"embellecimiento\s+en\s+rotondas|bosque\s+pintado|ruta\s+art[ií]stica|"
+    r"subvenci[oó]n\s+en\s+especie\s+al\s+ayuntamiento|subvenci[oó]n\s+a\s+favor\s+de\b|"
+    r"excluida?\s+de\s+concurrencia\s+p[uú]blica|concesi[oó]n\s+directa\b|subvenci[oó]n\s+directa\s+concedida|"
+    r"aprueba\s+el\s+convenio\s+con\b|por\s+la\s+que\s+se\s+publica\s+el\s+convenio\b|"
+    r"inventario\s+espa[ñn]ol\s+de\s+zonas\s+h[uú]medas|inclusi[oó]n\s+en\s+el\s+inventario|"
+    r"mantenimiento\s+de\s+las?\s+instalaciones?\s+del\b|"
+    r"residuos?\s+peligrosos|tratamiento\s+de\s+residuos|ecoparque\b|vigilancia\s+ambiental\s+de\s+las?\s+instalaciones|buques?\s+de\s+la\s+armada|aguas\s+de\s+saneamiento|"
+    r"suelo\s+t[eé]cnico|esc[eé]nico|ferias\s+y\s+congresos|carnaval|"
+    r"desarrollo\s+de\s+(?:una\s+)?plataforma\b|datos\s+espaciales|"
+    r"mantenimiento\s+y\s+conservaci[oó]n\s+de\s+(?:las?\s+)?zonas\s+verdes|zonas\s+verdes\s+y\s+espacios\s+exteriores|"
+    r"adquisici[oó]n\s+d[eu]n?h?a?\s+rozadoira|suministro\s+de\s+(?:maquinaria|veh[ií]culos|autobombas|motobombas|camiones|rozadoiras)|"
     r"promoting\s+sustainable\s+forestry\s+in\s+(?:romania|bulgaria|greece|poland|brazil|vietnam)\b"
     r")",
     re.IGNORECASE,

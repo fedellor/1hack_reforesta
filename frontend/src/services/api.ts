@@ -41,6 +41,7 @@ export function adaptarConvocatoria(raw: ConvocatoriaApi): Convocatoria {
     ...(raw as Convocatoria),
     ambitoTerritorial,
     provincia,
+    anio: raw.anio ?? (Number(String(raw.fechaPublicacion ?? raw.fechaCierre ?? '').slice(0, 4)) || undefined),
     dealbreakers: raw.dealbreakers ?? [],
     citasBasesJustificacion: raw.citasBasesJustificacion ?? [],
     accionesSubvencionables: raw.accionesSubvencionables ?? [],
@@ -50,7 +51,7 @@ export function adaptarConvocatoria(raw: ConvocatoriaApi): Convocatoria {
 
 export interface FetchConvocatoriasResponse {
   convocatorias: Convocatoria[];
-  /** 'backend' = datos reales del radar; 'ejemplo' = backend no disponible, respaldo real verificado */
+  /** 'backend' = datos reales del radar; 'ejemplo' = backend no disponible */
   fuente: 'backend' | 'ejemplo';
   timestamp: string;
 }
@@ -58,8 +59,8 @@ export interface FetchConvocatoriasResponse {
 export async function fetchConvocatorias(): Promise<FetchConvocatoriasResponse> {
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
-    const res = await fetch(`${BACKEND_URL}/api/convocatorias`, { signal: controller.signal, cache: 'no-store' });
+    const timeout = setTimeout(() => controller.abort(), 12000);
+    const res = await fetch(`${BACKEND_URL}/api/convocatorias?estado=TODAS`, { signal: controller.signal, cache: 'no-store' });
     clearTimeout(timeout);
     if (res.ok) {
       const data = await res.json();

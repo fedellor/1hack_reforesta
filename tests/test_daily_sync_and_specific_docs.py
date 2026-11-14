@@ -108,3 +108,62 @@ def test_production_mode_excludes_synthetic_catalog_templates(tmp_path, monkeypa
         ids = {r.id for r in rows}
         assert ids == {"bdns-923290", "bocm-orden-1689-2026"}
 
+
+def test_placsp_pliego_extraction_anio_field_and_new_exclusions():
+    """Verify PLACSP GetDocumentByIdServlet Pliego URL, anio field on /api/convocatorias?estado=TODAS, and extra exclusions."""
+    import xml.etree.ElementTree as ET
+    from app.ingestors.live_connectors import _extract_placsp_status_and_docs
+
+    assert (
+        _is_specific_document_url(
+            "https://contrataciondelestado.es/FileSystem/servlet/GetDocumentByIdServlet?DocumentIdParam=XYZ123"
+        )
+        is True
+    )
+
+    entry_xml = """<entry xmlns="http://www.w3.org/2005/Atom"
+          xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+          xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+      <cac:ContractFolderStatus>
+        <cbc:ContractFolderStatusCode>PUB</cbc:ContractFolderStatusCode>
+        <cac:LegalDocumentReference>
+          <cac:Attachment><cac:ExternalReference><cbc:URI>https://contrataciondelestado.es/FileSystem/servlet/GetDocumentByIdServlet?DocumentIdParam=PCAP99</cbc:URI></cac:ExternalReference></cac:Attachment>
+        </cac:LegalDocumentReference>
+      </cac:ContractFolderStatus>
+    </entry>"""
+    status, doc_url = _extract_placsp_status_and_docs(ET.fromstring(entry_xml))
+    assert status == "PUB"
+    assert "GetDocumentByIdServlet?DocumentIdParam=PCAP99" in (doc_url or "")
+
+    for bad_title in (
+        "Enajenación de aprovechamiento forestal de madera en montes propios",
+        "Suministro de tuberías para riego en parque municipal",
+        "Obras de senda peatonal y juegos infantiles en zona verde",
+        "Subvención excluida de concurrencia pública para financiar Mosaicos 2026",
+        "Resolución por la que se publica el Convenio con la Junta de Comunidades para material forestal",
+        "Acuerdo Marco Retirada y gestión de residuos peligrosos de buques de la Armada",
+        "Desarrollo de una plataforma innov. de análisis de datos espaciales",
+        "Mantenimiento y conservación de las zonas verdes y espacios exteriores de centros CEE",
+        "Adquisición dunha rozadoira de brazo para prevención de incendios",
+        "Plan de vigilancia ambiental de instalaciones de tratamiento de residuos y Ecoparque",
+    ):
+        assert evaluate_layer1(titulo=bad_title, texto=bad_title, organo="Ayuntamiento").passed is False
+    # CPV 0341 (timber flooring) must NOT pass Tier A without forestry text
+    assert (
+        evaluate_layer1(
+            titulo="Instalación de suelo técnico escénico para Carnaval 2027",
+            texto="Feria y congresos",
+            organo="Recinto Ferial",
+            cpv_codes=["03410000-7"],
+        ).passed
+        is False
+    )
+
+    with TestClient(app) as client:
+        resp = client.get("/api/convocatorias?estado=TODAS")
+        assert resp.status_code == 200
+        convs = resp.json()["convocatorias"]
+        assert len(convs) >= 2
+        assert all(isinstance(c.get("anio"), int) for c in convs)
+
+

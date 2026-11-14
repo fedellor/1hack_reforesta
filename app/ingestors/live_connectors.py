@@ -28,6 +28,7 @@ def _is_specific_document_url(url: str | None) -> bool:
         for tok in (
             ".pdf",
             "iddocumento=",
+            "getdocumentbyid",
             "documentid=",
             "verobj",
             "descargararchivo",
@@ -192,24 +193,34 @@ async def fetch_live_bdns_candidates(
     keywords: list[str] | None = None,
     max_per_keyword: int = 20,
     timeout: float = 6.0,
+    include_historical: bool = True,
 ) -> list[RawCandidate]:
     """
-    Query the official BDNS / SNPSAP API concurrently across 16 forestry/biodiversity terms
-    spanning State, CCAA, Diputaciones, Concellos, Ayuntamientos and Ajuntaments.
+    Query the official BDNS / SNPSAP API concurrently across forestry/biodiversity terms
+    spanning State, CCAA, Diputaciones, Concellos, Ayuntamientos and Ajuntaments,
+    including both open calls (`abierto=true`), recent calls, and historical archive (2020-2026).
     """
     search_terms = keywords or [
         "reforestación",
         "repoblación",
         "silvícola",
         "silvicultura",
+        "selvícola",
         "forestal",
         "incendios forestales",
         "montes",
         "restauración forestal",
+        "restauración ecológica",
         "biodiversidad",
         "natura 2000",
         "arbolado",
         "custodia del territorio",
+        "bosques",
+        "desertificación",
+        "cortafuegos",
+        "desbroce",
+        "sumideros de carbono",
+        "viveros forestales",
     ]
     candidates: list[RawCandidate] = []
     seen_codes: set[str] = set()
@@ -231,7 +242,7 @@ async def fetch_live_bdns_candidates(
         for attempt in range(attempts):
             async with sem:
                 try:
-                    await asyncio.sleep(0.08 * (attempt + 1))
+                    await asyncio.sleep(0.06 * (attempt + 1))
                     resp = await client.get(url, params=params)
                     if resp.status_code == 200:
                         return resp.json()
@@ -244,19 +255,26 @@ async def fetch_live_bdns_candidates(
             await asyncio.sleep(0.75 * (attempt + 1))
         return None
 
-    async def _query_term(client: httpx.AsyncClient, term: str, only_open: bool = False) -> list[dict[str, Any]]:
+    async def _query_term(
+        client: httpx.AsyncClient,
+        term: str,
+        only_open: bool = False,
+        fecha_desde: str | None = None,
+        page: int = 0,
+        page_size: int | None = None,
+    ) -> list[dict[str, Any]]:
         try:
             params = {
                 "vpd": "GE",
                 "descripcion": term,
                 "descripcionTipoBusqueda": "1",
-                "page": "0",
-                "pageSize": str(max_per_keyword),
+                "page": str(page),
+                "pageSize": str(min(page_size or max_per_keyword, 100)),
             }
             if only_open:
                 params["abierto"] = "true"
             else:
-                params["fechaDesde"] = recent_desde
+                params["fechaDesde"] = fecha_desde or recent_desde
             data = await _get_json_with_retry(client, BDNS_SEARCH_URL, params=params, attempts=3)
             if not data:
                 return []
@@ -359,17 +377,50 @@ async def fetch_live_bdns_candidates(
             extra_txt = ". ".join(p.strip() for p in extra_txt_parts if p.strip())
             if extra_txt:
                 cand.texto = f"{cand.texto} {extra_txt}".strip()
+            if (
+                det.get("abierto") is False
+                and not cand.fecha_fin_solicitud
+                and not cand.plazo_texto_original
+                and cand.fecha_publicacion
+            ):
+                f_rec_str = str(cand.fecha_publicacion)[:10]
+                if len(f_rec_str) == 10 and f_rec_str[:4].isdigit():
+                    cand.fecha_fin_solicitud = f_rec_str
         except Exception as exc:
             logger.debug("BDNS detail enrichment for '%s' skipped: %s", num_conv, exc)
 
     async with _make_async_client(timeout=timeout, headers=headers) as client:
-        queries = [_query_term(client, t, only_open=False) for t in search_terms] + [
-            _query_term(client, t, only_open=True) for t in search_terms[:6]
-        ]
-        results_lists = await asyncio.gather(*queries)
+        open_queries = [_query_term(client, t, only_open=True, page_size=100) for t in search_terms[:16]]
+        recent_queries = [_query_term(client, t, only_open=False) for t in search_terms]
+        hist_queries: list[Any] = []
+        if include_historical and keywords is None:
+            hist_terms = [
+                "reforestación",
+                "repoblación",
+                "selvícola",
+                "silvícola",
+                "restauración forestal",
+                "incendios forestales",
+                "montes",
+                "forestal",
+                "biodiversidad",
+                "arbolado",
+            ]
+            for idx_h, ht in enumerate(hist_terms):
+                hist_queries.append(
+                    _query_term(client, ht, only_open=False, fecha_desde="01/01/2020", page=0, page_size=100)
+                )
+                if idx_h < 4:
+                    hist_queries.append(
+                        _query_term(client, ht, only_open=False, fecha_desde="01/01/2020", page=1, page_size=100)
+                    )
 
-        to_enrich: list[tuple[RawCandidate, str]] = []
-        for items in results_lists:
+        raw_batches = await asyncio.gather(*(open_queries + recent_queries + hist_queries))
+        n_open = len(open_queries)
+
+        to_enrich: list[tuple[RawCandidate, str, bool]] = []
+        for batch_idx, items in enumerate(raw_batches):
+            is_from_open_query = batch_idx < n_open
             for item in items:
                 num_conv = str(
                     item.get("numeroConvocatoria")
@@ -432,15 +483,27 @@ async def fetch_live_bdns_candidates(
                 candidates.append(cand)
                 l1_pre = evaluate_layer1(titulo=titulo, texto=cand.texto, organo=organo)
                 if l1_pre.passed:
-                    to_enrich.append((cand, num_conv))
+                    to_enrich.append((cand, num_conv, is_from_open_query or bool(item.get("abierto"))))
 
         if to_enrich:
-            # Sort newest BDNS IDs first so 2026 active calls always get priority detail & PDF enrichment
+            # Phase 1: Always enrich open & recent (>= 2026) calls first so dates/PDFs never drop under 429 load
+            # Phase 2: Enrich top remaining 2020-2025 historical items cleanly after a brief pause
             to_enrich.sort(
-                key=lambda pair: int(pair[1]) if pair[1].isdigit() else 0,
+                key=lambda triple: (1 if triple[2] else 0, int(triple[1]) if triple[1].isdigit() else 0),
                 reverse=True,
             )
-            await asyncio.gather(*[_enrich_bdns_detail(client, c, n) for c, n in to_enrich[:120]])
+            priority_items = [
+                (c, n)
+                for c, n, is_open in to_enrich
+                if is_open or (n.isdigit() and int(n) >= 875000)
+            ][:140]
+            priority_ids = {n for _, n in priority_items}
+            hist_items = [(c, n) for c, n, _ in to_enrich if n not in priority_ids][:140]
+
+            await asyncio.gather(*[_enrich_bdns_detail(client, c, n) for c, n in priority_items])
+            if hist_items:
+                await asyncio.sleep(0.5)
+                await asyncio.gather(*[_enrich_bdns_detail(client, c, n) for c, n in hist_items])
 
     return candidates
 
@@ -753,26 +816,67 @@ def _parse_codice_entry_metadata(entry: ET.Element) -> tuple[list[str], str | No
     return sorted(set(cpvs)), organo, budget, deadline
 
 
-async def fetch_live_placsp_candidates(timeout: float = 6.0) -> list[RawCandidate]:
+def _extract_placsp_status_and_docs(entry: ET.Element) -> tuple[str, str | None]:
+    """Extract ContractFolderStatusCode (PUB/EV/ADJ...) and first Pliego PDF URI (PCAP/PPT)."""
+
+    def _local(tag: str) -> str:
+        return tag.split("}", 1)[-1] if "}" in tag else tag
+
+    status_code = ""
+    pcap_url: str | None = None
+    ppt_url: str | None = None
+
+    for elem in entry.iter():
+        lname = _local(elem.tag)
+        txt = (elem.text or "").strip()
+        if lname == "ContractFolderStatusCode" and txt and not status_code:
+            status_code = txt.upper()
+        elif lname == "LegalDocumentReference" and pcap_url is None:
+            for sub in elem.iter():
+                if _local(sub.tag) == "URI" and (sub.text or "").strip().startswith("http"):
+                    pcap_url = sub.text.strip()
+                    break
+        elif lname == "TechnicalDocumentReference" and ppt_url is None:
+            for sub in elem.iter():
+                if _local(sub.tag) == "URI" and (sub.text or "").strip().startswith("http"):
+                    ppt_url = sub.text.strip()
+                    break
+
+    return status_code, pcap_url or ppt_url
+
+
+async def fetch_live_placsp_candidates(timeout: float = 10.0, max_pages: int = 3) -> list[RawCandidate]:
     """
-    Query BOTH official PLACSP Atom Syndication Feeds concurrently:
+    Query BOTH official PLACSP Atom Syndication Feeds concurrently (paginating up to `max_pages`):
     1. State Sector (`sindicacion_643`)
     2. Regional, Provincial, Diputaciones & Municipal Agregadas (`sindicacion_1044`)
-    Extracts embedded CODICE CPV codes, budgets, contracting authority & submission deadlines.
+    Filters open PUB tenders before deadline and extracts CODICE CPVs, Pliego PDFs, budgets & deadlines.
     """
     candidates: list[RawCandidate] = []
     seen_ids: set[str] = set()
     headers = {"User-Agent": "1hack_reforesta/2.0"}
+    today_iso = date.today().isoformat()
 
-    async def _fetch_feed(client: httpx.AsyncClient, url: str) -> list[RawCandidate]:
+    async def _fetch_feed(client: httpx.AsyncClient, start_url: str) -> list[RawCandidate]:
         items: list[RawCandidate] = []
-        try:
-            resp = await client.get(url)
-            if resp.status_code != 200:
-                return []
-            root = ET.fromstring(resp.text)
-            ns = {"atom": "http://www.w3.org/2005/Atom"}
-            for entry in root.findall("atom:entry", ns)[:80]:
+        visited: set[str] = set()
+        current_url: str | None = start_url
+        ns = {"atom": "http://www.w3.org/2005/Atom"}
+
+        for _ in range(max_pages):
+            if not current_url or current_url in visited:
+                break
+            visited.add(current_url)
+            try:
+                resp = await client.get(current_url)
+                if resp.status_code != 200:
+                    break
+                root = ET.fromstring(resp.text)
+            except Exception as exc:
+                logger.debug("PLACSP Atom page '%s' skipped: %s", current_url, exc)
+                break
+
+            for entry in root.findall("atom:entry", ns):
                 entry_id = entry.findtext("atom:id", default="", namespaces=ns).strip()
                 title = entry.findtext("atom:title", default="", namespaces=ns).strip()
                 summary = entry.findtext("atom:summary", default="", namespaces=ns).strip()
@@ -782,7 +886,14 @@ async def fetch_live_placsp_candidates(timeout: float = 6.0) -> list[RawCandidat
                 if not title:
                     continue
 
+                status_code, pliego_url = _extract_placsp_status_and_docs(entry)
+                if status_code and status_code != "PUB":
+                    continue
+
                 cpvs, organo_codice, budget_codice, deadline_codice = _parse_codice_entry_metadata(entry)
+                if deadline_codice and deadline_codice < today_iso:
+                    continue
+
                 short_id = entry_id.split("/")[-1] if "/" in entry_id else str(abs(hash(title)) % 1000000)
                 items.append(
                     RawCandidate(
@@ -798,10 +909,19 @@ async def fetch_live_placsp_candidates(timeout: float = 6.0) -> list[RawCandidat
                         fecha_publicacion=updated or date.today(),
                         fecha_fin_solicitud=deadline_codice,
                         url_ficha_oficial=href,
+                        url_bases_reguladoras=pliego_url,
                     )
                 )
-        except Exception as exc:
-            logger.debug("PLACSP Atom live feed '%s' skipped: %s", url, exc)
+
+            next_url: str | None = None
+            for link in root.findall("atom:link", ns):
+                if link.attrib.get("rel") == "next":
+                    cand_next = (link.attrib.get("href") or "").strip()
+                    if cand_next and cand_next not in visited:
+                        next_url = cand_next
+                        break
+            current_url = next_url
+
         return items
 
     async with _make_async_client(timeout=timeout, headers=headers) as client:

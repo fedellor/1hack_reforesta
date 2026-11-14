@@ -320,7 +320,13 @@ class Opportunity(SQLModel, table=True):
             urls = [u.strip() for u in candidates if u and u.strip()]
             for u in urls:
                 low = u.lower()
-                if ".pdf" in low or "iddocumento=" in low or "/api/v1/fuentes/" in low or "descargararchivo" in low:
+                if (
+                    ".pdf" in low
+                    or "iddocumento=" in low
+                    or "getdocumentbyid" in low
+                    or "/api/v1/fuentes/" in low
+                    or "descargararchivo" in low
+                ):
                     return u
             for u in urls:
                 low = u.lower()
@@ -371,6 +377,7 @@ class Opportunity(SQLModel, table=True):
             "ccaaCodigo": self.ccaa_codigo,
             "nivelTerritorial": self.nivel_territorial,
             "estado": self.estado,
+            "anio": self.anio_convocatoria,
             "orografiaPendiente": self.orografia_pendiente,
             "presupuestoTotal": presupuesto,
             "cuantiaMaximaProyecto": cuantia_max,
