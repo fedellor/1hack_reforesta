@@ -258,3 +258,27 @@ def test_trigger_ingestion_endpoint_with_mocked_live_apis(monkeypatch):
             if row:
                 session.delete(row)
                 session.commit()
+
+
+def test_live_backend_radar_ui_ingest_runs_and_fuente_filter():
+    """Verify built-in / & /radar live inspector console, /api/v1/ingest/runs, and ?fuente= filtering."""
+    with TestClient(app) as client:
+        for path in ("/", "/radar"):
+            html_resp = client.get(path)
+            assert html_resp.status_code == 200
+            assert "text/html" in html_resp.headers.get("content-type", "")
+            assert "Inspector Vivo de Backend" in html_resp.text
+
+        runs_resp = client.get("/api/v1/ingest/runs?limit=5")
+        assert runs_resp.status_code == 200
+        runs_data = runs_resp.json()
+        assert runs_data["total_returned"] >= 1
+        assert "details" in runs_data["runs"][0]
+        assert "live_api_fetched" in runs_data["runs"][0]["details"]
+
+        bdns_resp = client.get("/api/v1/opportunities?estado=TODAS&fuente=bdns")
+        assert bdns_resp.status_code == 200
+        bdns_data = bdns_resp.json()
+        assert bdns_data["total"] >= 1
+        assert all(i["metadatos_fuente"]["fuente_primaria"].upper() == "BDNS" for i in bdns_data["items"])
+

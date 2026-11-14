@@ -6,7 +6,8 @@ from typing import Any
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from sqlalchemy import or_
+from fastapi.responses import HTMLResponse
+from sqlalchemy import func, or_
 from sqlmodel import Session, select
 from app.config import settings
 from app.database import engine, get_session, init_db, query_cache
@@ -77,6 +78,131 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(GZipMiddleware, minimum_size=500)
+
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+@app.get("/radar", response_class=HTMLResponse, tags=["System"])
+def live_backend_radar_inspector() -> HTMLResponse:
+    """Self-contained live backend diagnostic inspector (usable without Frontend)."""
+    html = """<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>1hack_reforesta — Inspector Vivo de Backend</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; margin: 24px auto; max-width: 1180px; padding: 0 16px; color: #162419; background: #f6f8f5; }
+    h1 { margin: 0 0 6px; font-size: 1.5rem; }
+    .sub { color: #475b4c; margin-bottom: 16px; font-size: 0.95rem; }
+    .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 18px; }
+    button { background: #1f6f3d; color: #fff; border: 0; padding: 9px 14px; border-radius: 6px; cursor: pointer; font-weight: 600; }
+    button.sec { background: #36493c; }
+    button:disabled { opacity: 0.6; cursor: wait; }
+    select { padding: 8px 10px; border-radius: 6px; border: 1px solid #c6d1c8; background: #fff; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(175px, 1fr)); gap: 12px; margin-bottom: 20px; }
+    .card { background: #fff; border: 1px solid #dce5de; border-radius: 8px; padding: 12px; }
+    .card b { display: block; font-size: 1.4rem; margin-top: 4px; color: #174e2b; }
+    .panel { background: #fff; border: 1px solid #dce5de; border-radius: 8px; padding: 14px; margin-bottom: 18px; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    th, td { text-align: left; padding: 8px; border-bottom: 1px solid #ecf1ed; vertical-align: top; }
+    th { color: #475b4c; font-weight: 600; }
+    .tag { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 0.78rem; font-weight: 600; background: #e8f3eb; color: #174e2b; }
+    .links a { margin-right: 14px; color: #1f6f3d; font-weight: 600; text-decoration: none; }
+    #status { font-size: 0.9rem; color: #1f6f3d; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <h1>Inspector Vivo del Backend — 1hack_reforesta</h1>
+  <div class="sub">Auditoría en tiempo real de conectores (BDNS, BOE, PLACSP, UE SEDIA, 19 CCAA, Fundaciones Privadas y <code>./fuentes/</code>).</div>
+  <div class="bar">
+    <button id="syncBtn" onclick="runLiveSync()">Sincronizar Fuentes en Vivo Ahora</button>
+    <button class="sec" onclick="loadAll()">Refrescar Vista</button>
+    <select id="fuenteFilter" onchange="loadOpps()">
+      <option value="">Todas las fuentes</option>
+      <option value="BDNS">BDNS</option>
+      <option value="PLACSP">PLACSP (Licitaciones)</option>
+      <option value="BOE">BOE</option>
+      <option value="EU_SEDIA">UE (SEDIA / LIFE / Horizon)</option>
+      <option value="BOLETIN_CCAA">Boletines CCAA</option>
+      <option value="FUNDACION_PRIVADA">Fundaciones Privadas / RSC</option>
+      <option value="FUNDACION_BIODIVERSIDAD">Fundación Biodiversidad</option>
+      <option value="FUENTES_PDF">PDFs locales (./fuentes/)</option>
+    </select>
+    <select id="estadoFilter" onchange="loadOpps()">
+      <option value="TODAS">Activas + Histórico</option>
+      <option value="ACTIVA">Solo Activas</option>
+      <option value="CERRADA">Solo Histórico (Cerradas)</option>
+    </select>
+    <span class="links"><a href="/docs" target="_blank">Swagger /docs</a><a href="/api/v1/export/csv" target="_blank">Descargar CSV</a></span>
+    <span id="status"></span>
+  </div>
+  <div id="cards" class="cards"></div>
+  <div class="panel"><strong>Última ejecución de ingesta y telemetría por conector</strong><pre id="runLog" style="font-size:0.82rem;white-space:pre-wrap;margin:8px 0 0;"></pre></div>
+  <div class="panel">
+    <strong>Oportunidades capturadas (<span id="oppCount">0</span>)</strong>
+    <table><thead><tr><th>Fuente</th><th>Nivel / CCAA</th><th>Estado</th><th>Score</th><th>Código & Título</th><th>Enlace</th></tr></thead><tbody id="tbody"></tbody></table>
+  </div>
+<script>
+function el(tag, text) { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; return e; }
+async function loadSummary() {
+  const [h, r, runs] = await Promise.all([
+    fetch('/api/v1/health').then(x => x.json()),
+    fetch('/api/v1/sources/registry').then(x => x.json()),
+    fetch('/api/v1/ingest/runs?limit=1').then(x => x.json())
+  ]);
+  const cards = document.getElementById('cards');
+  cards.innerHTML = '';
+  const items = [
+    ['Total en BD', h.counts.total_opportunities],
+    ['Activas', h.counts.activas],
+    ['Histórico', h.counts.historico_cerradas],
+    ['Privadas / RSC', h.counts.convocatorias_privadas],
+    ['Benchmark PDFs', h.golden_benchmark.passed ? 'OK (2/2)' : 'FAIL'],
+    ['Tier LLM Juez', h.llm_judge_tier.replace(/_/g, ' ')]
+  ];
+  for (const [k, v] of items) { const c = el('div'); c.className = 'card'; c.appendChild(el('span', k)); c.appendChild(el('b', String(v))); cards.appendChild(c); }
+  for (const [fn, cnt] of Object.entries(r.oportunidades_por_conector || {})) {
+    const c = el('div'); c.className = 'card'; c.appendChild(el('span', 'Conector ' + fn)); c.appendChild(el('b', String(cnt))); cards.appendChild(c);
+  }
+  document.getElementById('runLog').textContent = JSON.stringify(runs.runs[0] || {}, null, 2);
+}
+async function loadOpps() {
+  const f = document.getElementById('fuenteFilter').value;
+  const est = document.getElementById('estadoFilter').value;
+  const q = new URLSearchParams({ estado: est, limit: '60', sort_by: 'fecha_publicacion' });
+  if (f) q.set('fuente', f);
+  const data = await fetch('/api/v1/opportunities?' + q.toString()).then(x => x.json());
+  const rows = f ? data.items.filter(i => i.metadatos_fuente.fuente_primaria === f) : data.items;
+  document.getElementById('oppCount').textContent = rows.length + ' mostradas de ' + data.total;
+  const tb = document.getElementById('tbody'); tb.innerHTML = '';
+  for (const it of rows) {
+    const tr = el('tr');
+    tr.appendChild(el('td')).appendChild(el('span', it.metadatos_fuente.fuente_primaria)).className = 'tag';
+    tr.appendChild(el('td', it.ambito_geografico.nivel + ' / ' + it.ambito_geografico.ccaa_codigo));
+    tr.appendChild(el('td', it.estado + (it.dias_restantes != null ? ' (' + it.dias_restantes + 'd)' : '')));
+    tr.appendChild(el('td', it.priorizacion.nivel + ' (' + it.priorizacion.score + ')'));
+    tr.appendChild(el('td', '[' + it.codigo_oficial + '] ' + it.titulo_limpio));
+    const linkTd = el('td');
+    if (it.enlaces.url_ficha_oficial) { const a = el('a', 'Abrir'); a.href = it.enlaces.url_ficha_oficial; a.target = '_blank'; linkTd.appendChild(a); }
+    tr.appendChild(linkTd);
+    tb.appendChild(tr);
+  }
+}
+async function runLiveSync() {
+  const btn = document.getElementById('syncBtn'); const st = document.getElementById('status');
+  btn.disabled = true; st.textContent = 'Consultando BDNS, BOE, PLACSP, UE SEDIA, 19 CCAA y Fundaciones...';
+  try {
+    const res = await fetch('/api/v1/ingest/trigger?include_live_apis=true', { method: 'POST' }).then(x => x.json());
+    st.textContent = 'Listo: escaneadas ' + res.total_scanned + ', aprobadas ' + res.accepted_layer2;
+    await loadAll();
+  } catch (e) { st.textContent = 'Error: ' + e; }
+  finally { btn.disabled = false; }
+}
+async function loadAll() { await Promise.all([loadSummary(), loadOpps()]); }
+loadAll();
+</script>
+</body>
+</html>"""
+    return HTMLResponse(content=html)
 
 
 @app.get("/api/v1/health", tags=["System"])
@@ -345,6 +471,7 @@ def get_map_summary(
 @app.get("/api/v1/opportunities", tags=["Oportunidades (Activas e Histórico)"])
 def list_opportunities(
     estado: str | None = Query(default=None, description="ACTIVA | CERRADA | PROXIMA | TODAS"),
+    fuente: str | None = Query(default=None, description="Conector / fuente primaria exacta (ej. BDNS, BOE, PLACSP, EU_SEDIA, CCAA_RSS, FUNDACION_PRIVADA)"),
     ccaa: str | None = Query(default=None, description="Código CCAA (ej. ES-MD, ES-GA, ES-AN, ES, EU)"),
     incluir_nacionales_ue: bool = Query(
         default=False,
@@ -397,6 +524,8 @@ def list_opportunities(
 
     if estado and estado.upper() != "TODAS":
         stmt = stmt.where(Opportunity.estado == estado.upper())
+    if fuente:
+        stmt = stmt.where(func.upper(Opportunity.fuente) == fuente.strip().upper())
     if ccaa:
         ccaa_up = ccaa.upper()
         if incluir_nacionales_ue and ccaa_up not in ("ES", "EU"):
@@ -721,6 +850,33 @@ def verify_golden_benchmark(session: Session = Depends(get_session)) -> dict[str
         "fuentes_detectadas": [
             miteco.to_api_dict() if miteco else None,
             madrid.to_api_dict() if madrid else None,
+        ],
+    }
+
+
+@app.get("/api/v1/ingest/runs", tags=["Ingesta y Pipeline Híbrido"])
+def list_ingestion_runs(
+    limit: int = Query(default=10, ge=1, le=50),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """Return recent ingestion runs with exact live connector counts, enrichments, and rejected noise samples."""
+    rows = session.exec(select(IngestionRun).order_by(IngestionRun.id.desc()).limit(limit)).all()
+    return {
+        "total_returned": len(rows),
+        "runs": [
+            {
+                "run_id": r.id,
+                "status": r.status,
+                "started_at": r.started_at.isoformat() if r.started_at else None,
+                "finished_at": r.finished_at.isoformat() if r.finished_at else None,
+                "sources": r.sources,
+                "total_scanned": r.total_scanned,
+                "passed_layer1": r.passed_layer1,
+                "accepted_layer2": r.accepted_layer2,
+                "upserted_db": r.upserted_db,
+                "details": r.details,
+            }
+            for r in rows
         ],
     }
 
