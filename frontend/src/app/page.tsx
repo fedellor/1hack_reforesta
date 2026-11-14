@@ -12,13 +12,14 @@ import { ConvocatoriaDrawer } from '@/components/ConvocatoriaDrawer';
 import { PipelineView } from '@/components/PipelineView';
 import { MapView } from '@/components/MapView';
 import { CalendarView } from '@/components/CalendarView';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, CalendarDays, List } from 'lucide-react';
+import { plazoSinFijar } from '@/lib/plazo';
 import { ESTATAL, TODOS, filtrarPorTerritorio } from '@/lib/territorio';
 
 const BANNER: Record<Seccion, { titulo: string; migas: string }> = {
   mapa: { titulo: 'Dónde está la financiación', migas: 'Reforesta / Mapa' },
-  convocatorias: { titulo: 'Convocatorias abiertas', migas: 'Reforesta / Convocatorias' },
-  calendario: { titulo: 'Calendario de cierres', migas: 'Reforesta / Calendario' },
+  convocatorias: { titulo: 'Convocatorias abiertas', migas: 'Reforesta / Convocatorias / Lista' },
+  calendario: { titulo: 'Convocatorias · calendario de cierres', migas: 'Reforesta / Convocatorias / Calendario' },
   empresas: { titulo: 'Empresas y fundaciones que financian', migas: 'Reforesta / Empresas' },
   pipeline: { titulo: 'Pipeline de solicitudes', migas: 'Reforesta / Pipeline' },
 };
@@ -102,7 +103,7 @@ export default function Home() {
 
         // Ventana temporal, encaje, urgencia y cuantía (no aplican al canal de empresas)
         if (seccion === 'empresas') return true;
-        if (seccion !== 'calendario' && filtros.ventanaDias > 0 && c.diasRestantes > filtros.ventanaDias) return false;
+        if (seccion !== 'calendario' && filtros.ventanaDias > 0 && !plazoSinFijar(c) && c.diasRestantes > filtros.ventanaDias) return false;
         if (c.matchingGlobal < filtros.minMatching) return false;
         if (filtros.soloUrgentes && c.diasRestantes > 15) return false;
         if (c.cuantiaMaximaProyecto < filtros.minCuantia) return false;
@@ -127,6 +128,9 @@ export default function Home() {
     () => filtrarPorTerritorio(baseFiltrada, filtros.ambito, filtros.provincia),
     [baseFiltrada, filtros.ambito, filtros.provincia]
   );
+
+  const conFechaCierre = useMemo(() => convocatoriasFiltradas.filter((c) => !plazoSinFijar(c)), [convocatoriasFiltradas]);
+  const sinPlazo = convocatoriasFiltradas.length - conFechaCierre.length;
 
   const abrir = (c: Convocatoria) => setConvocatoriaSeleccionada(c);
   const conFiltros = seccion !== 'pipeline' && seccion !== 'empresas';
@@ -154,7 +158,7 @@ export default function Home() {
         />
       )}
 
-      <main className="flex-1 max-w-[1300px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-6">
+      <main className="flex-1 max-w-[1300px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-5">
         {seccion === 'mapa' && (
           <MapView
             convocatorias={baseFiltrada}
@@ -166,6 +170,25 @@ export default function Home() {
             onSeleccionar={abrir}
             onVerConvocatorias={() => setSeccion('convocatorias')}
           />
+        )}
+
+        {(seccion === 'convocatorias' || seccion === 'calendario') && (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="inline-flex border border-zinc-200 bg-white text-xs font-semibold uppercase tracking-wide">
+              {([['convocatorias', 'Lista', List], ['calendario', 'Calendario', CalendarDays]] as const).map(([id, etiqueta, Icono]) => (
+                <button
+                  key={id}
+                  onClick={() => setSeccion(id)}
+                  className={`flex items-center gap-2 px-4 py-2 transition-colors ${seccion === id ? 'bg-zinc-900 text-white' : 'text-zinc-600 hover:bg-zinc-50'}`}
+                >
+                  <Icono className="h-3.5 w-3.5" /> {etiqueta}
+                </button>
+              ))}
+            </div>
+            {sinPlazo > 0 && seccion === 'calendario' && (
+              <p className="text-xs text-zinc-500">+ {sinPlazo} abiertas sin plazo fijado (solo en la lista)</p>
+            )}
+          </div>
         )}
 
         {seccion === 'convocatorias' && (
@@ -203,7 +226,7 @@ export default function Home() {
           </>
         )}
 
-        {seccion === 'calendario' && <CalendarView convocatorias={convocatoriasFiltradas} onSeleccionar={abrir} />}
+        {seccion === 'calendario' && <CalendarView convocatorias={conFechaCierre} onSeleccionar={abrir} />}
         {seccion === 'empresas' && <EmpresasView convocatorias={convocatoriasFiltradas} onSeleccionar={abrir} />}
         {seccion === 'pipeline' && (
           <PipelineView convocatorias={convocatorias} onSeleccionar={abrir} onCambiarEstado={handleCambiarEstado} />

@@ -32,7 +32,7 @@ export function ConvocatoriaDrawer({
 Organismo: ${c.organismo} (${c.codigoOficial})
 Ámbito: ${c.ambitoTerritorial}${c.orografiaPendiente ? ` · ${c.orografiaPendiente}` : ''}
 Cuantía máx: ${new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(c.cuantiaMaximaProyecto)} (${c.porcentajeCofinanciacion === 0 ? '100% financiado' : `${c.porcentajeCofinanciacion}% cofinanciación`})
-Cierre: ${c.fechaCierre} (${c.diasRestantes} días restantes)
+Cierre: ${c.diasRestantes >= 9999 ? 'plazo abierto, sin fecha fijada' : `${c.fechaCierre} (${c.diasRestantes >= 9999 ? 'Plazo abierto' : `${c.diasRestantes} días`} restantes)`}
 Elegibilidad: ${c.motivoElegibilidad}
 Afinidad Reforesta: ${c.matchingGlobal}% (Restauración: ${c.matchingLineas.restauracionEcosistemas}%, Hábitats: ${c.matchingLineas.conservacionHabitats}%, Educación: ${c.matchingLineas.educacionAmbiental}%)
 
@@ -74,7 +74,7 @@ Enlace oficial: ${c.urlBasesPdf}`;
                 </span>
                 <span className="text-zinc-400">·</span>
                 <span className="text-zinc-500">
-                  Cierre: {new Date(c.fechaCierre).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  {c.diasRestantes >= 9999 ? 'Plazo abierto (según bases)' : `Cierre: ${new Date(c.fechaCierre).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}`}
                 </span>
               </div>
               <h2 className="text-base font-semibold text-zinc-900 leading-snug">

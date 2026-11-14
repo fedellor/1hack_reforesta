@@ -1,3 +1,4 @@
+import { normalizarPlazos } from '@/lib/plazo';
 import { Convocatoria, EstadoInterno } from '@/types/convocatoria';
 import { MOCK_CONVOCATORIAS } from '@/data/mockConvocatorias';
 import { ESTATAL, PROVINCIAS_POR_COMUNIDAD } from '@/lib/territorio';
@@ -69,7 +70,7 @@ export async function fetchConvocatorias(): Promise<FetchConvocatoriasResponse> 
       const data = await res.json();
       const lista: ConvocatoriaApi[] = data.convocatorias ?? data;
       return {
-        convocatorias: lista.map(adaptarConvocatoria),
+        convocatorias: normalizarPlazos(lista.map(adaptarConvocatoria), false),
         fuente: 'backend',
         timestamp: data.actualizadoAt ?? new Date().toISOString(),
       };
@@ -77,7 +78,7 @@ export async function fetchConvocatorias(): Promise<FetchConvocatoriasResponse> 
   } catch {
     // backend no disponible: se avisa en la interfaz y se usan los datos de ejemplo
   }
-  return { convocatorias: MOCK_CONVOCATORIAS, fuente: 'ejemplo', timestamp: new Date().toISOString() };
+  return { convocatorias: normalizarPlazos(MOCK_CONVOCATORIAS, true), fuente: 'ejemplo', timestamp: new Date().toISOString() };
 }
 
 /** Cifras reales de la última ingesta del radar (para el embudo de la portada). */

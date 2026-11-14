@@ -48,18 +48,21 @@ Una **Consola Ejecutiva de Decisión**:
 
 ## 4. Estructura del Frontend
 
-Interfaz corporativa con la identidad de reforesta.es (verde `#6aa43a`, crema `#f6f4ee`, carbón `#333`, negro `#141414`; Open Sans y Merriweather; barra de utilidad, menú de 70 px y pie institucional). Cinco secciones, **cada una responde a una pregunta distinta** para no repetir la misma información con otro formato:
+Interfaz corporativa con la identidad de reforesta.es (verde `#6aa43a`, crema `#f6f4ee`, carbón `#333`, negro `#141414`; Open Sans y Merriweather; barra de utilidad, menú de 70 px y pie institucional). Cuatro secciones en el menú (Calendario es una vista dentro de Convocatorias), **cada una responde a una pregunta distinta** para no repetir la misma información con otro formato:
 
 | Sección | Pregunta | Qué muestra |
 | :--- | :--- | :--- |
 | **Mapa** (inicio) | ¿Dónde? | Coropleta por comunidad autónoma (Leaflet + GeoJSON propio, sin teselas externas). Al pulsar una comunidad el mapa hace zoom animado y la divide en **provincias**, coloreadas por sus convocatorias *propias* (diputaciones, ayuntamientos). El panel lateral separa «En toda la comunidad» (aplica a todas las provincias) de «Por provincia». Va precedido del embudo *detectadas → aptas → cierran en 30 días → encaje ≥ 80%*, con la cifra de detectadas real de la última ingesta. |
 | **Convocatorias** | ¿Cuáles? | El único listado detallado. Orden de lectura de cada fila: plazo (días en grande, con color de urgencia) → qué es y por qué encaja (cita literal de las bases, o la justificación del radar si no hay cita) → dinero y coste real (cofinanciación y modalidad de pago) → veredicto, encaje y afinidad en las 3 líneas. Filtros: territorio, solo aptas, cierre ≤ 30 días, encaje ≥ 80%, cuantía y orden. |
-| **Calendario** | ¿Cuándo? | **Plan de ataque**: línea de tiempo (30/60/90 días) con una fila por convocatoria, tramo de margen para decidir, tramo de preparación estimada (14 días, constante `PREPARACION_DIAS`), rombo de cierre, aviso «Empezar ya» y carga de cierres por semana. La vista **Mes** es un calendario clásico con panel de próximos cierres. |
+| **Convocatorias › Calendario** | ¿Cuándo? | **Plan de ataque**: línea de tiempo (30/60/90 días) con una fila por convocatoria, tramo de margen para decidir, tramo de preparación estimada (14 días, constante `PREPARACION_DIAS`), rombo de cierre, aviso «Empezar ya» y carga de cierres por semana. La vista **Mes** es un calendario clásico con panel de próximos cierres. |
 | **Empresas** | ¿Quién financia? | Tarjetas por entidad para el canal de mecenazgo RSC (hoy a cero), con qué cubre, encaje, plazo y cofinanciación. Sin filtros de ventana temporal. |
 | **Pipeline** | ¿En qué estado? | Seguimiento del equipo: *Nueva*, *Priorizada*, *En preparación*, *Presentada*, *Descartada*. Cada columna ordenada por urgencia y con tope de 5 tarjetas. El cambio de estado se guarda en el backend. |
 
 * **Ficha ejecutiva (panel lateral):** detalle completo con elegibilidad, citas, gastos subvencionables, solvencia, orografía y exportación a Markdown.
 * La plataforma trabaja por defecto con una ventana de **30 días**.
+
+* **Plazos:** las convocatorias abiertas sin fecha fin (`plazos.urgencia = abierta_pendiente_plazo`) se muestran como «Abierta · sin plazo fijado», no como «0 días»; no cuentan como cierre en 30 días y no aparecen en el calendario. Con datos de ejemplo los días se recalculan desde la fecha de cierre (`src/lib/plazo.ts`).
+* **Cabecera:** franja fina de título con la imagen de reforesta.es, para que el contenido quede en primer plano.
 
 ### Datos en vivo
 * La web lee del backend (`GET /api/convocatorias` y `GET /api/v1/ingest/runs`) y se **refresca sola cada minuto** y al volver a la pestaña. Un indicador arriba a la derecha muestra el estado: *En vivo · actualizado hace N min*, *Datos de ejemplo · radar sin conexión* (ámbar) o *Cargando…*.

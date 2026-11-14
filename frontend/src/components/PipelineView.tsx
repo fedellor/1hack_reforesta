@@ -83,7 +83,7 @@ export function PipelineView({ convocatorias, onSeleccionar, onCambiarEstado }: 
                         )}
                       </span>
                       <span className={c.diasRestantes < 7 ? 'text-rose-700 font-bold' : c.diasRestantes < 20 ? 'text-amber-700 font-semibold' : 'text-zinc-500'}>
-                        cierra en {c.diasRestantes} d
+                        {c.diasRestantes >= 9999 ? 'plazo abierto' : `cierra en ${c.diasRestantes} d`}
                       </span>
                     </div>
 

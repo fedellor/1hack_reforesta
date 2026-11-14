@@ -19,8 +19,16 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Reforesta · Radar de Financiación",
-  description: "Centro de observabilidad y decisión de convocatorias públicas y privadas para la restauración ecológica (1hack A Coruña)",
+  title: "Reforesta FINANCIACIÓN → Reforesta",
+  description: "Asociación Reforesta · Centro de observabilidad y captación de convocatorias públicas y privadas para la reforestación y recuperación de bosques en España",
+  icons: {
+    icon: [
+      { url: "/reforesta/cropped-favicon-32x32.png", sizes: "32x32", type: "image/png" },
+      { url: "/reforesta/cropped-favicon-192x192.png", sizes: "192x192", type: "image/png" },
+    ],
+    shortcut: "/reforesta/cropped-favicon-32x32.png",
+    apple: "/reforesta/cropped-favicon-192x192.png",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

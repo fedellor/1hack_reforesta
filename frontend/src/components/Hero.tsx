@@ -1,8 +1,30 @@
+'use client';
+
 import React from 'react';
 import { Convocatoria } from '@/types/convocatoria';
 import { EmbudoReal } from '@/services/api';
 import { formatoEuros } from '@/lib/territorio';
-import { Bosque } from '@/components/Bosque';
+import { plazoSinFijar } from '@/lib/plazo';
+
+interface HeroProps {
+  titulo: string;
+  migas: string;
+}
+
+/** Franja de título con la imagen de cabecera de reforesta.es. Fina a propósito: el contenido va en primer plano. */
+export function Hero({ titulo, migas }: HeroProps) {
+  return (
+    <div className="relative bg-[#1b2c1f] text-white overflow-hidden">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/reforesta/reforesta-slider-01.jpg" alt="" className="absolute inset-0 h-full w-full object-cover object-center" />
+      <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/60 to-black/40" />
+      <div className="relative max-w-[1300px] mx-auto px-4 sm:px-6 lg:px-8 py-5">
+        <p className="text-[11px] uppercase tracking-[0.18em] text-white/70">{migas}</p>
+        <h1 className="mt-1 font-serif text-2xl sm:text-3xl font-bold leading-tight">{titulo}</h1>
+      </div>
+    </div>
+  );
+}
 
 // Dato SIMULADO hasta que el backend (rama back) exponga el total rastreado.
 const DETECTADAS_SIMULADO = 214;
@@ -12,7 +34,7 @@ export function Embudo({ convocatorias, embudo }: { convocatorias: Convocatoria[
   const real = embudo !== null && embudo.detectadas > 0;
   const detectadas = real ? Math.max(embudo.detectadas, convocatorias.length) : Math.max(DETECTADAS_SIMULADO, convocatorias.length);
   const aptas = convocatorias.filter((c) => c.elegible);
-  const en30 = aptas.filter((c) => c.diasRestantes <= 30);
+  const en30 = aptas.filter((c) => !plazoSinFijar(c) && c.diasRestantes <= 30);
   const altoEncaje = en30.filter((c) => c.matchingGlobal >= 80);
   const fondos30 = altoEncaje.reduce((a, c) => a + c.cuantiaMaximaProyecto, 0);
   const horasAhorradas = (detectadas - aptas.length) * HORAS_LECTURA_POR_CONVOCATORIA;
@@ -26,17 +48,17 @@ export function Embudo({ convocatorias, embudo }: { convocatorias: Convocatoria[
 
   return (
       <section className="bg-white border-b border-zinc-200">
-        <div className="max-w-[1300px] mx-auto px-4 sm:px-6 lg:px-8 py-12">
-          <ol className="grid grid-cols-2 lg:grid-cols-4 gap-y-8">
+        <div className="max-w-[1300px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <ol className="grid grid-cols-2 lg:grid-cols-4 gap-y-4">
             {pasos.map((p, i) => (
-              <li key={p.etiqueta} className={`px-6 ${i > 0 ? 'lg:border-l border-zinc-200' : ''} ${i % 2 === 1 ? 'border-l border-zinc-200 lg:border-l' : ''}`}>
-                <span className={`font-serif text-5xl font-bold ${i === pasos.length - 1 ? 'text-brand' : 'text-zinc-900'}`}>{p.n}</span>
-                <span className="block mt-2 text-sm font-bold uppercase tracking-wide text-zinc-900">{p.etiqueta}</span>
-                <span className="block text-sm text-zinc-500">{p.nota}</span>
+              <li key={p.etiqueta} className={`px-4 ${i > 0 ? 'lg:border-l border-zinc-200' : ''} ${i % 2 === 1 ? 'border-l border-zinc-200 lg:border-l' : ''}`}>
+                <span className={`font-serif text-3xl font-bold ${i === pasos.length - 1 ? 'text-brand' : 'text-zinc-900'}`}>{p.n}</span>
+                <span className="block text-xs font-bold uppercase tracking-wide text-zinc-900">{p.etiqueta}</span>
+                <span className="block text-xs text-zinc-500">{p.nota}</span>
               </li>
             ))}
           </ol>
-          <p className="mt-8 px-6 text-xs text-zinc-400">
+          <p className="mt-3 px-4 text-xs text-zinc-400">
             ≈ {horasAhorradas} h de lectura de bases evitadas ({HORAS_LECTURA_POR_CONVOCATORIA} h por convocatoria descartada). {real ? '' : '*Total detectado simulado: el radar no está conectado.'}
           </p>
         </div>
@@ -44,28 +66,3 @@ export function Embudo({ convocatorias, embudo }: { convocatorias: Convocatoria[
   );
 }
 
-export function Hero({ titulo, migas }: { titulo: string; migas: string }) {
-  return (
-      <section className="relative overflow-hidden text-white bg-gradient-to-b from-[#5b5d4c] via-[#85755a] to-[#a38c62] min-h-[280px]">
-        {/* Grano fotográfico */}
-        <svg aria-hidden className="absolute inset-0 h-full w-full opacity-25 mix-blend-overlay">
-          <filter id="grano"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch" /></filter>
-          <rect width="100%" height="100%" filter="url(#grano)" />
-        </svg>
-
-        {/* Pinos azul marino, como el banner de reforesta.es */}
-        <svg aria-hidden className="absolute bottom-0 left-0 w-full h-64 sm:h-80" preserveAspectRatio="none" viewBox="0 0 1440 300">
-          <Bosque semilla={7} altura={250} color="#3d5a80" opacidad={0.55} />
-          <Bosque semilla={23} altura={210} color="#2b4468" opacidad={0.8} />
-          <Bosque semilla={41} altura={150} color="#1f3555" opacidad={0.95} />
-        </svg>
-
-        <div className="relative max-w-[1300px] mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-20 flex items-end justify-between gap-6">
-          <h1 className="max-w-3xl text-3xl sm:text-[35px] font-bold leading-[1.08]">
-            {titulo}
-          </h1>
-          <p className="hidden md:block pb-2 font-serif text-base text-white shrink-0">{migas}</p>
-        </div>
-      </section>
-  );
-}

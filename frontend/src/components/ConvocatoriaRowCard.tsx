@@ -4,6 +4,7 @@ import React from 'react';
 import { ChevronRight } from 'lucide-react';
 import { Convocatoria } from '@/types/convocatoria';
 import { formatoEuros } from '@/lib/territorio';
+import { plazoSinFijar, textoPlazo } from '@/lib/plazo';
 import { esCitaLiteral, limpiarJustificacion } from '@/lib/texto';
 
 interface ConvocatoriaRowCardProps {
@@ -13,7 +14,7 @@ interface ConvocatoriaRowCardProps {
 }
 
 const colorPlazo = (dias: number) =>
-  dias < 7 ? 'border-rose-500 text-rose-700' : dias < 20 ? 'border-amber-500 text-amber-700' : 'border-brand text-emerald-700';
+  dias >= 9999 ? 'border-zinc-300 text-zinc-600' : dias < 7 ? 'border-rose-500 text-rose-700' : dias < 20 ? 'border-amber-500 text-amber-700' : 'border-brand text-emerald-700';
 
 /**
  * Fila de decisión. Orden de lectura: ¿cuándo cierra? → ¿qué es y qué dice la base? → ¿cuánto dinero y a qué coste? → ¿encaja?
@@ -33,17 +34,19 @@ export function ConvocatoriaRowCard({ convocatoria, onSeleccionar, seleccionada 
   return (
     <article
       onClick={() => onSeleccionar(c)}
-      className={`group flex flex-col md:flex-row md:items-stretch gap-6 border bg-white p-6 cursor-pointer transition-colors ${
+      className={`group flex flex-col md:flex-row md:items-stretch gap-5 border bg-white p-4 cursor-pointer transition-colors ${
         seleccionada ? 'border-zinc-900' : 'border-zinc-200 hover:border-zinc-400'
       } ${!c.elegible ? 'bg-zinc-50 opacity-80' : ''}`}
     >
       {/* 1. Plazo: lo primero que decide si se puede llegar */}
       <div className={`shrink-0 md:w-24 border-l-4 pl-4 ${colorPlazo(c.diasRestantes)}`}>
-        <span className="block font-serif text-4xl font-bold leading-none">{c.diasRestantes}</span>
-        <span className="block text-xs font-semibold uppercase tracking-wide">días</span>
-        <span className="mt-1 block text-xs text-zinc-500">
-          {new Date(`${c.fechaCierre}T12:00:00`).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}
-        </span>
+        <span className={`block font-serif font-bold leading-none ${plazoSinFijar(c) ? 'text-2xl' : 'text-4xl'}`}>{textoPlazo(c)}</span>
+        <span className="block text-xs font-semibold uppercase tracking-wide">{plazoSinFijar(c) ? 'sin plazo fijado' : 'días'}</span>
+        {!plazoSinFijar(c) && (
+          <span className="mt-1 block text-xs text-zinc-500">
+            {new Date(`${c.fechaCierre}T12:00:00`).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}
+          </span>
+        )}
       </div>
 
       {/* 2. Qué es y por qué encaja (o por qué no) */}

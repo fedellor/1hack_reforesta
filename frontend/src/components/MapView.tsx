@@ -51,8 +51,9 @@ interface MapViewProps {
 /** Sección «¿Dónde?»: reparto territorial de los fondos. No lista convocatorias: las resume. */
 export function MapView({ convocatorias, filtradas, territorio, provincia, onCambiarTerritorio, onCambiarProvincia, onSeleccionar, onVerConvocatorias }: MapViewProps) {
   const total = filtradas.reduce((a, c) => a + c.cuantiaMaximaProyecto, 0);
-  const urgentes = filtradas.filter((c) => c.diasRestantes <= 15).length;
-  const proximo = filtradas.length ? Math.min(...filtradas.map((c) => c.diasRestantes)) : null;
+  const conPlazo = filtradas.filter((c) => c.diasRestantes < 9999);
+  const urgentes = conPlazo.filter((c) => c.diasRestantes <= 15).length;
+  const proximo = conPlazo.length ? Math.min(...conPlazo.map((c) => c.diasRestantes)) : null;
   const top = [...filtradas].sort((a, b) => b.matchingGlobal - a.matchingGlobal).slice(0, 3);
 
   // Ranking de fondos por territorio (solo con todo el territorio seleccionado)
