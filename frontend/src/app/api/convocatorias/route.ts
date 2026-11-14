@@ -7,13 +7,14 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const ambito = searchParams.get('ambito');
   const tipo = searchParams.get('tipo');
+  const estado = searchParams.get('estado') || 'TODAS';
   const soloElegibles = searchParams.get('soloElegibles') === 'true';
 
   let results = [...MOCK_CONVOCATORIAS];
   let fuente = 'api_route_mock';
 
   try {
-    const res = await fetch(`${BACKEND_URL}/api/convocatorias`, { cache: 'no-store' });
+    const res = await fetch(`${BACKEND_URL}/api/convocatorias?estado=${encodeURIComponent(estado)}`, { cache: 'no-store' });
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data.convocatorias) && data.convocatorias.length > 0) {
