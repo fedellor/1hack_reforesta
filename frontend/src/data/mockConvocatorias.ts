@@ -8,6 +8,7 @@ export const MOCK_CONVOCATORIAS: Convocatoria[] = [
     organismo: 'Ministerio para la Transición Ecológica y el Reto Demográfico (MITECO)',
     tipoFuente: 'publica_estatal',
     ambitoTerritorial: 'Estatal',
+    orografiaPendiente: 'Laderas con pendiente (>20%) y zonas de erosión',
     presupuestoTotal: 12000000,
     cuantiaMaximaProyecto: 150000,
     porcentajeCofinanciacion: 0, // 100% subvencionado
@@ -155,6 +156,7 @@ export const MOCK_CONVOCATORIAS: Convocatoria[] = [
     organismo: 'Fundación Biodiversidad (MITECO)',
     tipoFuente: 'publica_estatal',
     ambitoTerritorial: 'Estatal',
+    orografiaPendiente: 'Laderas con pendiente (>20%) y zonas de erosión',
     presupuestoTotal: 8500000,
     cuantiaMaximaProyecto: 220000,
     porcentajeCofinanciacion: 15,
@@ -283,6 +285,7 @@ export const MOCK_CONVOCATORIAS: Convocatoria[] = [
     organismo: 'Centro para el Desarrollo Tecnológico y la Innovación (CDTI)',
     tipoFuente: 'publica_estatal',
     ambitoTerritorial: 'Estatal',
+    orografiaPendiente: 'Laderas con pendiente (>20%) y zonas de erosión',
     presupuestoTotal: 20000000,
     cuantiaMaximaProyecto: 325000,
     porcentajeCofinanciacion: 30,

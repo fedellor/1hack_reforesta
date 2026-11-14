@@ -17,6 +17,7 @@ export interface Convocatoria {
   organismo: string;              // Ej: "MITECO", "Comunidad de Madrid", "Fundación Santander"
   tipoFuente: TipoFuente;
   ambitoTerritorial: string;      // "Estatal", "Comunidad de Madrid", "Galicia", "Castilla y León", etc.
+  orografiaPendiente?: string;    // "Pendiente pronunciada (>20%)", "Media ladera", "Llanura / Ribera"
   
   // Finanzas
   presupuestoTotal?: number;

@@ -5,23 +5,16 @@ import {
   X,
   ExternalLink,
   FileDown,
-  Calendar,
-  Euro,
-  MapPin,
-  Building2,
   ShieldCheck,
   ShieldAlert,
   CheckCircle2,
   XCircle,
   HelpCircle,
   TreePine,
-  Fish,
-  Users,
-  Sparkles,
-  Share2,
+  FileText,
+  Mountain,
   Check,
   Copy,
-  Printer,
 } from 'lucide-react';
 import { Convocatoria, EstadoInterno } from '@/types/convocatoria';
 
@@ -186,21 +179,29 @@ ${c.accionesSubvencionables.map((a) => ` - ${a}`).join('\n')}
               </div>
             </div>
 
-            {/* 3. Resumen Ejecutivo (Lenguaje Llano) */}
+            {/* Orografía y Pendiente (SLOPE) */}
+            {c.orografiaPendiente && (
+              <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-xs flex items-center gap-2 text-emerald-950">
+                <Mountain className="h-4 w-4 text-emerald-700 shrink-0" />
+                <span><strong className="font-semibold text-emerald-900">Orografía y Pendiente:</strong> {c.orografiaPendiente}</span>
+              </div>
+            )}
+
+            {/* 3. Resumen Ejecutivo */}
             <div>
-              <h3 className="font-bold text-slate-900 flex items-center gap-2 mb-2">
-                <Sparkles className="h-4 w-4 text-emerald-600" />
-                Resumen Ejecutivo Analítico
+              <h3 className="font-bold text-xs uppercase tracking-wider text-slate-700 flex items-center gap-1.5 mb-2">
+                <FileText className="h-3.5 w-3.5 text-slate-500" />
+                Resumen Ejecutivo
               </h3>
-              <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200 text-xs leading-relaxed text-slate-800">
+              <div className="bg-slate-50 rounded-lg p-3 border border-slate-200 text-xs leading-relaxed text-slate-800">
                 {c.resumenEjecutivo}
               </div>
             </div>
 
             {/* 4. Matching Semántico Desglosado */}
             <div>
-              <h3 className="font-bold text-slate-900 flex items-center gap-2 mb-2">
-                <TreePine className="h-4 w-4 text-emerald-600" />
+              <h3 className="font-bold text-xs uppercase tracking-wider text-slate-700 flex items-center gap-1.5 mb-2">
+                <TreePine className="h-3.5 w-3.5 text-emerald-700" />
                 Afinidad con las 3 Líneas de Reforesta ({c.matchingGlobal}%)
               </h3>
               <div className="grid grid-cols-3 gap-2">

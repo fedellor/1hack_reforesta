@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Convocatoria } from '@/types/convocatoria';
-import { ShieldCheck, ShieldAlert, Sparkles, Calendar, Euro, MapPin, ExternalLink } from 'lucide-react';
+import { ShieldCheck, ShieldAlert } from 'lucide-react';
 
 interface TableViewProps {
   convocatorias: Convocatoria[];

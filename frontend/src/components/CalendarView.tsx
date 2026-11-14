@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Convocatoria } from '@/types/convocatoria';
-import { Calendar, AlertCircle, Clock, ChevronRight } from 'lucide-react';
+import { Clock } from 'lucide-react';
 
 interface CalendarViewProps {
   convocatorias: Convocatoria[];

@@ -9,22 +9,21 @@ import { ConvocatoriaRowCard } from '@/components/ConvocatoriaRowCard';
 import { ConvocatoriaDrawer } from '@/components/ConvocatoriaDrawer';
 import { TableView } from '@/components/TableView';
 import { PipelineView } from '@/components/PipelineView';
-import { CalendarView } from '@/components/CalendarView';
 import { MapView } from '@/components/MapView';
 import { RSCView } from '@/components/RSCView';
-import { TreePine, Sparkles, AlertCircle } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 
 export default function Home() {
   const [convocatorias, setConvocatorias] = useState<Convocatoria[]>(MOCK_CONVOCATORIAS);
   const [convocatoriaSeleccionada, setConvocatoriaSeleccionada] = useState<Convocatoria | null>(null);
-  const [vistaActiva, setVistaActiva] = useState<'tarjetas' | 'tabla' | 'pipeline' | 'calendario' | 'mapa' | 'rsc'>('tarjetas');
+  const [vistaActiva, setVistaActiva] = useState<'tarjetas' | 'tabla' | 'pipeline' | 'mapa' | 'rsc'>('tarjetas');
   
   const [ordenarPor, setOrdenarPor] = useState<'matching' | 'cuantia' | 'urgencia'>('matching');
   const [filtros, setFiltros] = useState<FiltrosState>({
     busqueda: '',
     ambito: 'todos',
     tipoFuente: 'todos',
-    soloElegibles: true, // Por defecto ocultamos exclusiones para ahorrar tiempo a Reforesta
+    soloElegibles: true, // Por defecto ocultamos exclusiones para ahorrar tiempo
     minMatching: 0,
     soloUrgentes: false,
     minCuantia: 0,
@@ -44,13 +43,14 @@ export default function Home() {
   const convocatoriasFiltradas = useMemo(() => {
     return convocatorias
       .filter((c) => {
-        // Filtro de búsqueda textual
+        // Búsqueda textual
         if (filtros.busqueda.trim()) {
           const q = filtros.busqueda.toLowerCase();
           const coincide =
             c.titulo.toLowerCase().includes(q) ||
             c.organismo.toLowerCase().includes(q) ||
             c.codigoOficial.toLowerCase().includes(q) ||
+            (c.orografiaPendiente && c.orografiaPendiente.toLowerCase().includes(q)) ||
             c.accionesSubvencionables.some((a) => a.toLowerCase().includes(q));
           if (!coincide) return false;
         }
@@ -91,7 +91,7 @@ export default function Home() {
   }, [convocatorias, filtros, ordenarPor]);
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans">
+    <div className="min-h-screen bg-slate-100/60 text-slate-800 flex flex-col font-sans antialiased">
       
       {/* 1. Header con KPIs y Navegación */}
       <Header
@@ -99,12 +99,11 @@ export default function Home() {
         vistaActiva={vistaActiva}
         setVistaActiva={setVistaActiva}
         onRefresh={() => {
-          // Feedback de sincronización
-          alert('Sincronizado con APIs públicas: BDNS, BOE, BOCM y DOG al día.');
+          alert('Convocatorias sincronizadas con fuentes oficiales (BDNS, BOE y CCAA).');
         }}
       />
 
-      {/* 2. Barra de Filtros Multifactor */}
+      {/* 2. Barra de Filtros */}
       <FilterBar
         filtros={filtros}
         setFiltros={setFiltros}
@@ -114,27 +113,12 @@ export default function Home() {
         totalFiltradas={convocatoriasFiltradas.length}
       />
 
-      {/* 3. Contenedor Principal de la Vista */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      {/* 3. Contenedor Principal */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-5">
         
-        {/* Banner de Filosofía: Zero-Search Observability */}
-        <div className="mb-5 bg-gradient-to-r from-emerald-900/10 via-emerald-800/5 to-transparent border border-emerald-500/20 rounded-xl p-3 text-xs flex items-center justify-between gap-3 text-emerald-950">
-          <div className="flex items-center gap-2.5">
-            <div className="p-1.5 rounded-lg bg-emerald-600 text-white shrink-0">
-              <Sparkles className="h-4 w-4" />
-            </div>
-            <p>
-              <strong>Zero-Search Observability:</strong> Oportunidades rastreadas y pre-puntuadas contra los estatutos de Reforesta (restauración vegetal, hábitats de anfibios/fauna y educación ambiental).
-            </p>
-          </div>
-          <span className="hidden sm:inline-block text-[11px] font-semibold text-emerald-800 bg-emerald-100/60 px-2 py-0.5 rounded">
-            Cero alucinaciones: Enlace directo al PDF oficial
-          </span>
-        </div>
-
         {/* Renderizado Condicional de Vistas */}
         {vistaActiva === 'tarjetas' && (
-          <div className="space-y-3">
+          <div className="space-y-2.5">
             {convocatoriasFiltradas.map((convocatoria) => (
               <ConvocatoriaRowCard
                 key={convocatoria.id}
@@ -145,11 +129,11 @@ export default function Home() {
             ))}
 
             {convocatoriasFiltradas.length === 0 && (
-              <div className="bg-white rounded-xl border border-dashed border-slate-300 p-12 text-center">
-                <AlertCircle className="h-8 w-8 text-slate-400 mx-auto mb-2" />
-                <h4 className="font-bold text-slate-700 text-sm">No se encontraron convocatorias con estos filtros</h4>
+              <div className="bg-white rounded-lg border border-dashed border-slate-300 p-10 text-center">
+                <AlertCircle className="h-6 w-6 text-slate-400 mx-auto mb-2" />
+                <h4 className="font-bold text-slate-700 text-sm">No hay convocatorias con los filtros seleccionados</h4>
                 <p className="text-xs text-slate-500 mt-1">
-                  Prueba a relajar los criterios de búsqueda o desactiva el filtro de exclusiones.
+                  Prueba a modificar el término de búsqueda o desactiva el filtro &ldquo;Solo Elegibles&rdquo;.
                 </p>
               </div>
             )}
@@ -168,13 +152,6 @@ export default function Home() {
             convocatorias={convocatorias}
             onSeleccionar={(c) => setConvocatoriaSeleccionada(c)}
             onCambiarEstado={handleCambiarEstado}
-          />
-        )}
-
-        {vistaActiva === 'calendario' && (
-          <CalendarView
-            convocatorias={convocatoriasFiltradas}
-            onSeleccionar={(c) => setConvocatoriaSeleccionada(c)}
           />
         )}
 
@@ -202,9 +179,9 @@ export default function Home() {
       />
 
       {/* Footer */}
-      <footer className="border-t border-slate-200 bg-white py-4 text-center text-xs text-slate-500">
+      <footer className="border-t border-slate-200 bg-white py-3 text-center text-xs text-slate-500">
         <p>
-          Proyecto desarrollado para el reto <strong>1hack A Coruña · El reto de Reforesta</strong> (Common Seeds)
+          Reforesta · 1hack A Coruña (Common Seeds)
         </p>
       </footer>
 

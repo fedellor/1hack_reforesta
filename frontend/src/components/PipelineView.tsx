@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Convocatoria, EstadoInterno } from '@/types/convocatoria';
-import { Kanban, Sparkles, ChevronRight, Euro, Calendar, ArrowRight } from 'lucide-react';
+import { Kanban } from 'lucide-react';
 
 interface PipelineViewProps {
   convocatorias: Convocatoria[];
