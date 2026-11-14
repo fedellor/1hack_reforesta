@@ -300,19 +300,20 @@ def process_candidate(
     )
 
 
-def _extract_normative_signature(codigo_oficial: str, titulo: str) -> str | None:
+def _extract_normative_signatures(codigo_oficial: str, titulo: str) -> list[str]:
     """
-    Extract a canonical regulation/call signature (e.g. 'ORDEN-1689/2026', 'BDNS-923290')
+    Extract canonical regulation/call signatures (e.g. ['ORDEN-1689/2026', 'BDNS-923290'])
     to deduplicate across BDNS, BOE and regional bulletins.
     """
     combined = f"{codigo_oficial} {titulo}".upper()
-    m_bdns = re.search(r"BDNS[-\s:]*(\d{6,7})", combined)
-    if m_bdns:
-        return f"BDNS-{m_bdns.group(1)}"
+    sigs: list[str] = []
     m_orden = re.search(r"ORDEN\s+(?:[A-Z]{2,5}/)?(\d{1,5}/\d{4})", combined)
     if m_orden:
-        return f"ORDEN-{m_orden.group(1)}"
-    return None
+        sigs.append(f"ORDEN-{m_orden.group(1)}")
+    m_bdns = re.search(r"BDNS[-\s:]*(\d{6,7})", combined)
+    if m_bdns:
+        sigs.append(f"BDNS-{m_bdns.group(1)}")
+    return sigs
 
 
 def upsert_opportunity(session: Session, opp: Opportunity) -> Opportunity:
@@ -323,30 +324,32 @@ def upsert_opportunity(session: Session, opp: Opportunity) -> Opportunity:
         existing = session.exec(stmt).first()
 
     if not existing:
-        sig = _extract_normative_signature(opp.codigo_oficial, opp.titulo_original)
-        if sig and sig.startswith("ORDEN-"):
-            order_num = sig.replace("ORDEN-", "")
-            stmt = select(Opportunity).where(
-                Opportunity.ccaa_codigo == opp.ccaa_codigo,
-                Opportunity.anio_convocatoria == opp.anio_convocatoria,
-                Opportunity.titulo_original.ilike(f"%{order_num}%"),
-            )
-            existing = session.exec(stmt).first()
+        for sig in _extract_normative_signatures(opp.codigo_oficial, opp.titulo_original):
+            if sig.startswith("ORDEN-"):
+                order_num = sig.replace("ORDEN-", "")
+                stmt = select(Opportunity).where(
+                    Opportunity.ccaa_codigo == opp.ccaa_codigo,
+                    Opportunity.anio_convocatoria == opp.anio_convocatoria,
+                    (
+                        Opportunity.titulo_original.ilike(f"%{order_num}%")
+                        | Opportunity.codigo_oficial.ilike(f"%{order_num}%")
+                    ),
+                )
+                existing = session.exec(stmt).first()
+                if existing:
+                    break
+            elif sig.startswith("BDNS-"):
+                stmt = select(Opportunity).where(Opportunity.codigo_oficial == sig)
+                existing = session.exec(stmt).first()
+                if existing:
+                    break
 
     if existing:
-        # Enrich existing record without losing finer details from PDFs
+        # Enrich existing record without losing finer details or dates from PDFs
         for attr in [
-            "estado",
-            "dias_restantes",
-            "prioridad_score",
-            "prioridad_nivel",
             "relevancia_tipo",
-            "relevancia_score",
             "score_capa1",
             "categorias",
-            "justificacion_juez",
-            "titulo_limpio",
-            "resumen",
             "nivel_territorial",
             "ccaa_codigo",
             "ccaa_nombre",
@@ -354,7 +357,6 @@ def upsert_opportunity(session: Session, opp: Opportunity) -> Opportunity:
             "provincia_nombre",
             "municipio_nombre",
             "orografia_pendiente",
-            "organo_convocante",
             "beneficiarios_tipos",
             "requisitos_resumen",
             "modalidad_pago",
@@ -366,7 +368,16 @@ def upsert_opportunity(session: Session, opp: Opportunity) -> Opportunity:
             if val is not None and val != "" and val != []:
                 setattr(existing, attr, val)
 
-        # Preserve non-null financial/link details
+        if opp.relevancia_score and opp.relevancia_score > (existing.relevancia_score or 0):
+            existing.relevancia_score = opp.relevancia_score
+
+        for text_attr in ("titulo_limpio", "resumen", "justificacion_juez", "organo_convocante"):
+            old_val = getattr(existing, text_attr) or ""
+            new_val = getattr(opp, text_attr) or ""
+            if len(new_val) > len(old_val):
+                setattr(existing, text_attr, new_val)
+
+        # Preserve existing non-null financial/date/link details; fill missing gaps from new source
         for opt_attr in [
             "unidad_convocante",
             "presupuesto_total",
@@ -382,6 +393,7 @@ def upsert_opportunity(session: Session, opp: Opportunity) -> Opportunity:
             "fecha_inicio_solicitud",
             "fecha_fin_solicitud",
             "plazo_texto_original",
+            "dias_restantes",
             "url_ficha_oficial",
             "url_tramitacion",
             "url_bases_reguladoras",
@@ -390,7 +402,22 @@ def upsert_opportunity(session: Session, opp: Opportunity) -> Opportunity:
         ]:
             val = getattr(opp, opt_attr)
             if val is not None and val != "" and val != []:
-                setattr(existing, opt_attr, val)
+                if getattr(existing, opt_attr) in (None, "", []):
+                    setattr(existing, opt_attr, val)
+
+        enriched_prio = calculate_priority(
+            estado=existing.estado,
+            dias_restantes=existing.dias_restantes,
+            relevancia_tipo=existing.relevancia_tipo,
+            relevancia_score=existing.relevancia_score,
+            beneficiarios_tipos=existing.beneficiarios_tipos or [],
+            porcentaje_financiacion=existing.porcentaje_max_financiacion,
+            presupuesto_total=existing.presupuesto_total,
+            importe_max_proyecto=existing.importe_max_proyecto,
+            nivel_territorial=existing.nivel_territorial,
+        )
+        existing.prioridad_score = enriched_prio.prioridad_score
+        existing.prioridad_nivel = enriched_prio.prioridad_nivel
 
         session.add(existing)
         session.commit()

@@ -12,6 +12,16 @@ def normalize_text(text: str) -> str:
     return "".join(c for c in nfkd if not unicodedata.combining(c))
 
 
+def _contains_kw(text_norm: str, kw: str) -> bool:
+    """
+    Match keyword with word boundaries so short bulletin acronyms
+    (e.g. 'bon', 'bor', 'dog', 'boa', 'doe') never match substrings like 'carbono' or 'elaboracion'.
+    """
+    if len(kw) <= 5 and " " not in kw and "-" not in kw:
+        return bool(re.search(rf"\b{re.escape(kw)}\b", text_norm))
+    return kw in text_norm
+
+
 @dataclass(frozen=True)
 class TerritoryInfo:
     nivel_territorial: str  # UE | ESTADO | CCAA | PROVINCIA | MUNICIPIO | PRIVADA
@@ -58,8 +68,8 @@ PROVINCES: list[tuple[str, str, str, list[str]]] = [
     ("ES-AL", "Almería", "ES-AN", ["almeria", "filabres", "alpujarra almeriense"]),
     ("ES-AV", "Ávila", "ES-CL", ["avila", "gredos", "valle del tietar"]),
     ("ES-B", "Barcelona", "ES-CT", ["barcelona", "bergueda", "osona", "maresme", "valles", "bages"]),
-    ("ES-BA", "Badajoz", "ES-EX", ["badajoz", "merida", "tentudia", "siberia extremeña"]),
-    ("ES-BI", "Bizkaia", "ES-PV", ["bizkaia", "bizkaiko", "vizcaya", "bilbao", "urdaibai", "gorbeia"]),
+    ("ES-BA", "Badajoz", "ES-EX", ["badajoz", "merida", "tentudia", "siberia extremena"]),
+    ("ES-BI", "Bizkaia", "ES-PV", ["bizkaia", "bizkaiko", "vizcaya", "bilbao", "bilboko", "urdaibai", "gorbeia"]),
     ("ES-BU", "Burgos", "ES-CL", ["burgos", "aranda de duero", "merindades", "demanda"]),
     ("ES-C", "A Coruña", "ES-GA", ["a coruna", "la coruna", "coruna", "santiago de compostela", "ferrol", "carballo", "as pontes"]),
     ("ES-CA", "Cádiz", "ES-AN", ["cadiz", "alcornocales", "grazalema", "jerez"]),
@@ -73,7 +83,7 @@ PROVINCES: list[tuple[str, str, str, list[str]]] = [
     ("ES-GI", "Girona", "ES-CT", ["girona", "gerona", "garrotxa", "emporda", "ripolles", "les gavarres"]),
     ("ES-GR", "Granada", "ES-AN", ["granada", "sierra nevada", "baza", "castril"]),
     ("ES-GU", "Guadalajara", "ES-CM", ["guadalajara", "alto tajo", "molina de aragon", "sierra norte de guadalajara"]),
-    ("ES-H", "Huelva", "ES-AN", ["huelva", "donana", "aracena", "andévalo"]),
+    ("ES-H", "Huelva", "ES-AN", ["huelva", "donana", "aracena", "andevalo"]),
     ("ES-HU", "Huesca", "ES-AR", ["huesca", "ordesa", "pirineo aragones", "sobrarbe", "ribagorza", "jaca"]),
     ("ES-J", "Jaén", "ES-AN", ["jaen", "cazorla", "segura", "las villas", "andujar", "despenaperros"]),
     ("ES-L", "Lleida", "ES-CT", ["lleida", "lerida", "pirineu", "pallars", "aran", "alt urgell", "solsones"]),
@@ -95,9 +105,9 @@ PROVINCES: list[tuple[str, str, str, list[str]]] = [
     ("ES-SE", "Sevilla", "ES-AN", ["sevilla", "sierra norte de sevilla", "aznalcollar"]),
     ("ES-SG", "Segovia", "ES-CL", ["segovia", "valsain", "cuellar", "riaza"]),
     ("ES-SO", "Soria", "ES-CL", ["soria", "urbion", "pinares", "valonsadero", "covaleda", "vinuesa"]),
-    ("ES-SS", "Gipuzkoa", "ES-PV", ["gipuzkoa", "gipuzkoako", "guipuzcoa", "donostia", "san sebastian", "aralar", "aizkorri"]),
+    ("ES-SS", "Gipuzkoa", "ES-PV", ["gipuzkoa", "gipuzkoako", "guipuzcoa", "donostia", "donostiako", "san sebastian", "aralar", "aizkorri", "onati", "onatiko", "bergara"]),
     ("ES-T", "Tarragona", "ES-CT", ["tarragona", "els ports", "prades", "priorat", "ebre"]),
-    ("ES-TE", "Teruel", "ES-AR", ["teruel", "maestrazgo", "albarracin", "gudarme", "javalambre"]),
+    ("ES-TE", "Teruel", "ES-AR", ["teruel", "maestrazgo", "albarracin", "gudar", "javalambre"]),
     ("ES-TF", "Santa Cruz de Tenerife", "ES-CN", ["tenerife", "la palma", "la gomera", "el hierro", "garajonay", "teide", "corona forestal"]),
     ("ES-TO", "Toledo", "ES-CM", ["toledo", "montes de toledo", "talavera", "la jara"]),
     ("ES-V", "Valencia / València", "ES-VC", ["valencia", "calderona", "caroig", "requena", "utiel", "albufera"]),
@@ -124,7 +134,7 @@ CCAA_KEYWORDS: list[tuple[str, list[str]]] = [
     ("ES-MD", ["comunidad de madrid", "bocm"]),
     ("ES-ML", ["ciudad de melilla", "ciudad autonoma de melilla"]),
     ("ES-NC", ["navarra", "nafarroa", "gobierno de navarra", "comunidad foral de navarra", "bon"]),
-    ("ES-PV", ["pais vasco", "euskadi", "gobierno vasco", "eusko jaurlaritza", "bopv"]),
+    ("ES-PV", ["pais vasco", "euskadi", "gobierno vasco", "eusko jaurlaritza", "bopv", "ehaa"]),
     ("ES-RI", ["la rioja", "gobierno de la rioja", "bor"]),
     ("ES-VC", ["comunitat valenciana", "comunidad valenciana", "generalitat valenciana", "dogv"]),
 ]
@@ -141,6 +151,15 @@ PRIVATE_ENTITY_KEYWORDS = [
     "fundacion iberdrola",
     "fundacion endesa",
     "fundacion naturgy",
+    "fundacion aquae",
+    "fundacion daniel y nina carasso",
+    "fundacion carasso",
+    "fundacion montemadrid",
+    "fundacion cajamar",
+    "fundacion unicaja",
+    "fundacion bancaja",
+    "kutxa fundazioa",
+    "vital fundazioa",
     "obra social",
     "abanca",
     "afundacion",
@@ -152,13 +171,46 @@ PRIVATE_ENTITY_KEYWORDS = [
     "eoca",
     "one tree planted",
     "1% for the planet",
+    "plant-for-the-planet",
+    "land life",
+    "ecodes",
+    "fsc espana",
+    "pefc espana",
     "fundacion caja",
     "retree",
     "bosques sostenibles",
     "sylvestris",
     "wwf",
     "seo/birdlife",
+    "seo birdlife",
 ]
+
+
+def _extract_municipality(organo_norm: str, titulo_norm: str) -> str | None:
+    """Detect municipality in Spanish, Galician, Catalan or Basque formats."""
+    pat_prefix = re.compile(
+        r"\b(?:ayuntamiento|concello|ajuntament|mancomunidad|junta\s+vecinal|concejo)\s+"
+        r"(?:de\s+|do\s+|da\s+|del\s+|d['’])?([a-z0-9\s\-]{2,40})"
+    )
+    pat_basque = re.compile(r"\b([a-z0-9\-]{3,30}(?:ko|go))\s+udala\b")
+    pat_udala_prefix = re.compile(r"\budala\s+(?:de\s+)?([a-z0-9\s\-]{3,35})")
+
+    for source in (organo_norm, titulo_norm):
+        m = pat_prefix.search(source)
+        if m:
+            raw_muni = re.split(r"[-|,(]|\bpara\b", m.group(1))[0].strip()
+            if len(raw_muni) >= 2:
+                return raw_muni.title()
+        m_eu = pat_basque.search(source)
+        if m_eu:
+            stem = re.sub(r"(ko|go)$", "", m_eu.group(1)).strip()
+            return (stem or m_eu.group(1)).title()
+        m_up = pat_udala_prefix.search(source)
+        if m_up:
+            raw_muni = re.split(r"[-|,(]|\bpara\b", m_up.group(1))[0].strip()
+            if len(raw_muni) >= 2:
+                return raw_muni.title()
+    return None
 
 
 def resolve_geography(
@@ -168,9 +220,10 @@ def resolve_geography(
     nuts_code: str | None = None,
 ) -> TerritoryInfo:
     """Resolve administrative level (UE, ESTADO, CCAA, PROVINCIA, MUNICIPIO, PRIVADA) and geography."""
-    combined = normalize_text(f"{organo} | {region_text} | {titulo}")
     organo_norm = normalize_text(organo)
     region_norm = normalize_text(region_text)
+    titulo_norm = normalize_text(titulo)
+    combined = f"{organo_norm} | {region_norm} | {titulo_norm}"
 
     # 0. Check Private Foundation / Corporate ESG Fund level
     is_private = (
@@ -201,17 +254,10 @@ def resolve_geography(
             ccaa_nombre=CCAA_CATALOG["EU"]["nombre"],
         )
 
-    # 2. Check Municipality level ("Ayuntamiento", "Concello", "Ajuntament", "Udala", "Mancomunidad", "Concejo")
-    muni_match = re.search(
-        r"(?:ayuntamiento|concello|ajuntament|udala|mancomunidad|junta\s+vecinal|concejo)\s+(?:de\s+|do\s+|da\s+|d['’])?([a-z0-9\s\-]{3,40})",
-        organo_norm,
-    )
-    municipio_detected: str | None = None
-    if muni_match:
-        raw_muni = muni_match.group(1).split("-")[0].strip()
-        municipio_detected = raw_muni.title()
+    # 2. Check Municipality level
+    municipio_detected = _extract_municipality(organo_norm, titulo_norm)
 
-    # 3. Check Provincial level ("Diputación", "Deputación", "Diputació", "Foru Aldundia", "Cabildo", "Consell Insular")
+    # 3. Check Provincial level ("Diputación", "Deputación", "Diputació", "Foru Aldundia", "Cabildo", "Consell ...")
     is_provincial_body = any(
         k in organo_norm
         for k in [
@@ -221,6 +267,10 @@ def resolve_geography(
             "foru aldundia",
             "cabildo",
             "consell insular",
+            "consell de mallorca",
+            "consell de menorca",
+            "consell d'eivissa",
+            "consell de formentera",
         ]
     )
 
@@ -236,10 +286,10 @@ def resolve_geography(
             "confederacion hidrografica",
             "agencia estatal",
             "csic",
+            "tragsa",
         ]
     ) and not any(k in organo_norm for k in ["comunidad", "junta", "generalitat", "xunta", "gobierno de"])
 
-    # Helper to determine level name
     def _pick_level(default_lvl: str) -> str:
         if is_private:
             return "PRIVADA"
@@ -266,7 +316,7 @@ def resolve_geography(
 
     # 6. Match CCAA directly in organo or region_text
     for ccaa_code, keywords in CCAA_KEYWORDS:
-        if any(kw in organo_norm or kw in region_norm for kw in keywords):
+        if any(_contains_kw(organo_norm, kw) or _contains_kw(region_norm, kw) for kw in keywords):
             prov_code, prov_name = _find_province(combined, filter_ccaa=ccaa_code)
             return TerritoryInfo(
                 nivel_territorial=_pick_level("CCAA"),
@@ -277,9 +327,9 @@ def resolve_geography(
                 municipio_nombre=municipio_detected,
             )
 
-    # 7. Match by Province if provincial/municipal or mentioned in region/organo
+    # 7. Match by Province if provincial/municipal or mentioned in region/organo/title
     prov_code, prov_name, prov_ccaa = _find_province_with_ccaa(
-        f"{organo_norm} {region_norm} {titulo.lower()}"
+        f"{organo_norm} {region_norm} {titulo_norm}"
     )
     if prov_code and prov_ccaa and not is_state_body:
         return TerritoryInfo(
@@ -291,10 +341,10 @@ def resolve_geography(
             municipio_nombre=municipio_detected,
         )
 
-    # 8. Match CCAA in full text (including title) if not explicitly state
+    # 8. Match CCAA in full text (including title) if not explicitly state (now safe with word boundaries!)
     if not is_state_body:
         for ccaa_code, keywords in CCAA_KEYWORDS:
-            if any(kw in combined for kw in keywords):
+            if any(_contains_kw(combined, kw) for kw in keywords):
                 prov_code, prov_name = _find_province(combined, filter_ccaa=ccaa_code)
                 return TerritoryInfo(
                     nivel_territorial=_pick_level("CCAA"),
@@ -302,13 +352,15 @@ def resolve_geography(
                     ccaa_nombre=CCAA_CATALOG[ccaa_code]["nombre"],
                     provincia_codigo=prov_code,
                     provincia_nombre=prov_name,
+                    municipio_nombre=municipio_detected,
                 )
 
     # Default to State / National level (ES)
     return TerritoryInfo(
-        nivel_territorial="PRIVADA" if is_private else "ESTADO",
+        nivel_territorial="PRIVADA" if is_private else ("MUNICIPIO" if municipio_detected else "ESTADO"),
         ccaa_codigo="ES",
         ccaa_nombre=CCAA_CATALOG["ES"]["nombre"],
+        municipio_nombre=municipio_detected,
     )
 
 

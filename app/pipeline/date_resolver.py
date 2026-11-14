@@ -6,6 +6,7 @@ from datetime import date, timedelta
 from app.config import settings
 
 SPANISH_MONTHS: dict[str, int] = {
+    # Spanish
     "enero": 1,
     "febrero": 2,
     "marzo": 3,
@@ -19,6 +20,41 @@ SPANISH_MONTHS: dict[str, int] = {
     "octubre": 10,
     "noviembre": 11,
     "diciembre": 12,
+    # Catalan
+    "gener": 1,
+    "febrer": 2,
+    "març": 3,
+    "marc": 3,
+    "maig": 5,
+    "juny": 6,
+    "juliol": 7,
+    "setembre": 9,
+    "novembre": 11,
+    "desembre": 12,
+    # Galician
+    "xaneiro": 1,
+    "febreiro": 2,
+    "abril": 4,
+    "xuno": 6,
+    "xuño": 6,
+    "xullo": 7,
+    "setembro": 9,
+    "outubro": 10,
+    "novembro": 11,
+    "decembro": 12,
+    # English
+    "january": 1,
+    "february": 2,
+    "march": 3,
+    "april": 4,
+    "may": 5,
+    "june": 6,
+    "july": 7,
+    "august": 8,
+    "september": 9,
+    "october": 10,
+    "november": 11,
+    "december": 12,
 }
 
 NUMBER_WORDS: dict[str, int] = {
@@ -39,6 +75,10 @@ NUMBER_WORDS: dict[str, int] = {
     "veinte": 20,
     "veinticinco": 25,
     "treinta": 30,
+    "dues": 2,
+    "dez": 10,
+    "vint": 20,
+    "trenta": 30,
 }
 
 # Fixed national holidays in Spain (MM, DD)
@@ -159,7 +199,7 @@ def add_months_lpacap(
 
 
 def parse_spanish_date(text: str | date | None) -> date | None:
-    """Parse ISO, DD/MM/YYYY, YYYY.MM.DD, or '11 de julio de 2024' formats."""
+    """Parse ISO, DD/MM/YYYY, DD.MM.YYYY, or multilingual textual dates (ES/CA/GL/EN)."""
     if isinstance(text, date):
         return text
     if not text or not isinstance(text, str):
@@ -174,17 +214,17 @@ def parse_spanish_date(text: str | date | None) -> date | None:
         except ValueError:
             pass
 
-    # 2. DD/MM/YYYY or DD-MM-YYYY
-    m_dmy = re.search(r"\b(\d{1,2})[-/](\d{1,2})[-/](20\d{2})\b", s)
+    # 2. DD/MM/YYYY, DD-MM-YYYY or DD.MM.YYYY
+    m_dmy = re.search(r"\b(\d{1,2})[-./](\d{1,2})[-./](20\d{2})\b", s)
     if m_dmy:
         try:
             return date(int(m_dmy.group(3)), int(m_dmy.group(2)), int(m_dmy.group(1)))
         except ValueError:
             pass
 
-    # 3. Textual: "20 de julio de 2023"
+    # 3. Textual ES/CA/GL: "20 de julio de 2023", "15 d'octubre de 2026", "10 de outono/outubro do 2026"
     m_txt = re.search(
-        r"\b(\d{1,2})\s+de\s+([a-záéíóú]+)\s+(?:de\s+|del\s+)?(20\d{2})\b",
+        r"\b(\d{1,2})\s+(?:de\s+|d['’])([a-záéíóúñç]+)\s+(?:de\s+|del\s+|do\s+)?(20\d{2})\b",
         s.lower(),
     )
     if m_txt:
@@ -192,6 +232,25 @@ def parse_spanish_date(text: str | date | None) -> date | None:
         if month:
             try:
                 return date(int(m_txt.group(3)), month, int(m_txt.group(1)))
+            except ValueError:
+                pass
+
+    # 4. English textual: "15 November 2026" or "November 15, 2026"
+    m_en1 = re.search(r"\b(\d{1,2})\s+([a-z]+)\s+(20\d{2})\b", s.lower())
+    if m_en1:
+        month = SPANISH_MONTHS.get(m_en1.group(2))
+        if month:
+            try:
+                return date(int(m_en1.group(3)), month, int(m_en1.group(1)))
+            except ValueError:
+                pass
+
+    m_en2 = re.search(r"\b([a-z]+)\s+(\d{1,2}),?\s+(20\d{2})\b", s.lower())
+    if m_en2:
+        month = SPANISH_MONTHS.get(m_en2.group(1))
+        if month:
+            try:
+                return date(int(m_en2.group(3)), month, int(m_en2.group(2)))
             except ValueError:
                 pass
 
@@ -222,11 +281,16 @@ def resolve_deadline_from_text(
         return base_date, roll_to_next_business_day(direct_end, ccaa_codigo=ccaa_codigo), False
 
     lower = plazo_text.lower()
-    start_date = base_date + timedelta(days=1) if "siguiente" in lower else base_date
+    start_date = (
+        base_date + timedelta(days=1)
+        if any(k in lower for k in ["siguiente", "següent", "seguinte", "following"])
+        else base_date
+    )
 
-    # 1. Business days ("15 días hábiles", "diez días hábiles")
+    # 1. Business days ES/CA/GL/EN ("15 días hábiles", "20 dies hàbils", "15 working/business days")
     m_habiles = re.search(
-        r"\b(\d+|un|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|doce|quince|veinte|veinticinco|treinta)\s+d[ií]as\s+h[aá]biles",
+        r"\b(\d+|un|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|doce|quince|veinte|veinticinco|treinta|vint|dez)\s+"
+        r"(?:d[ií](?:as|es)\s+(?:h[aáà]bil(?:e?s)?)|working\s+days|business\s+days)",
         lower,
     )
     if m_habiles:
@@ -235,9 +299,10 @@ def resolve_deadline_from_text(
             end_date = add_business_days(base_date, n, ccaa_codigo=ccaa_codigo)
             return start_date, end_date, True
 
-    # 2. Calendar days ("20 días naturales", "30 días") -> Roll to next business day if last day is non-working (LPACAP 30.5)
+    # 2. Calendar days ES/CA/GL/EN ("20 días naturales", "30 dies naturals", "30 calendar days") -> LPACAP 30.5 rollover
     m_naturales = re.search(
-        r"\b(\d+|diez|quince|veinte|veinticinco|treinta)\s+d[ií]as(?:\s+naturales)?",
+        r"\b(\d+|diez|quince|veinte|veinticinco|treinta|trenta)\s+"
+        r"(?:d[ií](?:as|es)(?:\s+(?:natural(?:e?s)?))?|calendar\s+days|days)",
         lower,
     )
     if m_naturales:
@@ -247,9 +312,9 @@ def resolve_deadline_from_text(
             end_date = roll_to_next_business_day(raw_end, ccaa_codigo=ccaa_codigo)
             return start_date, end_date, True
 
-    # 3. Months ("un mes", "dos meses", "1 mes") -> Fecha a fecha + LPACAP 30.5 rollover
+    # 3. Months ES/CA/GL/EN ("un mes", "dos meses", "1 mes", "2 months") -> Fecha a fecha + LPACAP 30.5 rollover
     m_meses = re.search(
-        r"\b(\d+|un|uno|una|dos|tres|seis)\s+mes(?:es)?\b",
+        r"\b(\d+|un|uno|una|dos|tres|seis|dues)\s+(?:mes(?:es|os)?|months?)\b",
         lower,
     )
     if m_meses:
