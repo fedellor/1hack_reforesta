@@ -21,12 +21,19 @@ Plataforma de inteligencia en tiempo real diseñada para **capturar el 100% de l
    - Clasifica cada oportunidad en **`DIRECTA`** (100% reforestación/silvicultura/incendios) o **`INDIRECTA_ELEGIBLE`** (convocatorias ambientales/biodiversidad/Red Natura 2000/clima donde un proyecto de reforestación es financiable, como los 2 PDFs de `./fuentes/`).
    - Traduce siempre `titulo_limpio`, `resumen` y `justificacion` al español.
 
-### B. Priorizar (Motor de Priorización Estratégica para Reforesta)
-Cada convocatoria abierta recibe en [prioritizer.py](./app/pipeline/prioritizer.py) un **`priorizacion.score` (`0–100`)** y un nivel (**`CRITICA` | `ALTA` | `MEDIA` | `BAJA`**) calculado sobre 4 ejes objetivos para decidir a qué presentarse hoy:
-- **40% Afinidad Temática**: Peso directo a repoblación autóctona, restauración ecológica, custodia forestal y prevención/restauración de incendios.
+### B. Priorizar (Motor de Priorización Estratégica + Viabilidad de Tesorería + Ley 39/2015)
+Cada convocatoria abierta recibe en [prioritizer.py](./app/pipeline/prioritizer.py) un **`priorizacion.score` (`0–100`)** materializado e indexado en SQL (`ix_opp_estado_prioridad`) y un nivel (**`CRITICA` | `ALTA` | `MEDIA` | `BAJA`**) calculado sobre 4 ejes objetivos para decidir a qué presentarse hoy:
+- **40% Afinidad Temática**: Peso directo a repoblación autóctona, restauración ecológica, custodia forestal y prevención/restauración de incendios, desglosado en 3 líneas (`restauracionEcosistemas`, `conservacionHabitats`, `educacionAmbiental`).
 - **25% Elegibilidad para ONG / Asociación sin ánimo de lucro**: Prioriza convocatorias donde una entidad como Reforesta puede presentarse directamente (`ONG_FUNDACIONES`) o en alianza con `AYUNTAMIENTO` / `COMUNIDAD_MONTES`.
-- **20% Intensidad y Atractivo Económico**: Prioriza subvenciones que cubren del **80% al 100%** de los costes subvencionables y evalúa el tope por proyecto (`importe_max_proyecto`).
-- **15% Ventana de Oportunidad Temporal**: Calcula los **días hábiles españoles restantes** ([date_resolver.py](./app/pipeline/date_resolver.py)) y alerta de cierres inminentes o ventanas óptimas (`5–25 días`).
+- **20% Intensidad Económica y Viabilidad de Tesorería**: Prioriza subvenciones que cubren del **80% al 100%** de los costes subvencionables, detecta **`modalidad_pago` (`anticipo` | `reembolso` | `mixto`)** y marca **`pago_anticipado_sin_aval`** (como el Art. 14 de la Orden 1689/2026 de la Comunidad de Madrid) frente a bloqueos de tesorería (`dealbreakers`).
+- **15% Ventana de Oportunidad Temporal (Cumplimiento estricto Ley 39/2015 LPACAP Art. 30)**: Calcula los **días hábiles administrativos restantes** ([date_resolver.py](./app/pipeline/date_resolver.py)) descontando sábados, domingos, festivos nacionales, traslados de festivos en domingo y los **calendarios de festivos autonómicos de las 19 CCAA**, aplicando prórroga automática al primer día hábil siguiente cuando un plazo vence en inhábil (`Art. 30.5`) y cómputo *fecha a fecha* en plazos por meses (`Art. 30.4`).
+
+### C. Anticipar y Exportar (Calendario Predictivo 2020–2026 + Exportadores Directos)
+- **Calendario Predictivo de Recurrencia Anual (`GET /api/v1/opportunities/predictive-calendar`)** ([predictive_and_export.py](./app/pipeline/predictive_and_export.py)): Analiza el histórico `2020–2026` de convocatorias cíclicas (MITECO Línea A, Comunidad de Madrid Orden Ambiental ESAL, Fundación Biodiversidad, Programa LIFE, Motor Verde, Fundación ”la Caixa”, Xunta de Galicia, Junta de Andalucía) y alerta **45 días antes de su publicación en boletín** con el checklist técnico previo para no quedar fuera por plazos de solo 10 días hábiles.
+- **Exportadores Directos sin Fricción**:
+  - **Excel / Google Sheets CSV (`GET /api/v1/export/csv`)**: Con BOM UTF-8 (`\ufeff`) para abrir directamente en Excel con tildes y símbolos `€`.
+  - **Calendario iCal RFC 5545 (`GET /api/v1/export/calendar.ics`)**: Eventos de cierre con alarmas automáticas `VALARM` a **7 días (`-P7D`)** y **48 horas (`-P2D`)** para Google Calendar, Outlook o Apple Calendar.
+  - **Dossier Técnico Markdown (`GET /api/v1/export/markdown/{id}`)**: Ficha ejecutiva lista para el equipo técnico de Reforesta con cuadro financiero, citas de las bases y criterios de puntuación.
 
 ---
 
@@ -186,13 +193,19 @@ Cada convocatoria abierta recibe en [prioritizer.py](./app/pipeline/prioritizer.
 
 | Método | Endpoint | Descripción |
 | :--- | :--- | :--- |
-| `GET` | `/api/v1/opportunities/prioritized` | **Cola de Priorización Inteligente para Reforesta**: Devuelve las oportunidades activas ordenadas por `priorizacion.score` (`CRITICA`, `ALTA`, `MEDIA`), filtrable por `ccaa` y `perfil_beneficiario=ONG_FUNDACIONES`. |
+| `GET` | `/api/convocatorias` | **Puente Plug-and-Play Next.js (`roialtra`)**: Devuelve todas las oportunidades adaptadas exactamente a la interfaz TypeScript `Convocatoria` (`frontend/src/types/convocatoria.ts`). |
+| `PATCH` | `/api/convocatorias/{id}/estado` | Actualiza el estado interno de trabajo de una convocatoria (`nueva` \| `priorizada` \| `en_preparacion` \| `presentada` \| `descartada`). |
+| `GET` | `/api/v1/opportunities/prioritized` | **Cola de Priorización Inteligente para Reforesta**: Devuelve las oportunidades activas ordenadas por `priorizacion.score` (`CRITICA`, `ALTA`, `MEDIA`), filtrable por `ccaa`, `perfil_beneficiario=ONG_FUNDACIONES` y `solo_anticipo_sin_aval`. |
+| `GET` | `/api/v1/opportunities/predictive-calendar` | **Calendario Predictivo de Recurrencia Anual (`2020–2026`)**: Predice meses de apertura, ventanas de preparación de 45 días y checklists técnicos para convocatorias cíclicas. |
+| `GET` | `/api/v1/export/csv` | **Exportador directo a Excel / Google Sheets (`.csv` UTF-8-SIG)** con todas las oportunidades priorizadas y desglose financiero. |
+| `GET` | `/api/v1/export/calendar.ics` | **Exportador directo a Google Calendar / Outlook (`.ics` RFC 5545)** con eventos de cierre y alarmas `VALARM` a 7 días y 48 horas. |
+| `GET` | `/api/v1/export/markdown/{id}` | **Exportador de Ficha Técnica de Preparación (`.md`)** con cuadro de tesorería, citas literales de las bases, dealbreakers y criterios de valoración. |
 | `GET` | `/api/v1/map/summary` | Resumen instantáneo por las **19 CCAA/Ciudades Autónomas** (`ES-AN`..`ES-VC`) + Estatal (`ES`) + Privadas/RSC (`PRIVADA`) + Europeo (`EU`) con desglose autonómico, provincial y de concellos/ayuntamientos. |
-| `GET` | `/api/v1/opportunities` | Buscador y filtrado SQL indexado (`estado`, `ccaa`, `incluir_nacionales_ue`, `provincia`, `nivel`, `tipo`, `relevancia`, `categoria`, `beneficiario`, `anio`, `anio_desde`, `anio_hasta`, `presupuesto_min`, `cofinanciado_ue`, `q`, `sort_by=prioridad_score`). |
-| `GET` | `/api/v1/opportunities/{id}` | Ficha completa de una oportunidad (incluye bloque `priorizacion`, importes individuales, enlaces oficiales y criterios de valoración). |
+| `GET` | `/api/v1/opportunities` | Buscador y filtrado SQL indexado (`estado`, `ccaa`, `incluir_nacionales_ue`, `provincia`, `nivel`, `tipo`, `relevancia`, `categoria`, `beneficiario`, `modalidad_pago`, `solo_anticipo_sin_aval`, `anio`, `anio_desde`, `anio_hasta`, `presupuesto_min`, `cofinanciado_ue`, `q`, `sort_by=prioridad_score`). |
+| `GET` | `/api/v1/opportunities/{id}` | Ficha completa de una oportunidad (incluye bloque `priorizacion`, importes individuales, viabilidad de tesorería, enlaces oficiales y criterios de valoración). |
 | `GET` | `/api/v1/sources/registry` | Catálogo en vivo de las **fuentes oficiales y privadas/RSC** monitorizadas en los 6 niveles (`UE`, `ESTADO`, `CCAA`, `PROVINCIA`, `MUNICIPIO`, `PRIVADA`). |
 | `GET` | `/api/v1/stats/historical` | Series temporales del **Histórico Profundo (`2020–2026`)**, desglose por nivel territorial/categoría y auditoría de ruido descartado. |
 | `GET` | `/api/v1/benchmark/verify` | Verifica y devuelve las 2 convocatorias del Golden Benchmark (`bdns-923290` MITECO y `bocm-orden-1689-2026` Comunidad de Madrid). |
-| `POST` | `/api/v1/ingest/trigger` | Lanza una sincronización concurrente en vivo (`asyncio.gather`) contra `./fuentes/`, BDNS, PLACSP Atom, BOE y UE SEDIA. |
+| `POST` | `/api/v1/ingest/trigger` | Lanza una sincronización concurrente en vivo (`asyncio.gather` protegida por `asyncio.Lock`) contra `./fuentes/`, BDNS, PLACSP Atom, BOE y UE SEDIA. |
 | `POST` | `/api/v1/analyze/text` | Evalúa y prioriza cualquier texto de convocatoria en vivo pasando por Capa 1 + Capa 2 + Motor de Priorización. |
 | `POST` | `/api/v1/analyze/pdf` | Sube un PDF de boletín oficial o ficha BDNS en vivo y devuelve el JSON estructurado y priorizado. |

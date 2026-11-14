@@ -12,6 +12,7 @@ class Opportunity(SQLModel, table=True):
     __tablename__ = "opportunities"
     __table_args__ = (
         Index("ix_opp_estado_ccaa", "estado", "ccaa_codigo"),
+        Index("ix_opp_estado_prioridad", "estado", "prioridad_score"),
         Index("ix_opp_anio_estado", "anio_convocatoria", "estado"),
         Index("ix_opp_nivel_ccaa", "nivel_territorial", "ccaa_codigo"),
         Index("ix_opp_relevancia_estado", "relevancia_tipo", "estado"),
@@ -20,9 +21,14 @@ class Opportunity(SQLModel, table=True):
     id: str = Field(primary_key=True, index=True)
     codigo_oficial: str = Field(index=True)
     fuente: str = Field(index=True)  # BDNS | PLACSP | BOE | EU_SEDIA | BOLETIN_CCAA | FUENTES_PDF
-    tipo_oportunidad: str = Field(index=True)  # SUBVENCION | LICITACION | PROGRAMA_UE | CONVENIO
+    tipo_oportunidad: str = Field(index=True)  # SUBVENCION | LICITACION | PROGRAMA_UE | CONVOCATORIA_PRIVADA | CONVENIO
     estado: str = Field(index=True)  # ACTIVA | PROXIMA | CERRADA
     dias_restantes: int | None = Field(default=None, index=True)
+
+    # Materialized Strategic Prioritization (Indexed in SQL for O(log N) sorting)
+    prioridad_score: int = Field(default=50, index=True)
+    prioridad_nivel: str = Field(default="MEDIA", index=True)  # CRITICA | ALTA | MEDIA | BAJA | HISTORICO
+    estado_interno: str = Field(default="nueva", index=True)  # nueva | priorizada | en_preparacion | presentada | descartada
 
     # Layer 1 & Layer 2 Relevance
     relevancia_tipo: str = Field(index=True)  # DIRECTA | INDIRECTA_ELEGIBLE
@@ -37,33 +43,39 @@ class Opportunity(SQLModel, table=True):
     titulo_original: str = Field(sa_column=Column(Text))
     resumen: str = Field(default="", sa_column=Column(Text))
 
-    # Geography
-    nivel_territorial: str = Field(index=True)  # UE | ESTADO | CCAA | PROVINCIA | MUNICIPIO
+    # Geography & Terrain
+    nivel_territorial: str = Field(index=True)  # UE | ESTADO | CCAA | PROVINCIA | MUNICIPIO | PRIVADA
     ccaa_codigo: str = Field(index=True)  # ES-AN..ES-VC, ES, EU
     ccaa_nombre: str = Field(default="")
     provincia_codigo: str | None = Field(default=None, index=True)
     provincia_nombre: str | None = Field(default=None)
     municipio_nombre: str | None = Field(default=None)
+    orografia_pendiente: str = Field(default="pendiente_media")  # llano | pendiente_media | alta_montana | indiferente
 
     # Issuing Body
     organo_convocante: str = Field(default="", sa_column=Column(Text))
     unidad_convocante: str | None = Field(default=None)
 
-    # Financials
+    # Financials & Treasury Viability
     presupuesto_total: float | None = Field(default=None, index=True)
     importe_max_proyecto: float | None = Field(default=None)
     importe_max_beneficiario: float | None = Field(default=None)
     porcentaje_max_financiacion: float | None = Field(default=None)
+    modalidad_pago: str = Field(default="mixto")  # anticipo | reembolso | mixto
+    pago_anticipado_sin_aval: bool = Field(default=False)
     moneda: str = Field(default="EUR")
     cofinanciado_ue: bool = Field(default=False, index=True)
     fondo_ue: str | None = Field(default=None)
 
-    # Beneficiaries & Requirements
+    # Beneficiaries, Requirements, Citations & Dealbreakers
     beneficiarios_tipos: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     sector_economico_original: str | None = Field(default=None)
     requisitos_resumen: str = Field(default="", sa_column=Column(Text))
     gastos_subvencionables: str | None = Field(default=None, sa_column=Column(Text))
     criterios_valoracion: list[dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
+    citas_bases: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    dealbreakers: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    matching_lineas: dict[str, int] = Field(default_factory=dict, sa_column=Column(JSON))
 
     # Dates
     anio_convocatoria: int = Field(index=True)
@@ -106,6 +118,7 @@ class Opportunity(SQLModel, table=True):
             "codigo_oficial": self.codigo_oficial,
             "tipo_oportunidad": self.tipo_oportunidad,
             "estado": self.estado,
+            "estado_interno": self.estado_interno,
             "dias_restantes": self.dias_restantes,
             "idioma_original": self.idioma_original,
             "priorizacion": {
@@ -120,6 +133,7 @@ class Opportunity(SQLModel, table=True):
                 "score_capa1": self.score_capa1,
                 "categorias": self.categorias or [],
                 "justificacion": self.justificacion_juez,
+                "matching_lineas": self.matching_lineas or self._default_matching_lineas(),
             },
             "titulo_limpio": self.titulo_limpio,
             "titulo_original": self.titulo_original,
@@ -131,6 +145,7 @@ class Opportunity(SQLModel, table=True):
                 "provincia_codigo": self.provincia_codigo,
                 "provincia_nombre": self.provincia_nombre,
                 "municipio": self.municipio_nombre,
+                "orografia_pendiente": self.orografia_pendiente,
             },
             "organo_convocante": {
                 "nivel_administracion": self.nivel_territorial,
@@ -142,6 +157,8 @@ class Opportunity(SQLModel, table=True):
                 "importe_max_proyecto": self.importe_max_proyecto,
                 "importe_max_beneficiario": self.importe_max_beneficiario,
                 "porcentaje_max_financiacion": self.porcentaje_max_financiacion,
+                "modalidad_pago": self.modalidad_pago,
+                "pago_anticipado_sin_aval": self.pago_anticipado_sin_aval,
                 "moneda": self.moneda,
                 "cofinanciado_ue": self.cofinanciado_ue,
                 "fondo_ue": self.fondo_ue,
@@ -151,6 +168,8 @@ class Opportunity(SQLModel, table=True):
                 "descripcion_requisitos": self.requisitos_resumen,
                 "gastos_subvencionables": self.gastos_subvencionables,
                 "criterios_valoracion": self.criterios_valoracion or [],
+                "citas_bases": self.citas_bases or [],
+                "dealbreakers": self.dealbreakers or [],
             },
             "fechas": {
                 "anio_convocatoria": self.anio_convocatoria,
@@ -173,6 +192,135 @@ class Opportunity(SQLModel, table=True):
                 "fecha_ingesta": self.fecha_ingesta.isoformat() if self.fecha_ingesta else None,
             },
         }
+
+    def _default_matching_lineas(self) -> dict[str, int]:
+        cats = set(self.categorias or [])
+        restauracion = min(
+            99,
+            self.relevancia_score + (6 if cats & {"reforestacion", "restauracion_post_incendio", "restauracion_ecologica"} else -5),
+        )
+        conservacion = min(
+            98,
+            self.relevancia_score + (5 if cats & {"biodiversidad", "silvicultura", "prevencion_incendios"} else -4),
+        )
+        educacion = min(
+            92,
+            max(45, self.relevancia_score - (8 if "investigacion_forestal" not in cats else 0)),
+        )
+        return {
+            "restauracionEcosistemas": max(40, restauracion),
+            "conservacionHabitats": max(40, conservacion),
+            "educacionAmbiental": max(35, educacion),
+        }
+
+    def to_frontend_convocatoria(self) -> dict[str, Any]:
+        """
+        Serialize directly to the TypeScript `Convocatoria` interface expected by
+        Roi's Frontend (`origin/front:frontend/src/types/convocatoria.ts`).
+        """
+        tipo_fuente_map = {
+            "UE": "europea",
+            "ESTADO": "publica_estatal",
+            "PRIVADA": "privada_rsc",
+            "CCAA": "publica_autonomica",
+            "PROVINCIA": "publica_autonomica",
+            "MUNICIPIO": "publica_autonomica",
+        }
+        tipo_fuente = tipo_fuente_map.get(self.nivel_territorial, "publica_autonomica")
+
+        dias = self.dias_restantes if self.dias_restantes is not None else 0
+        if dias <= 12:
+            urgencia = "critica"
+        elif dias <= 30:
+            urgencia = "moderada"
+        else:
+            urgencia = "holgada"
+
+        fin_pct = self.porcentaje_max_financiacion if self.porcentaje_max_financiacion is not None else 80.0
+        porcentaje_cofinanciacion = max(0, round(100.0 - fin_pct))
+
+        presupuesto = int(self.presupuesto_total or 100000)
+        cuantia_max = int(
+            self.importe_max_beneficiario
+            or self.importe_max_proyecto
+            or min(presupuesto, 120000)
+        )
+
+        elegible = "ONG_FUNDACIONES" in (self.beneficiarios_tipos or []) or self.tipo_oportunidad != "LICITACION"
+        if elegible:
+            motivo_elegibilidad = (
+                f"Elegible para Reforesta ({', '.join(self.beneficiarios_tipos or ['ONG_FUNDACIONES'])}). "
+                f"{self.justificacion_juez}"
+            )
+        else:
+            motivo_elegibilidad = (
+                "Contrato/convocatoria orientada principalmente a empresas o entes locales; "
+                "Reforesta puede concurrir en agrupación/UTE o como asistencia técnica."
+            )
+
+        acciones = [
+            s.strip()
+            for s in (self.gastos_subvencionables or "Reforestación con especies autóctonas, silvicultura preventiva y restauración de hábitats").split(",")
+            if s.strip()
+        ]
+        requisitos_list = [
+            s.strip()
+            for s in (self.requisitos_resumen or "Asociación sin ánimo de lucro inscrita y al corriente de obligaciones tributarias").split(".")
+            if s.strip()
+        ]
+
+        citas = self.citas_bases or [
+            f"[{self.codigo_oficial}] {self.justificacion_juez}",
+            f"[Plazo Oficial] {self.plazo_texto_original or 'Según bases reguladoras'}",
+        ]
+
+        return {
+            "id": self.id,
+            "codigoOficial": self.codigo_oficial,
+            "titulo": self.titulo_limpio,
+            "organismo": self.organo_convocante,
+            "tipoFuente": tipo_fuente,
+            "ambitoTerritorial": self.municipio_nombre or self.provincia_nombre or self.ccaa_nombre or "Nacional (España)",
+            "ccaaCodigo": self.ccaa_codigo,
+            "nivelTerritorial": self.nivel_territorial,
+            "estado": self.estado,
+            "orografiaPendiente": self.orografia_pendiente,
+            "presupuestoTotal": presupuesto,
+            "cuantiaMaximaProyecto": cuantia_max,
+            "porcentajeCofinanciacion": porcentaje_cofinanciacion,
+            "modalidadPago": self.modalidad_pago or "mixto",
+            "pagoAnticipadoSinAval": self.pago_anticipado_sin_aval,
+            "fechaPublicacion": self.fecha_publicacion.isoformat() if self.fecha_publicacion else f"{self.anio_convocatoria}-01-15",
+            "fechaCierre": self.fecha_fin_solicitud.isoformat() if self.fecha_fin_solicitud else f"{self.anio_convocatoria}-12-31",
+            "diasRestantes": max(0, dias),
+            "urgencia": urgencia,
+            "elegible": elegible,
+            "motivoElegibilidad": motivo_elegibilidad,
+            "dealbreakers": self.dealbreakers or [],
+            "matchingGlobal": self.prioridad_score or self.relevancia_score,
+            "matchingLineas": self.matching_lineas or self._default_matching_lineas(),
+            "citasBasesJustificacion": citas,
+            "resumenEjecutivo": self.resumen,
+            "accionesSubvencionables": acciones[:5],
+            "gastosNoSubvencionables": [
+                "IVA recuperable o impuestos indirectos equivalentes",
+                "Gastos financieros, intereses deudores o sanciones administrativas",
+            ],
+            "requisitosSolvencia": requisitos_list[:4],
+            "urlBasesPdf": self.url_bases_reguladoras or self.url_boletin_extracto or self.url_ficha_oficial,
+            "urlSedeElectronica": self.url_tramitacion or self.url_ficha_oficial,
+            "fuenteUrl": self.url_ficha_oficial,
+            "estadoInterno": self.estado_interno or ("priorizada" if (self.prioridad_score or 0) >= 85 else "nueva"),
+        }
+
+
+class UpdateEstadoInternoRequest(BaseModel):
+    """Request schema to update an opportunity's internal workflow state."""
+
+    estadoInterno: str = PydanticField(
+        ...,
+        description="nueva | priorizada | en_preparacion | presentada | descartada",
+    )
 
 
 class IngestionRun(SQLModel, table=True):
