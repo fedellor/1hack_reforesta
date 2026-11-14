@@ -1,0 +1,38 @@
+# Python (Backend)
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+
+# Node & Next.js (Frontend)
+node_modules/
+.next/
+out/
+build/
+*.tsbuildinfo
+next-env.d.ts
+
+# Environment & Secrets
+.env
+.env.local
+.env.*.local
+*.pem
+
+# Local Database & Cache
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/cache/
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Base de datos local del backend (SQLite)
+data/
