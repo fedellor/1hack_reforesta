@@ -19,6 +19,8 @@ interface HeaderProps {
   onRefresh: () => void | Promise<void>;
   /** Convocatorias nuevas desde la última visita (se muestra como contador en el menú) */
   nuevas?: number;
+  /** Próxima sincronización automática del backend (ISO) */
+  proximaSync?: string | null;
 }
 
 const ITEMS_MENU: { id: Seccion; label: string }[] = [
@@ -29,7 +31,7 @@ const ITEMS_MENU: { id: Seccion; label: string }[] = [
   { id: 'pipeline', label: 'Pipeline' },
 ];
 
-export function Header({ convocatorias, seccion, setSeccion, datos, onRefresh, nuevas = 0 }: HeaderProps) {
+export function Header({ convocatorias, seccion, setSeccion, datos, onRefresh, nuevas = 0, proximaSync = null }: HeaderProps) {
   const [syncing, setSyncing] = useState(false);
 
   const handleSync = async () => {
@@ -93,7 +95,7 @@ export function Header({ convocatorias, seccion, setSeccion, datos, onRefresh, n
 
         <div className="hidden md:flex items-center gap-2 text-[11px] text-white/70 shrink-0">
           <span className={`h-2 w-2 rounded-full ${datos.fuente === 'backend' ? 'bg-[#6aa43a] animate-pulse' : datos.fuente === 'ejemplo' ? 'bg-amber-400' : 'bg-zinc-500'}`} />
-          <span>{etiquetaDatos} · <strong className="text-white">{convocatorias.length}</strong> activas</span>
+          <span>{etiquetaDatos} · <strong className="text-white">{convocatorias.length}</strong> activas{proximaSync && datos.fuente === 'backend' ? ` · próx. sync ${new Date(proximaSync).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}` : ''}</span>
           <button onClick={handleSync} disabled={syncing} className="p-1 text-white/60 hover:text-white disabled:opacity-50" title="Actualizar ahora">
             <RefreshCw className={`h-3.5 w-3.5 ${syncing ? 'animate-spin' : ''}`} />
           </button>

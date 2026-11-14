@@ -187,6 +187,7 @@ export default function Home() {
         datos={datos}
         onRefresh={cargar}
         nuevas={idsNuevas.size}
+        proximaSync={embudo?.proximaSincronizacion ?? null}
       />
 
       <Hero titulo={BANNER[seccion].titulo} migas={BANNER[seccion].migas} />

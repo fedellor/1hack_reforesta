@@ -7,6 +7,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const ambito = searchParams.get('ambito');
   const tipo = searchParams.get('tipo');
+  const estado = searchParams.get('estado') || 'TODAS';
   const soloElegibles = searchParams.get('soloElegibles') === 'true';
 
   let results = [...MOCK_CONVOCATORIAS];

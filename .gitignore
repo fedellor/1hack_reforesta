@@ -1,4 +1,14 @@
-# Node & Next.js
+# Python (Backend)
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+
+# Node & Next.js (Frontend)
 node_modules/
 .next/
 out/
@@ -6,17 +16,20 @@ build/
 *.tsbuildinfo
 next-env.d.ts
 
-# Python (para la rama back de Diego)
-__pycache__/
-*.py[cod]
-*$py.class
-.venv/
-venv/
-ENV/
-
-# Sistema y entorno
-.DS_Store
-*.pem
+# Environment & Secrets
 .env
 .env.local
 .env.*.local
+*.pem
+
+# Local Database & Cache
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/cache/
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

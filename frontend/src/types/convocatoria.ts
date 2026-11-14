@@ -56,6 +56,7 @@ export interface Convocatoria {
   estadoInterno: EstadoInterno;
 
   // Metadatos enriquecidos del Backend (Ubicación, Plazos LPACAP Art. 30, Dinero)
+  anio?: number;
   ccaaCodigo?: string;
   nivelTerritorial?: string;
   estado?: string;

@@ -108,19 +108,23 @@ export interface EmbudoReal {
   pasaronFiltro: number;
   aceptadas: number;
   ultimaIngesta: string | null;
+  /** Próxima sincronización automática del backend (ISO), si la informa */
+  proximaSincronizacion: string | null;
 }
 
 export async function fetchEmbudo(): Promise<EmbudoReal | null> {
   try {
     const res = await fetch(`${BACKEND_URL}/api/v1/ingest/runs?limit=1`, { cache: 'no-store' });
     if (!res.ok) return null;
-    const run = (await res.json()).runs?.[0];
+    const payload = await res.json();
+    const run = payload.runs?.[0];
     if (!run) return null;
     return {
       detectadas: run.total_scanned ?? 0,
       pasaronFiltro: run.passed_layer1 ?? 0,
       aceptadas: run.accepted_layer2 ?? 0,
       ultimaIngesta: run.finished_at ?? run.started_at ?? null,
+      proximaSincronizacion: payload.next_daily_sync_at ?? null,
     };
   } catch {
     return null;

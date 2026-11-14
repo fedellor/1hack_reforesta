@@ -1,5 +1,7 @@
 # Peticiones del front al backend
 
+> Estado tras fusionar el back de `test` (commit 45a97ad): los puntos 1, 2 y 3 **siguen pendientes**. `to_frontend_convocatoria` mantiene las fechas inventadas (`{anio}-01-15` / `{anio}-12-31`), la regla de elegibilidad no ha cambiado y `categorias` sigue sin llegar al contrato del front. `test` sí añade `GET /api/v1/reforesta/profile` (perfil estatutario) y la próxima sincronización diaria, que el front ya muestra.
+
 Cosas que el front ya consume o necesita y que dependen de la rama `back`. Ordenadas por impacto.
 
 ## 1. Fechas reales en el histórico (afecta a la previsión)
