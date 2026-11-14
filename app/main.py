@@ -1,10 +1,11 @@
 """FastAPI Application for 1hack_reforesta — Radar Vivo de Oportunidades de Reforestación e Incendios."""
 import asyncio
 from contextlib import asynccontextmanager, suppress
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any
-from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy import or_
 from sqlmodel import Session, select
 from app.config import settings
@@ -18,9 +19,23 @@ from app.ingestors.runner import (
     refresh_live_database_states,
     run_full_ingestion,
 )
-from app.models import AnalyzeTextRequest, IngestionRun, Opportunity
+from app.models import (
+    AnalyzeTextRequest,
+    IngestionRun,
+    Opportunity,
+    UpdateEstadoInternoRequest,
+)
 from app.pipeline.orchestrator import RawCandidate, process_candidate
 from app.pipeline.pdf_extractor import extract_pdf_from_bytes
+from app.pipeline.predictive_and_export import (
+    build_predictive_calendar,
+    export_opportunities_csv,
+    export_opportunities_ics,
+    export_opportunity_markdown,
+)
+
+# Global lock to prevent concurrent ingestion runs from colliding
+_INGEST_LOCK = asyncio.Lock()
 
 
 @asynccontextmanager
@@ -53,7 +68,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Enable CORS for Frontend integration (roialtra)
+# Enable CORS for Frontend integration (roialtra) and GZip payload compression
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -61,6 +76,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 
 @app.get("/api/v1/health", tags=["System"])
@@ -111,6 +127,76 @@ def health_check(session: Session = Depends(get_session)) -> dict[str, Any]:
             "miteco_bdns_923290_detected": benchmark_miteco,
             "madrid_orden_1689_2026_detected": benchmark_madrid,
         },
+    }
+
+
+@app.get("/api/convocatorias", tags=["Puente Directo Frontend (Next.js roialtra)"])
+def get_frontend_convocatorias(
+    estado: str | None = Query(default="ACTIVA", description="ACTIVA | CERRADA | TODAS"),
+    ccaa: str | None = Query(default=None, description="Filtrar por CCAA (ej. ES-MD, ES-GA)"),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """
+    Plug-and-play endpoint consumed by Roi's Next.js Frontend (`frontend/src/services/api.ts`).
+    Returns opportunities formatted directly into the TypeScript `Convocatoria` interface.
+    """
+    stmt = select(Opportunity)
+    if estado and estado.upper() != "TODAS":
+        stmt = stmt.where(Opportunity.estado == estado.upper())
+    if ccaa:
+        ccaa_up = ccaa.upper()
+        if ccaa_up not in ("ES", "EU"):
+            stmt = stmt.where(Opportunity.ccaa_codigo.in_([ccaa_up, "ES", "EU"]))
+        else:
+            stmt = stmt.where(Opportunity.ccaa_codigo == ccaa_up)
+
+    opps = list(session.exec(stmt).all())
+    opps.sort(
+        key=lambda o: (o.estado == "ACTIVA", o.prioridad_score or 0, o.relevancia_score or 0),
+        reverse=True,
+    )
+    convocatorias = [o.to_frontend_convocatoria() for o in opps]
+    return {
+        "total": len(convocatorias),
+        "convocatorias": convocatorias,
+        "fuente": "backend_diego",
+        "actualizadoAt": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@app.patch("/api/convocatorias/{opportunity_id}/estado", tags=["Puente Directo Frontend (Next.js roialtra)"])
+@app.patch("/api/v1/opportunities/{opportunity_id}/estado", tags=["Motor de Priorización (Reforesta)"])
+def update_opportunity_internal_state(
+    opportunity_id: str,
+    req: UpdateEstadoInternoRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """Update the internal workflow state (`nueva` | `priorizada` | `en_preparacion` | `presentada` | `descartada`)."""
+    valid_states = {"nueva", "priorizada", "en_preparacion", "presentada", "descartada"}
+    new_state = req.estadoInterno.strip().lower()
+    if new_state not in valid_states:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Estado interno inválido '{req.estadoInterno}'. Valores permitidos: {sorted(valid_states)}",
+        )
+    opp = session.get(Opportunity, opportunity_id)
+    if not opp:
+        opp = session.exec(
+            select(Opportunity).where(Opportunity.codigo_oficial == opportunity_id.upper())
+        ).first()
+    if not opp:
+        raise HTTPException(status_code=404, detail=f"Oportunidad '{opportunity_id}' no encontrada")
+
+    opp.estado_interno = new_state
+    session.add(opp)
+    session.commit()
+    session.refresh(opp)
+    query_cache.invalidate_all()
+    return {
+        "id": opp.id,
+        "codigo_oficial": opp.codigo_oficial,
+        "estadoInterno": opp.estado_interno,
+        "updated": True,
     }
 
 
@@ -220,10 +306,11 @@ def get_map_summary(
                         "nivel_territorial": o.nivel_territorial,
                         "tipo_oportunidad": o.tipo_oportunidad,
                         "relevancia_tipo": o.relevancia_tipo,
+                        "prioridad_score": o.prioridad_score,
                         "presupuesto_total": o.presupuesto_total,
                         "dias_restantes": o.dias_restantes,
                     }
-                    for o in sorted(own_opps, key=lambda x: x.relevancia_score, reverse=True)[:4]
+                    for o in sorted(own_opps, key=lambda x: (x.prioridad_score, x.relevancia_score), reverse=True)[:4]
                 ],
             }
         )
@@ -281,6 +368,14 @@ def list_opportunities(
         default=None,
         description="AYUNTAMIENTO | ONG_FUNDACIONES | EMPRESA_PYME | PARTICULAR_PROPIETARIO | COMUNIDAD_MONTES | UNIVERSIDAD_INVESTIGACION",
     ),
+    modalidad_pago: str | None = Query(
+        default=None,
+        description="Filtrar por modalidad de pago: anticipo | reembolso | mixto",
+    ),
+    solo_anticipo_sin_aval: bool | None = Query(
+        default=None,
+        description="Si es true, devuelve únicamente convocatorias con pago anticipado sin exigencia de aval",
+    ),
     anio: int | None = Query(default=None, description="Año de convocatoria (2020-2026)"),
     anio_desde: int | None = Query(default=None, description="Año inicial para rango histórico (ej. 2020)"),
     anio_hasta: int | None = Query(default=None, description="Año final para rango histórico (ej. 2026)"),
@@ -316,6 +411,10 @@ def list_opportunities(
         stmt = stmt.where(Opportunity.tipo_oportunidad == tipo.upper())
     if relevancia:
         stmt = stmt.where(Opportunity.relevancia_tipo == relevancia.upper())
+    if modalidad_pago:
+        stmt = stmt.where(Opportunity.modalidad_pago == modalidad_pago.lower())
+    if solo_anticipo_sin_aval is True:
+        stmt = stmt.where(Opportunity.pago_anticipado_sin_aval == True)  # noqa: E712
     if anio:
         stmt = stmt.where(Opportunity.anio_convocatoria == anio)
     if anio_desde:
@@ -354,27 +453,25 @@ def list_opportunities(
         ben_up = beneficiario.upper()
         results = [o for o in results if ben_up in [b.upper() for b in (o.beneficiarios_tipos or [])]]
 
-    serialized_all = [o.to_api_dict() for o in results]
-
-    # Sorting
+    # Sort on materialized model attributes before serializing the requested page
     if sort_by == "dias_restantes":
-        serialized_all.sort(key=lambda x: (x["dias_restantes"] is None, x["dias_restantes"] or 999999))
+        results.sort(key=lambda o: (o.dias_restantes is None, o.dias_restantes or 999999))
     elif sort_by == "presupuesto_total":
-        serialized_all.sort(key=lambda x: x["economia"]["presupuesto_total"] or 0.0, reverse=True)
+        results.sort(key=lambda o: o.presupuesto_total or 0.0, reverse=True)
     elif sort_by == "fecha_publicacion":
-        serialized_all.sort(key=lambda x: x["fechas"]["fecha_publicacion"] or "1970-01-01", reverse=True)
+        results.sort(key=lambda o: o.fecha_publicacion.isoformat() if o.fecha_publicacion else "1970-01-01", reverse=True)
     elif sort_by == "relevancia_score":
-        serialized_all.sort(key=lambda x: (x["estado"] == "ACTIVA", x["relevancia"]["score"]), reverse=True)
+        results.sort(key=lambda o: (o.estado == "ACTIVA", o.relevancia_score), reverse=True)
     else:
-        serialized_all.sort(
-            key=lambda x: (x["estado"] == "ACTIVA", x["priorizacion"]["score"], x["relevancia"]["score"]),
+        results.sort(
+            key=lambda o: (o.estado == "ACTIVA", o.prioridad_score, o.relevancia_score),
             reverse=True,
         )
 
-    total = len(serialized_all)
+    total = len(results)
     start = (page - 1) * limit
     end = start + limit
-    page_items = serialized_all[start:end]
+    page_items = [o.to_api_dict() for o in results[start:end]]
 
     return {
         "total": total,
@@ -391,6 +488,10 @@ def get_prioritized_opportunities(
         default=None,
         description="Opcional: ONG_FUNDACIONES | AYUNTAMIENTO | COMUNIDAD_MONTES | EMPRESA_PYME",
     ),
+    solo_anticipo_sin_aval: bool = Query(
+        default=False,
+        description="Filtrar solo oportunidades con pago anticipado sin aval",
+    ),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     """
@@ -405,6 +506,8 @@ def get_prioritized_opportunities(
             stmt = stmt.where(Opportunity.ccaa_codigo.in_([ccaa_up, "ES", "EU"]))
         else:
             stmt = stmt.where(Opportunity.ccaa_codigo == ccaa_up)
+    if solo_anticipo_sin_aval:
+        stmt = stmt.where(Opportunity.pago_anticipado_sin_aval == True)  # noqa: E712
 
     active_opps = list(session.exec(stmt).all())
     if perfil_beneficiario:
@@ -413,11 +516,11 @@ def get_prioritized_opportunities(
             o for o in active_opps if p_up in [b.upper() for b in (o.beneficiarios_tipos or [])]
         ]
 
-    items = [o.to_api_dict() for o in active_opps]
-    items.sort(
-        key=lambda x: (x["priorizacion"]["score"], x["relevancia"]["score"]),
+    active_opps.sort(
+        key=lambda o: (o.prioridad_score, o.relevancia_score),
         reverse=True,
     )
+    items = [o.to_api_dict() for o in active_opps]
 
     criticas = [i for i in items if i["priorizacion"]["nivel"] == "CRITICA"]
     altas = [i for i in items if i["priorizacion"]["nivel"] == "ALTA"]
@@ -436,6 +539,100 @@ def get_prioritized_opportunities(
         "cola_alta": altas,
         "cola_complementaria": medias_bajas,
     }
+
+
+@app.get("/api/v1/opportunities/predictive-calendar", tags=["Calendario Predictivo y Exportadores"])
+def get_predictive_recurrence_calendar(
+    ccaa: str | None = Query(
+        default=None,
+        description="Código CCAA (ej. ES-MD, ES-GA, ES-AN) para filtrar programas autonómicos + estatales/UE",
+    ),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """
+    Predictive Annual Recurrence Calendar (2020-2026):
+    Forecasts opening months and 45-day preparation windows for recurring forest/environmental calls
+    so Reforesta can prepare technical memories before 10-day bulletin windows open.
+    """
+    all_opps = list(session.exec(select(Opportunity)).all())
+    return build_predictive_calendar(opps=all_opps, ccaa_filter=ccaa)
+
+
+@app.get("/api/v1/export/csv", tags=["Calendario Predictivo y Exportadores"])
+def export_csv_endpoint(
+    estado: str = Query(default="ACTIVA", description="ACTIVA | CERRADA | TODAS"),
+    ccaa: str | None = Query(default=None, description="Filtrar por CCAA (incluye ES y EU si se desea)"),
+    incluir_nacionales_ue: bool = Query(default=True),
+    session: Session = Depends(get_session),
+) -> Response:
+    """Download prioritized opportunities as a UTF-8 with BOM CSV file ready for Microsoft Excel / Google Sheets."""
+    stmt = select(Opportunity)
+    if estado and estado.upper() != "TODAS":
+        stmt = stmt.where(Opportunity.estado == estado.upper())
+    if ccaa:
+        ccaa_up = ccaa.upper()
+        if incluir_nacionales_ue and ccaa_up not in ("ES", "EU"):
+            stmt = stmt.where(Opportunity.ccaa_codigo.in_([ccaa_up, "ES", "EU"]))
+        else:
+            stmt = stmt.where(Opportunity.ccaa_codigo == ccaa_up)
+
+    opps = list(session.exec(stmt).all())
+    csv_content = export_opportunities_csv(opps)
+    filename = f"reforesta_oportunidades_{(estado or 'todas').lower()}.csv"
+    return Response(
+        content=csv_content.encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/api/v1/export/calendar.ics", tags=["Calendario Predictivo y Exportadores"])
+def export_ics_calendar_endpoint(
+    estado: str = Query(default="ACTIVA", description="ACTIVA | TODAS"),
+    ccaa: str | None = Query(default=None, description="Filtrar por CCAA"),
+    session: Session = Depends(get_session),
+) -> Response:
+    """Download an RFC 5545 iCalendar (.ics) file with deadline events and 7-day / 2-day alarms."""
+    stmt = select(Opportunity)
+    if estado and estado.upper() != "TODAS":
+        stmt = stmt.where(Opportunity.estado == estado.upper())
+    if ccaa:
+        ccaa_up = ccaa.upper()
+        if ccaa_up not in ("ES", "EU"):
+            stmt = stmt.where(Opportunity.ccaa_codigo.in_([ccaa_up, "ES", "EU"]))
+        else:
+            stmt = stmt.where(Opportunity.ccaa_codigo == ccaa_up)
+
+    opps = list(session.exec(stmt).all())
+    ics_content = export_opportunities_ics(opps)
+    return Response(
+        content=ics_content.encode("utf-8"),
+        media_type="text/calendar; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="reforesta_plazos_convocatorias.ics"'},
+    )
+
+
+@app.get("/api/v1/export/markdown/{opportunity_id}", tags=["Calendario Predictivo y Exportadores"])
+def export_markdown_dossier_endpoint(
+    opportunity_id: str,
+    session: Session = Depends(get_session),
+) -> Response:
+    """Export a complete technical preparation dossier in Markdown for a specific opportunity."""
+    opp = session.get(Opportunity, opportunity_id)
+    if not opp:
+        opp = session.exec(
+            select(Opportunity).where(Opportunity.codigo_oficial == opportunity_id.upper())
+        ).first()
+    if not opp:
+        raise HTTPException(status_code=404, detail=f"Oportunidad '{opportunity_id}' no encontrada")
+
+    md_content = export_opportunity_markdown(opp)
+    safe_id = opp.id.replace("/", "-")
+    return Response(
+        content=md_content.encode("utf-8"),
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="ficha_{safe_id}.md"'},
+    )
 
 
 @app.get("/api/v1/opportunities/{opportunity_id}", tags=["Oportunidades (Activas e Histórico)"])
@@ -533,17 +730,18 @@ async def trigger_ingestion(
     include_live_apis: bool = Query(default=True, description="Consultar también APIs en vivo de BDNS, PLACSP, BOE y UE SEDIA"),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
-    """Trigger a full concurrent ingestion and hybrid filtering run."""
-    run_log = await run_full_ingestion(session=session, include_live_apis=include_live_apis)
-    refresh_live_database_states(session)
-    return {
-        "run_id": run_log.id,
-        "status": run_log.status,
-        "total_scanned": run_log.total_scanned,
-        "passed_layer1": run_log.passed_layer1,
-        "accepted_layer2": run_log.accepted_layer2,
-        "details": run_log.details,
-    }
+    """Trigger a full concurrent ingestion and hybrid filtering run (protected by asyncio.Lock)."""
+    async with _INGEST_LOCK:
+        run_log = await run_full_ingestion(session=session, include_live_apis=include_live_apis)
+        refresh_live_database_states(session)
+        return {
+            "run_id": run_log.id,
+            "status": run_log.status,
+            "total_scanned": run_log.total_scanned,
+            "passed_layer1": run_log.passed_layer1,
+            "accepted_layer2": run_log.accepted_layer2,
+            "details": run_log.details,
+        }
 
 
 @app.post("/api/v1/analyze/text", tags=["Ingesta y Pipeline Híbrido"])

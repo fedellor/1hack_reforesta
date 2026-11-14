@@ -17,6 +17,7 @@ from app.ingestors.multilevel_catalog import get_multilevel_candidates
 from app.models import IngestionRun, Opportunity
 from app.pipeline.date_resolver import compute_dates_and_status
 from app.pipeline.orchestrator import RawCandidate, process_candidate
+from app.pipeline.prioritizer import calculate_priority
 
 logger = logging.getLogger(__name__)
 
@@ -186,7 +187,7 @@ def ensure_initial_seed(session: Session) -> None:
 
 
 def refresh_live_database_states(session: Session) -> int:
-    """Recalculate ACTIVA/PROXIMA/CERRADA and dias_restantes for all records in DB."""
+    """Recalculate ACTIVA/PROXIMA/CERRADA, dias_restantes and prioridad_score for all records in DB."""
     today = settings.get_today()
     opps = session.exec(select(Opportunity)).all()
     updated = 0
@@ -198,10 +199,29 @@ def refresh_live_database_states(session: Session) -> int:
             plazo_texto_original=o.plazo_texto_original,
             anio_hint=o.anio_convocatoria,
             today=today,
+            ccaa_codigo=o.ccaa_codigo,
         )
-        if o.estado != resolved.estado or o.dias_restantes != resolved.dias_restantes:
+        prio = calculate_priority(
+            estado=resolved.estado,
+            dias_restantes=resolved.dias_restantes,
+            relevancia_tipo=o.relevancia_tipo,
+            relevancia_score=o.relevancia_score,
+            beneficiarios_tipos=o.beneficiarios_tipos or [],
+            porcentaje_financiacion=o.porcentaje_max_financiacion,
+            presupuesto_total=o.presupuesto_total,
+            importe_max_proyecto=o.importe_max_proyecto,
+            nivel_territorial=o.nivel_territorial,
+        )
+        if (
+            o.estado != resolved.estado
+            or o.dias_restantes != resolved.dias_restantes
+            or o.prioridad_score != prio.prioridad_score
+            or o.prioridad_nivel != prio.prioridad_nivel
+        ):
             o.estado = resolved.estado
             o.dias_restantes = resolved.dias_restantes
+            o.prioridad_score = prio.prioridad_score
+            o.prioridad_nivel = prio.prioridad_nivel
             session.add(o)
             updated += 1
     if updated > 0:

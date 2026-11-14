@@ -1,8 +1,10 @@
 """Automated Test Suite: Golden Benchmark (fuentes/), Multilingual Hybrid Filter, Map API & Historical Archive."""
+from datetime import date
 from pathlib import Path
 from fastapi.testclient import TestClient
 from app.config import FUENTES_DIR
 from app.main import app
+from app.pipeline.date_resolver import add_business_days, compute_dates_and_status
 from app.pipeline.layer1_regex import evaluate_layer1
 
 
@@ -206,3 +208,116 @@ def test_all_6_levels_concellos_provinces_and_private_foundations():
         top_first = prio_data["top_10_priorizadas"][0]
         assert top_first["priorizacion"]["score"] >= 80
         assert top_first["priorizacion"]["nivel"] in ("CRITICA", "ALTA")
+
+
+def test_lpacap_art30_business_days_and_ccaa_holidays():
+    """Verify Ley 39/2015 (LPACAP Art. 30.2, 30.4, 30.5) regional holidays and weekend rollover."""
+    # May 17, 2024 is Friday (Día das Letras Galegas in ES-GA, working day in ES-MD)
+    start_thu = date(2024, 5, 16)
+    end_madrid = add_business_days(start_thu, 1, ccaa_codigo="ES-MD")
+    end_galicia = add_business_days(start_thu, 1, ccaa_codigo="ES-GA")
+    assert end_madrid == date(2024, 5, 17)  # Friday is business day in Madrid
+    assert end_galicia == date(2024, 5, 20)  # Friday May 17 is regional holiday in Galicia -> rolls to Monday!
+
+    # Art. 30.4 & 30.5: 1 month from Oct 1, 2026 -> Nov 1, 2026 is Sunday + Nov 2 All Saints Transfer -> Tuesday Nov 3!
+    res_month = compute_dates_and_status(
+        fecha_publicacion=date(2026, 10, 1),
+        plazo_texto_original="1 mes a partir del día siguiente a la publicación",
+        ccaa_codigo="ES-MD",
+        today=date(2026, 10, 15),
+    )
+    assert res_month.fecha_fin_solicitud == date(2026, 11, 3)
+    assert res_month.estado == "ACTIVA"
+
+
+def test_predictive_calendar_and_direct_exporters():
+    """Verify Predictive Recurrence Calendar (2020-2026) and Direct Exporters (CSV, ICS, Markdown)."""
+    with TestClient(app) as client:
+        # 1. Predictive Recurrence Calendar
+        cal_resp = client.get("/api/v1/opportunities/predictive-calendar")
+        assert cal_resp.status_code == 200
+        cal_data = cal_resp.json()
+        assert cal_data["resumen_alertas"]["total_programas_recurrentes_monitorizados"] >= 8
+        prog_ids = {p["programa_id"] for p in cal_data["programas_recurrentes"]}
+        assert "REC-MITECO-LINEA-A" in prog_ids
+        assert "REC-CAM-ORDEN-ESAL" in prog_ids
+
+        # 2. CSV Exporter (Excel UTF-8-SIG BOM)
+        csv_resp = client.get("/api/v1/export/csv?estado=ACTIVA")
+        assert csv_resp.status_code == 200
+        assert "text/csv" in csv_resp.headers["content-type"]
+        csv_text = csv_resp.content.decode("utf-8")
+        assert csv_text.startswith("\ufeffPrioridad_Score;Prioridad_Nivel;")
+        assert "BDNS-923290" in csv_text
+        assert "ORDEN 1689/2026" in csv_text
+
+        # 3. iCalendar (.ics) Exporter (RFC 5545 with VALARM)
+        ics_resp = client.get("/api/v1/export/calendar.ics?estado=ACTIVA")
+        assert ics_resp.status_code == 200
+        assert "text/calendar" in ics_resp.headers["content-type"]
+        ics_text = ics_resp.text
+        assert "BEGIN:VCALENDAR" in ics_text
+        assert "BEGIN:VEVENT" in ics_text
+        assert "BEGIN:VALARM" in ics_text
+        assert "TRIGGER:-P7D" in ics_text
+
+        # 4. Executive Markdown Dossier Exporter
+        md_resp = client.get("/api/v1/export/markdown/bocm-orden-1689-2026")
+        assert md_resp.status_code == 200
+        assert "text/markdown" in md_resp.headers["content-type"]
+        md_text = md_resp.text
+        assert "# Ficha Técnica de Oportunidad — Reforesta" in md_text
+        assert "ORDEN 1689/2026" in md_text
+        assert "60,000.00 €" in md_text
+
+
+def test_frontend_convocatorias_bridge_contract():
+    """Verify 100% plug-and-play compatibility with teammate Roi's Next.js Frontend (/api/convocatorias)."""
+    with TestClient(app) as client:
+        resp = client.get("/api/convocatorias")
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["fuente"] == "backend_diego"
+        assert payload["total"] >= 20
+        first = payload["convocatorias"][0]
+        for required_key in (
+            "id",
+            "codigoOficial",
+            "titulo",
+            "organismo",
+            "tipoFuente",
+            "ambitoTerritorial",
+            "orografiaPendiente",
+            "presupuestoTotal",
+            "cuantiaMaximaProyecto",
+            "porcentajeCofinanciacion",
+            "modalidadPago",
+            "fechaPublicacion",
+            "fechaCierre",
+            "diasRestantes",
+            "urgencia",
+            "elegible",
+            "motivoElegibilidad",
+            "dealbreakers",
+            "matchingGlobal",
+            "matchingLineas",
+            "citasBasesJustificacion",
+            "resumenEjecutivo",
+            "accionesSubvencionables",
+            "gastosNoSubvencionables",
+            "requisitosSolvencia",
+            "urlBasesPdf",
+            "urlSedeElectronica",
+            "fuenteUrl",
+            "estadoInterno",
+        ):
+            assert required_key in first, f"Missing frontend key {required_key}"
+
+        # Test PATCH /api/convocatorias/{id}/estado
+        patch_resp = client.patch(
+            "/api/convocatorias/bocm-orden-1689-2026/estado",
+            json={"estadoInterno": "en_preparacion"},
+        )
+        assert patch_resp.status_code == 200
+        assert patch_resp.json()["estadoInterno"] == "en_preparacion"
+
