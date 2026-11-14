@@ -280,17 +280,17 @@ Interfaz corporativa con la identidad de reforesta.es (verde `#6aa43a`, crema `#
 * **Ficha ejecutiva (panel lateral):** detalle completo con elegibilidad, citas, gastos subvencionables, solvencia, orografía y exportación a Markdown.
 * La plataforma trabaja por defecto con una ventana de **30 días**.
 
-* **Plazos:** las convocatorias abiertas sin fecha fin (`plazos.urgencia = abierta_pendiente_plazo`) se muestran como «Abierta · sin plazo fijado», no como «0 días»; no cuentan como cierre en 30 días y no aparecen en el calendario. Con datos de ejemplo los días se recalculan desde la fecha de cierre (`src/lib/plazo.ts`).
+* **Plazos:** las convocatorias abiertas sin fecha fin (`plazos.urgencia = abierta_pendiente_plazo`) se muestran como «Abierta · sin plazo fijado», no como «0 días»; no cuentan como cierre en 30 días y no aparecen en el calendario.  (`src/lib/plazo.ts`).
 * **Cabecera:** franja fina de título con la imagen de reforesta.es, para que el contenido quede en primer plano.
 
 * **Novedades:** el menú muestra cuántas convocatorias son nuevas desde tu última visita (se guarda en el navegador, sin correo ni servidor). Funciona igual con cualquier frecuencia de publicación.
-* **Histórico:** se pide a `GET /api/convocatorias?estado=TODAS` solo al entrar en Histórico o Empresas. Sin backend no hay datos de ejemplo del histórico y la sección lo indica. Lo que necesita el front del backend está en [`PETICIONES_BACK.md`](PETICIONES_BACK.md).
+* **Histórico:** se pide a `GET /api/convocatorias?estado=TODAS` solo al entrar en Histórico o Empresas. Sin backend la sección lo indica. Lo que necesita el front del backend está en [`PETICIONES_BACK.md`](PETICIONES_BACK.md).
 
 ### Datos en vivo
-* La web lee del backend (`GET /api/convocatorias` y `GET /api/v1/ingest/runs`) y se **refresca sola cada minuto** y al volver a la pestaña. Un indicador arriba a la derecha muestra el estado: *En vivo · actualizado hace N min*, *Datos de ejemplo · radar sin conexión* (ámbar) o *Cargando…*.
+* La web lee del backend (`GET /api/convocatorias` y `GET /api/v1/ingest/runs`) y se **refresca sola cada minuto** y al volver a la pestaña. Un indicador arriba a la derecha muestra el estado: *En vivo · actualizado hace N min*, *Sin conexión con el radar* (rojo) o *Cargando…*.
 * `src/services/api.ts` adapta el contrato del backend al del front: códigos `ES-XX` → nombre de comunidad, `ES`/`EU`/privadas → *Estatal*, y `ubicacion.provincia_nombre` → provincia.
 * `src/lib/texto.ts` limpia los textos del backend: separa las citas literales de la justificación generada por el radar, y convierte códigos internos (`ONG_FUNDACIONES`, `prevencion_incendios`…) en texto legible.
-* **Si el backend no responde**, la web usa datos de ejemplo (`src/data/mockConvocatorias.ts` y `src/data/mockMapaCompleto.ts`, desactivables con `USAR_DATOS_MAPA_COMPLETO`) y lo indica con claridad.
+* **Si el backend no responde**, la web no inventa nada: muestra «Sin conexión con el radar» y conserva lo último cargado. No hay datos de ejemplo en el proyecto.
 
 ### Limitaciones conocidas
 * **Pipeline:** el backend marca como *priorizada* toda convocatoria con puntuación ≥ 85, de modo que con datos reales casi todo cae en esa columna y se mezcla recomendación del radar con decisión del equipo. Propuesta (rama `back`): dejar todo en *nueva* y enviar la prioridad como campo aparte para mostrarla como etiqueta.
@@ -345,7 +345,7 @@ El sistema incluye y valida casos reales facilitados por la organización y enti
 ```
 
 * **Estado actual:** la rama `front` contiene el frontend y, desde la última fusión con `test`, también el backend (`app/`, `tests/`, `fuentes/`). El front es el de esta rama; del backend se toma el de `test`.
-* **Rama `front` (Frontend):** Aplicación Next.js (React 19, Tailwind v4, Leaflet, lucide-react) ubicada en `/frontend` con tipado estricto, mock dinámico en `/api/convocatorias` y cliente de fallback automático a la API de backend.
+* **Rama `front` (Frontend):** Aplicación Next.js (React 19, Tailwind v4, Leaflet, lucide-react) ubicada en `/frontend` con tipado estricto y un proxy `/api/convocatorias` hacia el backend. No contiene datos de ejemplo.
 * **Rama `back` (Backend):** Conectores a la API pública de la BDNS (`infosubvenciones.es`), boletines oficiales y extractor estructurado con LLM.
 
 ---
@@ -380,7 +380,7 @@ El backend (FastAPI, carpeta `app/`) está ahora en esta misma rama, traído de 
 pip install -r requirements.txt     # requiere Python 3.10 o superior
 uvicorn app.main:app --port 8000
 ```
-La web busca el backend en `http://localhost:8000`. Para otra dirección, define `NEXT_PUBLIC_API_URL` (por ejemplo en `frontend/.env.local`). Sin backend funciona con datos de ejemplo.
+La web busca el backend en `http://localhost:8000`. Para otra dirección, define `NEXT_PUBLIC_API_URL` (por ejemplo en `frontend/.env.local`). Sin backend la web solo muestra el aviso de falta de conexión.
 Endpoints que usa el front: `/api/convocatorias` (activas y, con `?estado=TODAS`, histórico), `/api/v1/ingest/runs` (embudo y próxima sincronización diaria) y `PATCH /api/convocatorias/{id}/estado`.
 
 > El mapa funciona sin conexión: los límites están en `frontend/public/data/ccaa.geojson` (comunidades) y `frontend/public/data/provincias.geojson` (provincias).

@@ -5,7 +5,7 @@ import { RefreshCw } from 'lucide-react';
 import { Convocatoria } from '@/types/convocatoria';
 
 export interface EstadoDatos {
-  fuente: 'cargando' | 'backend' | 'ejemplo';
+  fuente: 'cargando' | 'backend' | 'sin_conexion';
   actualizado: Date | null;
 }
 
@@ -55,8 +55,8 @@ export function Header({ convocatorias, seccion, setSeccion, datos, onRefresh, n
   const etiquetaDatos =
     datos.fuente === 'backend'
       ? `En vivo · ${minutos === null || minutos < 1 ? 'actualizado ahora' : `hace ${minutos} min`}`
-      : datos.fuente === 'ejemplo'
-        ? 'Datos de ejemplo · radar sin conexión'
+      : datos.fuente === 'sin_conexion'
+        ? 'Sin conexión con el radar'
         : 'Cargando datos…';
 
   return (
@@ -94,7 +94,7 @@ export function Header({ convocatorias, seccion, setSeccion, datos, onRefresh, n
         </nav>
 
         <div className="hidden md:flex items-center gap-2 text-[11px] text-white/70 shrink-0">
-          <span className={`h-2 w-2 rounded-full ${datos.fuente === 'backend' ? 'bg-[#6aa43a] animate-pulse' : datos.fuente === 'ejemplo' ? 'bg-amber-400' : 'bg-zinc-500'}`} />
+          <span className={`h-2 w-2 rounded-full ${datos.fuente === 'backend' ? 'bg-[#6aa43a] animate-pulse' : datos.fuente === 'sin_conexion' ? 'bg-rose-500' : 'bg-zinc-500'}`} />
           <span>{etiquetaDatos} · <strong className="text-white">{convocatorias.length}</strong> activas{proximaSync && datos.fuente === 'backend' ? ` · próx. sync ${new Date(proximaSync).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}` : ''}</span>
           <button onClick={handleSync} disabled={syncing} className="p-1 text-white/60 hover:text-white disabled:opacity-50" title="Actualizar ahora">
             <RefreshCw className={`h-3.5 w-3.5 ${syncing ? 'animate-spin' : ''}`} />

@@ -35,8 +35,8 @@ export default function Home() {
   // Carga desde el backend real y se refresca cada minuto (y al volver a la pestaña)
   const cargar = useCallback(async () => {
     const [r, e] = await Promise.all([fetchConvocatorias(), fetchEmbudo()]);
-    // Con datos de ejemplo no se pisan los cambios locales del pipeline
-    setConvocatorias((prev) => (r.fuente === 'backend' || prev.length === 0 ? r.convocatorias : prev));
+    // Si el backend no responde se conserva lo último cargado (no se vacía la pantalla por un corte puntual)
+    setConvocatorias((prev) => (r.fuente === 'backend' ? r.convocatorias : prev));
     setEmbudo(e);
     setDatos({ fuente: r.fuente, actualizado: new Date(r.timestamp) });
   }, []);
@@ -144,7 +144,7 @@ export default function Home() {
   const conFechaCierre = useMemo(() => convocatoriasFiltradas.filter((c) => !plazoSinFijar(c)), [convocatoriasFiltradas]);
   const sinPlazo = convocatoriasFiltradas.length - conFechaCierre.length;
 
-  const programas = useMemo(() => detectarProgramas(historico), [historico]);
+  const programas = useMemo(() => (historico.length ? detectarProgramas(historico) : []), [historico]);
 
   // Novedades desde la última visita (solo con datos reales; la primera vez se registra todo sin avisar)
   useEffect(() => {
@@ -204,6 +204,12 @@ export default function Home() {
       )}
 
       <main className="flex-1 max-w-[1300px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-5">
+        {datos.fuente === 'sin_conexion' && (
+          <div className="border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+            <strong>Sin conexión con el radar.</strong> No hay datos de respaldo: las convocatorias aparecerán en cuanto el backend esté disponible
+            {convocatorias.length > 0 ? ' (se muestra lo último cargado).' : '.'}
+          </div>
+        )}
         {idsNuevas.size > 0 && (seccion === 'mapa' || seccion === 'convocatorias' || seccion === 'calendario') && (
           <div className="flex flex-wrap items-center justify-between gap-3 border border-brand/40 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-900">
             <span>

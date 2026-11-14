@@ -1,6 +1,5 @@
 import { normalizarPlazos } from '@/lib/plazo';
 import { Convocatoria, EstadoInterno } from '@/types/convocatoria';
-import { MOCK_CONVOCATORIAS } from '@/data/mockConvocatorias';
 import { ESTATAL, PROVINCIAS_POR_COMUNIDAD } from '@/lib/territorio';
 import { humanizar } from '@/lib/texto';
 
@@ -55,8 +54,8 @@ export function adaptarConvocatoria(raw: ConvocatoriaApi): Convocatoria {
 
 export interface FetchConvocatoriasResponse {
   convocatorias: Convocatoria[];
-  /** 'backend' = datos reales del radar; 'ejemplo' = backend no disponible, datos de demostración */
-  fuente: 'backend' | 'ejemplo';
+  /** 'backend' = datos reales del radar; 'sin_conexion' = el backend no responde (no hay datos de respaldo) */
+  fuente: 'backend' | 'sin_conexion';
   timestamp: string;
 }
 
@@ -70,20 +69,20 @@ export async function fetchConvocatorias(): Promise<FetchConvocatoriasResponse> 
       const data = await res.json();
       const lista: ConvocatoriaApi[] = data.convocatorias ?? data;
       return {
-        convocatorias: normalizarPlazos(lista.map(adaptarConvocatoria), false),
+        convocatorias: normalizarPlazos(lista.map(adaptarConvocatoria)),
         fuente: 'backend',
         timestamp: data.actualizadoAt ?? new Date().toISOString(),
       };
     }
   } catch {
-    // backend no disponible: se avisa en la interfaz y se usan los datos de ejemplo
+    // backend no disponible: la interfaz lo indica; no hay datos de respaldo
   }
-  return { convocatorias: normalizarPlazos(MOCK_CONVOCATORIAS, true), fuente: 'ejemplo', timestamp: new Date().toISOString() };
+  return { convocatorias: [], fuente: 'sin_conexion', timestamp: new Date().toISOString() };
 }
 
 /**
  * Histórico completo (activas + cerradas, 2020 en adelante) para la sección de búsqueda y la previsión de recurrencia.
- * `disponible = false` cuando el backend no responde: no hay datos de ejemplo para el histórico.
+ * `disponible = false` cuando el backend no responde.
  */
 export async function fetchHistorico(): Promise<{ convocatorias: Convocatoria[]; disponible: boolean }> {
   try {
@@ -94,7 +93,7 @@ export async function fetchHistorico(): Promise<{ convocatorias: Convocatoria[];
     if (res.ok) {
       const data = await res.json();
       const lista: ConvocatoriaApi[] = data.convocatorias ?? data;
-      return { convocatorias: normalizarPlazos(lista.map(adaptarConvocatoria), false), disponible: true };
+      return { convocatorias: normalizarPlazos(lista.map(adaptarConvocatoria)), disponible: true };
     }
   } catch {
     // sin backend: la sección lo indica

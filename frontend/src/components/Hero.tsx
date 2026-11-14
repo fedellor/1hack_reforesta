@@ -23,13 +23,11 @@ export function Hero({ titulo, migas }: HeroProps) {
   );
 }
 
-// Dato SIMULADO hasta que el backend (rama back) exponga el total rastreado.
-const DETECTADAS_SIMULADO = 214;
 const HORAS_LECTURA_POR_CONVOCATORIA = 3; // dato del reto: ~3 h de lectura por convocatoria
 
 export function Embudo({ convocatorias, embudo }: { convocatorias: Convocatoria[]; embudo: EmbudoReal | null }) {
   const real = embudo !== null && embudo.detectadas > 0;
-  const detectadas = real ? Math.max(embudo.detectadas, convocatorias.length) : Math.max(DETECTADAS_SIMULADO, convocatorias.length);
+  const detectadas = real ? Math.max(embudo.detectadas, convocatorias.length) : convocatorias.length;
   const aptas = convocatorias.filter((c) => c.elegible);
   const en30 = aptas.filter((c) => !plazoSinFijar(c) && c.diasRestantes <= 30);
   const altoEncaje = en30.filter((c) => c.matchingGlobal >= 80);
@@ -37,7 +35,7 @@ export function Embudo({ convocatorias, embudo }: { convocatorias: Convocatoria[
   const horasAhorradas = (detectadas - aptas.length) * HORAS_LECTURA_POR_CONVOCATORIA;
 
   const pasos = [
-    { n: detectadas, etiqueta: 'Detectadas', nota: real ? 'en la última ingesta del radar' : 'en BDNS, boletines y RSC*' },
+    { n: detectadas, etiqueta: 'Detectadas', nota: real ? 'en la última ingesta del radar' : 'cargadas ahora' },
     { n: aptas.length, etiqueta: 'Aptas para Reforesta', nota: 'sin cláusulas excluyentes' },
     { n: en30.length, etiqueta: 'Cierran en 30 días', nota: 'ventana de decisión' },
     { n: altoEncaje.length, etiqueta: 'Encaje ≥ 80%', nota: `${formatoEuros(fondos30)} en juego` },
@@ -56,7 +54,7 @@ export function Embudo({ convocatorias, embudo }: { convocatorias: Convocatoria[
             ))}
           </ol>
           <p className="mt-3 px-4 text-xs text-zinc-400">
-            ≈ {horasAhorradas} h de lectura de bases evitadas ({HORAS_LECTURA_POR_CONVOCATORIA} h por convocatoria descartada). {real ? '' : '*Total detectado simulado: el radar no está conectado.'}
+            ≈ {horasAhorradas} h de lectura de bases evitadas ({HORAS_LECTURA_POR_CONVOCATORIA} h por convocatoria descartada).
           </p>
         </div>
       </section>
