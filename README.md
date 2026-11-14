@@ -48,18 +48,19 @@ Una **Consola Ejecutiva de Decisión**:
 
 ## 4. Estructura del Frontend
 
-Interfaz corporativa con la identidad de reforesta.es (verde `#6aa43a`, crema `#f6f4ee`, carbón `#333`, negro `#141414`, tipografías Open Sans y Merriweather). Tres secciones, cada una responde a un dolor del cliente:
+Interfaz corporativa con la identidad de reforesta.es (verde `#6aa43a`, crema `#f6f4ee`, carbón `#333`, negro `#141414`; Open Sans y Merriweather; barra de utilidad, menú de 70 px y pie institucional). Cinco secciones, **cada una responde a una pregunta distinta** para no repetir la misma información con otro formato:
 
-* **Radar** (dolores 1 y 2: fuentes dispersas y peaje de lectura). Cabecera con el embudo *detectadas → aptas → cierran en 30 días → encaje ≥ 80%* y las horas de lectura evitadas. Debajo, **un único listado** con filtros compartidos (territorio, solo aptas, cierre ≤ 30 días, encaje ≥ 80%, cuantía, orden) y un selector de vista sobre los mismos datos:
-  * **Lista:** cada fila con veredicto, cuantía y cofinanciación, plazo, cita literal de las bases y afinidad en las 3 líneas de Reforesta.
-  * **Tabla:** data grid compacto para comparar.
-  * **Calendario:** deadlines agrupados por cercanía de cierre.
-  * **Mapa:** coropleta por comunidad autónoma (Leaflet + GeoJSON propio, sin teselas externas); al pulsar una región se filtra el listado.
-* **Empresas (RSC)** (dolor 3: canal de mecenazgo a cero): el mismo listado restringido a fundaciones y programas corporativos.
-* **Pipeline:** seguimiento del equipo por estados (*Nueva*, *Priorizada*, *En preparación*, *Presentada*, *Descartada*).
+| Sección | Pregunta | Qué muestra |
+| :--- | :--- | :--- |
+| **Mapa** (inicio) | ¿Dónde? | Coropleta por comunidad autónoma (Leaflet + GeoJSON propio, sin teselas externas), resumen del territorio (fondos, nº de convocatorias, próximo cierre) y ranking «Dónde está el dinero». Va precedido del embudo *detectadas → aptas → cierran en 30 días → encaje ≥ 80%*. |
+| **Convocatorias** | ¿Cuáles? | El único listado detallado: veredicto, cuantía y cofinanciación, plazo, cita literal de las bases y afinidad en las 3 líneas de Reforesta. Filtros: territorio, solo aptas, cierre ≤ 30 días, encaje ≥ 80%, cuantía y orden. |
+| **Calendario** | ¿Cuándo? | Cierres agrupados por cercanía (≤ 10 d, 11–25 d, > 25 d). |
+| **Empresas** | ¿Quién financia? | Tarjetas por entidad para el canal de mecenazgo RSC (hoy a cero). |
+| **Pipeline** | ¿En qué estado? | Seguimiento del equipo: *Nueva*, *Priorizada*, *En preparación*, *Presentada*, *Descartada*. |
+
 * **Ficha ejecutiva (panel lateral):** detalle completo con elegibilidad, citas, gastos subvencionables, solvencia, orografía y exportación a Markdown.
-
-La plataforma trabaja por defecto con una ventana de **30 días**. El total de convocatorias «detectadas» del embudo es un dato simulado hasta que el backend lo exponga.
+* La plataforma trabaja por defecto con una ventana de **30 días**.
+* **Datos simulados:** el total de convocatorias «detectadas» del embudo y las convocatorias de ejemplo de `src/data/mockMapaCompleto.ts` (desactivables con `USAR_DATOS_MAPA_COMPLETO`).
 
 ---
 
@@ -104,8 +105,8 @@ El sistema incluye y valida casos reales facilitados por la organización y enti
                                    Next.js + Tailwind CSS v4
                          ┌──────────────────────┼──────────────────────┐
                          ▼                      ▼                      ▼
-                  [ Radar: lista/tabla/     [ Empresas RSC ]        [ Pipeline +
-    calendario/mapa ]                                  Ficha Ejecutiva ]
+                  [ Mapa + Convocatorias    [ Empresas RSC ]        [ Pipeline +
+    + Calendario ]                                     Ficha Ejecutiva ]
 ```
 
 * **Rama `front` (Frontend):** Aplicación Next.js (React 19, Tailwind v4, Leaflet, lucide-react) ubicada en `/frontend` con tipado estricto, mock dinámico en `/api/convocatorias` y cliente de fallback automático a la API de backend.

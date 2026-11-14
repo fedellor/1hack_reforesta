@@ -64,7 +64,7 @@ Enlace oficial: ${c.urlBasesPdf}`;
           <div className="px-6 py-4 border-b border-zinc-200 flex items-start justify-between gap-4">
             <div className="space-y-1">
               <div className="flex items-center gap-2 text-xs">
-                <span className="font-mono font-semibold text-zinc-600 bg-zinc-100 px-2 py-0.5 rounded">
+                <span className="font-semibold text-zinc-600 bg-zinc-100 px-2 py-0.5 rounded">
                   {c.codigoOficial}
                 </span>
                 <span className="text-zinc-400">·</span>
@@ -106,7 +106,7 @@ Enlace oficial: ${c.urlBasesPdf}`;
             
             {/* 1. Diagnóstico de Elegibilidad */}
             <div
-              className={`p-3.5 rounded-lg border ${
+              className={`p-3.5 rounded-none border ${
                 c.elegible
                   ? 'bg-emerald-50/50 border-emerald-200'
                   : 'bg-rose-50/50 border-rose-200'
@@ -133,50 +133,50 @@ Enlace oficial: ${c.urlBasesPdf}`;
             </div>
 
             {/* 2. Condiciones Económicas */}
-            <div className="grid grid-cols-3 gap-3 border border-zinc-200 rounded-lg p-3 bg-zinc-50/50">
+            <div className="grid grid-cols-3 gap-3 border border-zinc-200 rounded-none p-3 bg-zinc-50/50">
               <div>
-                <span className="text-[10px] uppercase font-semibold text-zinc-400 block">Cuantía Máx.</span>
-                <span className="text-sm font-bold text-zinc-900 font-mono">
+                <span className="text-[11px] uppercase font-semibold text-zinc-400 block">Cuantía Máx.</span>
+                <span className="text-sm font-bold text-zinc-900">
                   {new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(
                     c.cuantiaMaximaProyecto
                   )}
                 </span>
-                <span className="text-[10px] text-zinc-500 block">por proyecto</span>
+                <span className="text-[11px] text-zinc-500 block">por proyecto</span>
               </div>
 
               <div>
-                <span className="text-[10px] uppercase font-semibold text-zinc-400 block">Cofinanciación</span>
-                <span className="text-sm font-bold text-zinc-900 font-mono">
+                <span className="text-[11px] uppercase font-semibold text-zinc-400 block">Cofinanciación</span>
+                <span className="text-sm font-bold text-zinc-900">
                   {c.porcentajeCofinanciacion === 0 ? '0%' : `${c.porcentajeCofinanciacion}%`}
                 </span>
-                <span className="text-[10px] text-zinc-500 block">
+                <span className="text-[11px] text-zinc-500 block">
                   {c.porcentajeCofinanciacion === 0 ? '100% subvencionado' : 'fondos propios'}
                 </span>
               </div>
 
               <div>
-                <span className="text-[10px] uppercase font-semibold text-zinc-400 block">Plazo Restante</span>
-                <span className="text-sm font-bold text-zinc-900 font-mono">
+                <span className="text-[11px] uppercase font-semibold text-zinc-400 block">Plazo Restante</span>
+                <span className="text-sm font-bold text-zinc-900">
                   {c.diasRestantes} días
                 </span>
-                <span className="text-[10px] text-zinc-500 block">Modalidad: {c.modalidadPago}</span>
+                <span className="text-[11px] text-zinc-500 block">Modalidad: {c.modalidadPago}</span>
               </div>
             </div>
 
             {/* Orografía y Pendiente */}
             {c.orografiaPendiente && (
-              <div className="border border-zinc-200 rounded-lg p-3 bg-white">
-                <span className="text-[10px] uppercase font-semibold text-zinc-400 block mb-0.5">Orografía y Pendiente del Terreno</span>
+              <div className="border border-zinc-200 rounded-none p-3 bg-white">
+                <span className="text-[11px] uppercase font-semibold text-zinc-400 block mb-0.5">Orografía y Pendiente del Terreno</span>
                 <span className="text-xs font-medium text-zinc-800">{c.orografiaPendiente}</span>
               </div>
             )}
 
             {/* 3. Resumen Ejecutivo */}
             <div>
-              <h4 className="text-[11px] uppercase font-semibold text-zinc-500 tracking-wider mb-1.5">
+              <h4 className="text-xs uppercase font-semibold text-zinc-500 tracking-wider mb-1.5">
                 Resumen de las Bases
               </h4>
-              <p className="bg-zinc-50 border border-zinc-200 rounded-lg p-3 leading-relaxed text-zinc-800">
+              <p className="bg-zinc-50 border border-zinc-200 rounded-none p-3 leading-relaxed text-zinc-800">
                 {c.resumenEjecutivo}
               </p>
             </div>
@@ -184,13 +184,13 @@ Enlace oficial: ${c.urlBasesPdf}`;
             {/* 4. Afinidad con las Líneas de Reforesta */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <h4 className="text-[11px] uppercase font-semibold text-zinc-500 tracking-wider">
+                <h4 className="text-xs uppercase font-semibold text-zinc-500 tracking-wider">
                   Afinidad Temática
                 </h4>
-                <span className="font-mono font-bold text-zinc-900">{c.matchingGlobal}%</span>
+                <span className="font-bold text-zinc-900">{c.matchingGlobal}%</span>
               </div>
 
-              <div className="space-y-2 border border-zinc-200 rounded-lg p-3 bg-white">
+              <div className="space-y-2 border border-zinc-200 rounded-none p-3 bg-white">
                 <div>
                   <div className="flex items-center justify-between text-zinc-700 mb-1">
                     <span>Restauración vegetal y suelos</span>
@@ -235,14 +235,14 @@ Enlace oficial: ${c.urlBasesPdf}`;
             {/* 5. Citas Textuales Oficiales */}
             {c.citasBasesJustificacion.length > 0 && (
               <div>
-                <h4 className="text-[11px] uppercase font-semibold text-zinc-500 tracking-wider mb-1.5">
+                <h4 className="text-xs uppercase font-semibold text-zinc-500 tracking-wider mb-1.5">
                   Citas Textuales de las Bases
                 </h4>
                 <div className="space-y-1.5">
                   {c.citasBasesJustificacion.map((cita, i) => (
                     <blockquote
                       key={i}
-                      className="bg-zinc-50 border-l-2 border-zinc-800 pl-3 py-1.5 text-zinc-700 italic rounded-r text-[11px]"
+                      className="bg-zinc-50 border-l-2 border-zinc-800 pl-3 py-1.5 text-zinc-700 italic rounded-r text-xs"
                     >
                       &ldquo;{cita}&rdquo;
                     </blockquote>
@@ -254,7 +254,7 @@ Enlace oficial: ${c.urlBasesPdf}`;
             {/* 6. Partidas Financiables vs Excluidas */}
             <div className="space-y-3">
               <div>
-                <h4 className="text-[11px] uppercase font-semibold text-zinc-500 tracking-wider mb-1">
+                <h4 className="text-xs uppercase font-semibold text-zinc-500 tracking-wider mb-1">
                   Gastos Subvencionables
                 </h4>
                 <ul className="space-y-1">
@@ -269,7 +269,7 @@ Enlace oficial: ${c.urlBasesPdf}`;
 
               {c.gastosNoSubvencionables && c.gastosNoSubvencionables.length > 0 && (
                 <div>
-                  <h4 className="text-[11px] uppercase font-semibold text-zinc-500 tracking-wider mb-1">
+                  <h4 className="text-xs uppercase font-semibold text-zinc-500 tracking-wider mb-1">
                     Gastos Excluidos
                   </h4>
                   <ul className="space-y-1">

@@ -33,10 +33,10 @@ export function CalendarView({ convocatorias, onSeleccionar }: CalendarViewProps
             <div
               key={c.id}
               onClick={() => onSeleccionar(c)}
-              className="bg-white border border-zinc-200 rounded-lg p-3 hover:border-zinc-400 transition-colors cursor-pointer flex items-center justify-between gap-3 text-xs"
+              className="bg-white border border-zinc-200 rounded-none p-3 hover:border-zinc-400 transition-colors cursor-pointer flex items-center justify-between gap-3 text-xs"
             >
               <div className="flex items-center gap-3 min-w-0">
-                <div className="text-center font-mono bg-zinc-50 border border-zinc-200 rounded p-1.5 min-w-[46px] shrink-0">
+                <div className="text-center bg-zinc-50 border border-zinc-200 rounded p-1.5 min-w-[46px] shrink-0">
                   <span className="text-[9px] uppercase font-semibold text-zinc-400 block">
                     {new Date(c.fechaCierre).toLocaleDateString('es-ES', { month: 'short' })}
                   </span>
@@ -46,13 +46,13 @@ export function CalendarView({ convocatorias, onSeleccionar }: CalendarViewProps
                 </div>
 
                 <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 text-[11px] text-zinc-500 mb-0.5">
-                    <span className="font-mono font-medium">{c.codigoOficial}</span>
+                  <div className="flex items-center gap-1.5 text-xs text-zinc-500 mb-0.5">
+                    <span className="font-medium">{c.codigoOficial}</span>
                     <span>·</span>
                     <span>{c.ambitoTerritorial}</span>
                   </div>
                   <h4 className="font-bold text-zinc-900 truncate">{c.titulo}</h4>
-                  <p className="text-[11px] text-zinc-500 font-mono mt-0.5">
+                  <p className="text-xs text-zinc-500 mt-0.5">
                     {new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(
                       c.cuantiaMaximaProyecto
                     )}
@@ -62,7 +62,7 @@ export function CalendarView({ convocatorias, onSeleccionar }: CalendarViewProps
 
               <div className="text-right shrink-0">
                 <span
-                  className={`font-semibold font-mono text-xs ${
+                  className={`font-semibold text-xs ${
                     c.diasRestantes <= 7
                       ? 'text-rose-700'
                       : c.diasRestantes <= 20
@@ -77,7 +77,7 @@ export function CalendarView({ convocatorias, onSeleccionar }: CalendarViewProps
           ))}
 
           {lista.length === 0 && (
-            <p className="text-xs text-zinc-400 italic bg-white p-3 rounded-lg border border-dashed border-zinc-200">
+            <p className="text-xs text-zinc-400 italic bg-white p-3 rounded-none border border-dashed border-zinc-200">
               No hay convocatorias en este rango.
             </p>
           )}
@@ -88,7 +88,7 @@ export function CalendarView({ convocatorias, onSeleccionar }: CalendarViewProps
 
   return (
     <div className="space-y-4">
-      <div className="bg-white border border-zinc-200 rounded-lg p-3.5 flex items-center justify-between text-xs text-zinc-600">
+      <div className="bg-white border border-zinc-200 rounded-none p-3.5 flex items-center justify-between text-xs text-zinc-600">
         <div className="flex items-center gap-2">
           <Clock className="h-4 w-4 text-zinc-700 shrink-0" />
           <span>Cronograma de fechas límite para la planificación del equipo</span>

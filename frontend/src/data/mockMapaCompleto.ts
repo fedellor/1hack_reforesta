@@ -99,4 +99,43 @@ function generar(): Convocatoria[] {
   return salida;
 }
 
-export const MOCK_MAPA_COMPLETO: Convocatoria[] = generar();
+const EMPRESAS_EJEMPLO = [
+  { n: 'Fundación Energía Verde (ejemplo)', t: 'Programa de bosques corporativos y voluntariado de plantación', c: 80000, d: 35 },
+  { n: 'Grupo Alimentario Horizonte (ejemplo)', t: 'Compensación de huella con restauración de riberas', c: 60000, d: 48 },
+  { n: 'Banco Ahorro Sostenible (ejemplo)', t: 'Convocatoria de impacto: ecosistemas en riesgo de incendio', c: 120000, d: 52 },
+  { n: 'Fundación Industrial Norte (ejemplo)', t: 'Educación ambiental y jornadas con empleados en zonas quemadas', c: 40000, d: 27 },
+];
+
+function generarEmpresas(): Convocatoria[] {
+  return EMPRESAS_EJEMPLO.map((e, i) => ({
+    id: `ejemplo-rsc-${i + 1}`,
+    codigoOficial: `EJEMPLO-RSC-${i + 1}`,
+    titulo: e.t,
+    organismo: e.n,
+    tipoFuente: 'privada_rsc' as const,
+    ambitoTerritorial: 'Estatal',
+    cuantiaMaximaProyecto: e.c,
+    porcentajeCofinanciacion: 0,
+    modalidadPago: 'anticipo' as const,
+    fechaPublicacion: fechaDesdeHoy(-15),
+    fechaCierre: fechaDesdeHoy(e.d),
+    diasRestantes: e.d,
+    urgencia: 'holgada' as const,
+    elegible: true,
+    motivoElegibilidad: 'Apta: mecenazgo corporativo abierto a ONG de utilidad pública.',
+    dealbreakers: [],
+    matchingGlobal: 78 + i * 3,
+    matchingLineas: { restauracionEcosistemas: 85, conservacionHabitats: 70, educacionAmbiental: 80 },
+    citasBasesJustificacion: ['Dato de ejemplo generado para previsualizar el canal de empresas.'],
+    resumenEjecutivo: `Programa corporativo de ejemplo: ${e.t.toLowerCase()}. Incluye voluntariado de empleados y comunicación de impacto.`,
+    accionesSubvencionables: ['Plantación y mantenimiento', 'Jornadas de voluntariado corporativo'],
+    gastosNoSubvencionables: [],
+    requisitosSolvencia: [],
+    urlBasesPdf: 'https://example.com/bases.pdf',
+    urlSedeElectronica: 'https://example.com',
+    fuenteUrl: 'https://example.com',
+    estadoInterno: 'nueva' as const,
+  }));
+}
+
+export const MOCK_MAPA_COMPLETO: Convocatoria[] = [...generar(), ...generarEmpresas()];

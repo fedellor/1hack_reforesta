@@ -19,22 +19,22 @@ export function FilterBar({
   setOrdenarPor,
 }: FilterBarProps) {
   const chip = (activo: boolean) =>
-    `px-2.5 py-1.5 rounded-md border font-medium transition-colors ${
+    `px-5 py-2.5 rounded-full border font-semibold uppercase text-xs tracking-wide transition-colors ${
       activo ? 'bg-brand border-brand text-white' : 'bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-50'
     }`;
   return (
-    <div className="bg-zinc-50/80 border-b border-zinc-200 px-4 sm:px-6 lg:px-8 py-2.5">
-      <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 text-xs">
+    <div className="bg-zinc-50/80 border-b border-zinc-200 px-4 sm:px-6 lg:px-8 py-4">
+      <div className="max-w-[1300px] mx-auto flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 text-xs">
         
         {/* Input de Búsqueda */}
         <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" />
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" />
           <input
             type="text"
             value={filtros.busqueda}
             onChange={(e) => setFiltros((prev) => ({ ...prev, busqueda: e.target.value }))}
             placeholder="Filtrar por código, organismo, pendiente o término..."
-            className="w-full pl-8 pr-3 py-1.5 rounded-md border border-zinc-200 text-zinc-900 placeholder-zinc-400 focus:outline-hidden focus:border-zinc-400 bg-white text-xs shadow-2xs"
+            className="w-full pl-9 pr-4 py-2 rounded-full border border-zinc-200 text-zinc-900 placeholder-zinc-400 focus:outline-hidden focus:border-zinc-400 bg-white text-xs shadow-2xs"
           />
         </div>
 
@@ -45,7 +45,7 @@ export function FilterBar({
           <select
             value={filtros.ambito}
             onChange={(e) => setFiltros((prev) => ({ ...prev, ambito: e.target.value }))}
-            className="px-2.5 py-1.5 rounded-md border border-zinc-200 text-zinc-700 bg-white font-medium focus:outline-hidden focus:border-zinc-400 shadow-2xs"
+            className="px-4 py-2 rounded-full border border-zinc-200 text-zinc-700 bg-white font-medium focus:outline-hidden focus:border-zinc-400 shadow-2xs"
           >
             <option value="todos">Todo el territorio</option>
             <option value="Estatal">Ámbito estatal</option>
@@ -58,7 +58,7 @@ export function FilterBar({
           <button
             type="button"
             onClick={() => setFiltros((prev) => ({ ...prev, soloElegibles: !prev.soloElegibles }))}
-            className={`px-2.5 py-1.5 rounded-md border font-medium transition-colors shadow-2xs ${
+            className={`px-5 py-2.5 rounded-full border font-semibold uppercase text-xs tracking-wide transition-colors shadow-2xs ${
               filtros.soloElegibles
                 ? 'bg-brand border-brand text-white'
                 : 'bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-50'
@@ -89,7 +89,7 @@ export function FilterBar({
           <select
             value={filtros.minCuantia}
             onChange={(e) => setFiltros((prev) => ({ ...prev, minCuantia: Number(e.target.value) }))}
-            className="px-2.5 py-1.5 rounded-md border border-zinc-200 text-zinc-700 bg-white font-medium focus:outline-hidden focus:border-zinc-400"
+            className="px-4 py-2 rounded-full border border-zinc-200 text-zinc-700 bg-white font-medium focus:outline-hidden focus:border-zinc-400"
           >
             <option value={0}>Cualquier cuantía</option>
             <option value={50000}>≥ 50.000 €</option>
@@ -102,7 +102,7 @@ export function FilterBar({
             <select
               value={ordenarPor}
               onChange={(e) => setOrdenarPor(e.target.value as 'matching' | 'cuantia' | 'urgencia')}
-              className="px-2 py-1.5 rounded-md border border-zinc-200 text-zinc-800 bg-white font-medium focus:outline-hidden focus:border-zinc-400 shadow-2xs"
+              className="px-2 py-1.5 rounded-full border border-zinc-200 text-zinc-800 bg-white font-medium focus:outline-hidden focus:border-zinc-400 shadow-2xs"
             >
               <option value="matching">Mayor encaje</option>
               <option value="cuantia">Mayor cuantía</option>

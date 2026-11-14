@@ -29,7 +29,7 @@ export function PipelineView({ convocatorias, onSeleccionar, onCambiarEstado }: 
     <div className="space-y-4">
       
       {/* Header del Pipeline */}
-      <div className="bg-white border border-zinc-200 rounded-lg p-3.5 shadow-2xs flex items-center justify-between">
+      <div className="bg-white border border-zinc-200 rounded-none p-3.5 shadow-2xs flex items-center justify-between">
         <div>
           <h2 className="text-sm font-bold text-zinc-900 flex items-center gap-2">
             <Kanban className="h-4 w-4 text-zinc-700" />
@@ -50,7 +50,7 @@ export function PipelineView({ convocatorias, onSeleccionar, onCambiarEstado }: 
           return (
             <div
               key={col.id}
-              className="bg-zinc-100/70 border border-zinc-200/80 rounded-lg p-2.5 flex flex-col space-y-2 min-h-[460px]"
+              className="bg-zinc-100/70 border border-zinc-200/80 rounded-none p-2.5 flex flex-col space-y-2 min-h-[460px]"
             >
               {/* Header de Columna */}
               <div className="flex items-center justify-between border-b border-zinc-200 pb-1.5">
@@ -58,14 +58,14 @@ export function PipelineView({ convocatorias, onSeleccionar, onCambiarEstado }: 
                   <span className={`h-2 w-2 rounded-full ${col.dotColor}`} />
                   <span className="font-semibold text-xs text-zinc-800">{col.titulo}</span>
                 </div>
-                <span className="text-[10px] font-mono font-semibold text-zinc-500 bg-white px-1.5 py-0.2 rounded border border-zinc-200">
+                <span className="text-[11px] font-semibold text-zinc-500 bg-white px-1.5 py-0.2 rounded border border-zinc-200">
                   {items.length}
                 </span>
               </div>
 
               {/* Total económico */}
               {items.length > 0 && (
-                <div className="text-[10px] font-mono text-zinc-500 pb-0.5">
+                <div className="text-[11px] text-zinc-500 pb-0.5">
                   {new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(
                     totalColumna
                   )}
@@ -80,14 +80,14 @@ export function PipelineView({ convocatorias, onSeleccionar, onCambiarEstado }: 
                     onClick={() => onSeleccionar(c)}
                     className="bg-white border border-zinc-200 rounded-md p-2.5 hover:border-zinc-400 transition-colors cursor-pointer space-y-1.5 text-xs shadow-2xs"
                   >
-                    <div className="flex items-center justify-between text-[10px] text-zinc-500">
+                    <div className="flex items-center justify-between text-[11px] text-zinc-500">
                       <span className="font-mono">{c.codigoOficial}</span>
-                      <span className="font-mono font-bold text-zinc-700">{c.matchingGlobal}%</span>
+                      <span className="font-bold text-zinc-700">{c.matchingGlobal}%</span>
                     </div>
 
                     <h4 className="font-bold text-zinc-900 line-clamp-2 leading-tight">{c.titulo}</h4>
 
-                    <div className="flex items-center justify-between pt-1 border-t border-zinc-100 text-[11px] font-mono">
+                    <div className="flex items-center justify-between pt-1 border-t border-zinc-100 text-xs">
                       <span className="font-bold text-zinc-900">
                         {new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(
                           c.cuantiaMaximaProyecto
@@ -101,13 +101,13 @@ export function PipelineView({ convocatorias, onSeleccionar, onCambiarEstado }: 
                     {/* Selector de estado */}
                     <div
                       onClick={(e) => e.stopPropagation()}
-                      className="pt-1 flex items-center justify-between text-[10px] border-t border-zinc-100"
+                      className="pt-1 flex items-center justify-between text-[11px] border-t border-zinc-100"
                     >
                       <span className="text-zinc-400">Estado:</span>
                       <select
                         value={c.estadoInterno}
                         onChange={(e) => onCambiarEstado(c.id, e.target.value as EstadoInterno)}
-                        className="bg-zinc-50 border border-zinc-200 rounded px-1.5 py-0.5 text-zinc-700 text-[10px] font-medium"
+                        className="bg-zinc-50 border border-zinc-200 rounded px-1.5 py-0.5 text-zinc-700 text-[11px] font-medium"
                       >
                         <option value="nueva">Nueva</option>
                         <option value="priorizada">Priorizada</option>
@@ -120,7 +120,7 @@ export function PipelineView({ convocatorias, onSeleccionar, onCambiarEstado }: 
                 ))}
 
                 {items.length === 0 && (
-                  <div className="h-20 flex items-center justify-center text-zinc-400 text-[11px] italic border border-dashed border-zinc-200 rounded">
+                  <div className="h-20 flex items-center justify-center text-zinc-400 text-xs italic border border-dashed border-zinc-200 rounded">
                     Sin convocatorias
                   </div>
                 )}
