@@ -23,8 +23,6 @@ export function Hero({ titulo, migas }: HeroProps) {
   );
 }
 
-const HORAS_LECTURA_POR_CONVOCATORIA = 3; // dato del reto: ~3 h de lectura por convocatoria
-
 export function Embudo({ convocatorias, embudo }: { convocatorias: Convocatoria[]; embudo: EmbudoReal | null }) {
   const real = embudo !== null && embudo.detectadas > 0;
   const detectadas = real ? Math.max(embudo.detectadas, convocatorias.length) : convocatorias.length;
@@ -32,7 +30,7 @@ export function Embudo({ convocatorias, embudo }: { convocatorias: Convocatoria[
   const en30 = aptas.filter((c) => !plazoSinFijar(c) && c.diasRestantes <= 30);
   const altoEncaje = en30.filter((c) => c.matchingGlobal >= 80);
   const fondos30 = altoEncaje.reduce((a, c) => a + c.cuantiaMaximaProyecto, 0);
-  const horasAhorradas = (detectadas - aptas.length) * HORAS_LECTURA_POR_CONVOCATORIA;
+  const descartadas = real ? Math.max(0, embudo.detectadas - embudo.aceptadas) : 0;
 
   const pasos = [
     { n: detectadas, etiqueta: 'Detectadas', nota: real ? 'en la última ingesta del radar' : 'cargadas ahora' },
@@ -53,9 +51,11 @@ export function Embudo({ convocatorias, embudo }: { convocatorias: Convocatoria[
               </li>
             ))}
           </ol>
-          <p className="mt-3 px-4 text-xs text-zinc-400">
-            ≈ {horasAhorradas} h de lectura de bases evitadas ({HORAS_LECTURA_POR_CONVOCATORIA} h por convocatoria descartada).
-          </p>
+          {real && (
+            <p className="mt-3 px-4 text-xs text-zinc-500">
+              {descartadas.toLocaleString('es-ES')} publicaciones descartadas automáticamente por el filtro (no ambientales o no aplicables a Reforesta).
+            </p>
+          )}
         </div>
       </section>
   );

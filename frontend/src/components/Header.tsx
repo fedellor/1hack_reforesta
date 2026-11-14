@@ -70,7 +70,7 @@ export function Header({ convocatorias, seccion, setSeccion, datos, onRefresh, n
           </span>
         </div>
 
-        <nav className="flex items-center gap-0.5 sm:gap-1 overflow-x-auto">
+        <nav className="flex items-center gap-0.5 sm:gap-1 overflow-x-auto min-w-0 shrink-0">
           {ITEMS_MENU.map((item) => {
             const activo = seccion === item.id || (item.id === 'convocatorias' && seccion === 'calendario');
             return (
@@ -93,9 +93,10 @@ export function Header({ convocatorias, seccion, setSeccion, datos, onRefresh, n
           })}
         </nav>
 
-        <div className="hidden md:flex items-center gap-2 text-[11px] text-white/70 shrink-0">
+        <div className="hidden md:flex items-center gap-2 text-[11px] text-white/70 min-w-0">
           <span className={`h-2 w-2 rounded-full ${datos.fuente === 'backend' ? 'bg-[#6aa43a] animate-pulse' : datos.fuente === 'sin_conexion' ? 'bg-rose-500' : 'bg-zinc-500'}`} />
-          <span>{etiquetaDatos} · <strong className="text-white">{convocatorias.length}</strong> activas{proximaSync && datos.fuente === 'backend' ? ` · próx. sync ${new Date(proximaSync).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}` : ''}</span>
+          <span className="hidden 2xl:inline" title={etiquetaDatos}>{etiquetaDatos} · <strong className="text-white">{convocatorias.length}</strong> activas{proximaSync && datos.fuente === 'backend' ? ` · próx. sync ${new Date(proximaSync).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}` : ''}</span>
+          <span className="2xl:hidden truncate" title={`${etiquetaDatos} · ${convocatorias.length} activas`}>{datos.fuente === 'backend' ? 'En vivo' : datos.fuente === 'sin_conexion' ? 'Sin conexión' : 'Cargando'}</span>
           <button onClick={handleSync} disabled={syncing} className="p-1 text-white/60 hover:text-white disabled:opacity-50" title="Actualizar ahora">
             <RefreshCw className={`h-3.5 w-3.5 ${syncing ? 'animate-spin' : ''}`} />
           </button>
