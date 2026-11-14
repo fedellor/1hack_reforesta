@@ -33,3 +33,6 @@ data/cache/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Base de datos local del backend (SQLite)
+data/

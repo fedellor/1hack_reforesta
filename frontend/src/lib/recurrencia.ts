@@ -118,10 +118,12 @@ export function detectarProgramas(todas: Convocatoria[], hoy: Date = new Date())
     const abierta = ediciones.find((c) => c.estado === 'ACTIVA' || (c.estado === undefined && c.diasRestantes >= 0 && c.diasRestantes < SIN_PLAZO)) ?? null;
 
     // Próxima apertura: primer ciclo posterior a la última edición cuya fecha habitual no sea muy antigua.
-    // Si ese ciclo ya pasó (hasta 9 meses) y no hay edición detectada, se marca como «retrasada»:
+    // Pasados 90 días se da por no repetida/no detectada y se salta al ciclo siguiente: avisar de un retraso
+    // de meses sería ruido, sobre todo mientras la ingesta no cubra todas las fuentes.
+    // Si ese ciclo ya pasó (hasta 90 días) y no hay edición detectada, se marca como «retrasada»:
     // debería haber salido y no consta, así que puede publicarse en cualquier momento.
     const ultimoAnio = anios[anios.length - 1];
-    const limite = hoy.getTime() - 270 * DIA_MS;
+    const limite = hoy.getTime() - 90 * DIA_MS;
     let proxima = new Date(ultimoAnio + 1, mes - 1, Math.min(dia, 28), 12);
     while (proxima.getTime() < limite) proxima = new Date(proxima.getFullYear() + 1, mes - 1, Math.min(dia, 28), 12);
     const retrasada = proxima.getTime() < hoy.getTime();
