@@ -326,3 +326,81 @@ def test_title_exclusive_recipient_and_foundation_classification():
     fe = res.opportunity.to_frontend_convocatoria()
     assert fe["tipoFuente"] == "privada_rsc"
     assert fe["elegible"] is True
+
+
+def test_budget_realism_noise_exclusions_and_closed_year_resolution():
+    """Verify no fake 100k budget fallback, EU consortium grant cap, noise exclusions, and past 'Cerrada YYYY' resolution."""
+    # 1. Missing budget must serialize as 0 (never phantom 100.000 EUR)
+    cand_no_budget = RawCandidate(
+        id="test-no-budget-2026",
+        codigo_oficial="PRIV-NOBUDGET-2026",
+        fuente="FUNDACION_PRIVADA",
+        tipo_oportunidad="CONVOCATORIA_PRIVADA",
+        titulo="Convocatoria de ayudas para reforestación y conservación forestal 2026",
+        organo_convocante="Fundación Ejemplo",
+        texto="Abierta a asociaciones y entidades sin ánimo de lucro para proyectos de reforestación en España.",
+        region_hint="ES-MD - Comunidad de Madrid (Privada / RSC)",
+        url_ficha_oficial="https://fundacion-ejemplo.org/convocatoria-2026",
+    )
+    res_nb = process_candidate(cand_no_budget, persist=False)
+    assert res_nb.accepted_layer2 is True
+    assert res_nb.opportunity is not None
+    fe_nb = res_nb.opportunity.to_frontend_convocatoria()
+    assert fe_nb["cuantiaMaximaProyecto"] == 0
+    assert fe_nb["presupuestoTotal"] == 0
+
+    # 2. Multi-partner EU Horizon consortium grant caps per-NGO tranche <= 350k while preserving full EU budget
+    cand_eu = RawCandidate(
+        id="eu-horizon-nature-test-2027",
+        codigo_oficial="HORIZON-CL6-2027-TEST",
+        fuente="UE_SEDIA",
+        tipo_oportunidad="PROGRAMA_UE",
+        titulo="Laboratorios vivientes para restauración forestal y biodiversidad europea",
+        organo_convocante="Comisión Europea (Horizon Europe)",
+        texto=(
+            "Open to non-profit legal entities and NGOs for forest ecosystem restoration and biodiversity. "
+            "Funding budget 12000000 EUR."
+        ),
+        presupuesto_total=12_000_000.0,
+        fecha_publicacion="2026-10-15",
+        fecha_fin_solicitud="2027-04-20",
+        url_ficha_oficial="https://ec.europa.eu/info/funding-tenders/opportunities/portal/test",
+    )
+    res_eu = process_candidate(cand_eu, persist=False)
+    assert res_eu.accepted_layer2 is True
+    assert res_eu.opportunity is not None
+    fe_eu = res_eu.opportunity.to_frontend_convocatoria()
+    assert 0 < fe_eu["cuantiaMaximaProyecto"] <= 350_000
+    assert fe_eu["presupuestoTotal"] == 12_000_000
+
+    # 3. Hard noise title exclusions (footwear recycling, organic crop breeding, national awards)
+    for noise_title in (
+        "Innovative circular solutions for end-of-life footwear through collection, sorting and recycling",
+        "Enhancing the competitiveness of organic crop breeding: focus on intercropping adapted varieties",
+        "Premios Nacionales de Medioambiente y de Energía 2026",
+    ):
+        l1 = evaluate_layer1(
+            titulo=noise_title,
+            organo="European Commission / MITECO",
+            texto="Biodiversity climate action grant.",
+        )
+        assert l1.passed is False, f"Expected Layer-1 rejection for: {noise_title}"
+
+    # 4. Past 'Cerrada ... 2025' title resolves to CERRADA instead of lingering ACTIVA
+    cand_closed = RawCandidate(
+        id="priv-closed-2025-test",
+        codigo_oficial="PRIV-CLOSED-2025",
+        fuente="FUNDACION_PRIVADA",
+        tipo_oportunidad="CONVOCATORIA_PRIVADA",
+        titulo="Cerrada Ayudas a Proyectos de Investigación Ambiental 2025 Convocatoria 2025",
+        organo_convocante="Fundación CajaCanarias",
+        texto="Proyectos de investigación y conservación forestal para asociaciones sin ánimo de lucro.",
+        region_hint="ES-CN - Canarias (Privada / RSC)",
+        url_ficha_oficial="https://www.cajacanarias.com/ayudas-investigacion-2025",
+    )
+    res_closed = process_candidate(cand_closed, persist=False)
+    assert res_closed.accepted_layer2 is True
+    assert res_closed.opportunity is not None
+    assert res_closed.opportunity.estado == "CERRADA"
+    assert res_closed.opportunity.fecha_fin_solicitud == date(2025, 12, 31)
+

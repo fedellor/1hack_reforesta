@@ -68,11 +68,13 @@ export interface Convocatoria {
   dinero?: Record<string, unknown>;
 }
 
+export type FiltroElegibilidad = 'aptas' | 'excluidas';
+
 export interface FiltrosState {
   busqueda: string;
   ambito: string;
   tipoFuente: string;
-  soloElegibles: boolean;
+  elegibilidad: FiltroElegibilidad;
   minMatching: number;
   soloUrgentes: boolean;
   minCuantia: number;

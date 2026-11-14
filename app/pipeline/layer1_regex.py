@@ -268,6 +268,9 @@ TITLE_HARD_EXCLUSION_PATTERN = re.compile(
     r"convenio\s+(?:entre|con\s+(?:la\s+)?(?:asociaci[oó]n|fundaci[oó]n|organizaci[oó]n|comunidad|ayuntamiento|diputaci[oó]n|universidad))|"
     r"proyectos?\s+ganadores?|"
     r"eficiencia\s+energ[eé]tica\s+con\b|movilidad\s+sostenible\s+con\b|reformas?\s+sostenibles?\s+con\b|"
+    r"end-of-life\s+footwear|\bfootwear\b|"
+    r"(?:textile|apparel|garment|battery|plastic|packaging|e-?waste|electronic\s+waste)\s+(?:collection|sorting|recycling|management)|"
+    r"organic\s+crop\s+breeding|premios?\s+nacionales?\s+de\s+medio\s*ambiente|"
     r"hispaled|koiki|gne\s+finance|aventura\s+digital|lorem\s+ips\w*|test\s+iframe"
     r")\b",
     re.IGNORECASE,

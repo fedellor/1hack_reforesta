@@ -2,8 +2,8 @@
 
 import React from 'react';
 import { Building2, ExternalLink, Repeat } from 'lucide-react';
-import { Convocatoria } from '@/types/convocatoria';
-import { formatoEuros } from '@/lib/territorio';
+import { Convocatoria, FiltroElegibilidad } from '@/types/convocatoria';
+import { formatoImporte } from '@/lib/territorio';
 import { diasHastaApertura, esProxima, plazoSinFijar } from '@/lib/plazo';
 import { esCitaLiteral, limpiarJustificacion } from '@/lib/texto';
 import { Programa, recurrenciaDe, textoVentana } from '@/lib/recurrencia';
@@ -14,8 +14,8 @@ interface EmpresasViewProps {
   onSeleccionar: (c: Convocatoria) => void;
   /** Programas recurrentes detectados en el histórico (vacío si aún no hay histórico) */
   programas?: Programa[];
-  soloElegibles?: boolean;
-  onToggleSoloElegibles?: () => void;
+  elegibilidad?: FiltroElegibilidad;
+  onCambiarElegibilidad?: (elegibilidad: FiltroElegibilidad) => void;
 }
 
 /**
@@ -27,8 +27,8 @@ export function EmpresasView({
   cerradas = [],
   onSeleccionar,
   programas = [],
-  soloElegibles = true,
-  onToggleSoloElegibles,
+  elegibilidad = 'aptas',
+  onCambiarElegibilidad,
 }: EmpresasViewProps) {
   const renderTarjeta = (c: Convocatoria, esHistorica = false) => {
     const literal = c.citasBasesJustificacion.find(esCitaLiteral);
@@ -84,7 +84,7 @@ export function EmpresasView({
         <div className="mt-auto pt-5 flex items-end justify-between gap-4">
           <div>
             <span className="block text-xs uppercase tracking-wide text-zinc-500">Aportación máxima</span>
-            <span className="font-serif text-2xl font-bold text-zinc-900">{formatoEuros(c.cuantiaMaximaProyecto)}</span>
+            <span className="font-serif text-2xl font-bold text-zinc-900">{formatoImporte(c.cuantiaMaximaProyecto)}</span>
           </div>
           <div className="flex flex-col items-end gap-1.5 text-xs font-semibold">
             {c.urlSedeElectronica && (
@@ -113,16 +113,31 @@ export function EmpresasView({
           <strong className="text-zinc-900">{convocatorias.length}</strong> activas ·{' '}
           <strong className="text-zinc-900">{cerradas.length}</strong> ediciones históricas de fundaciones y empresas
         </p>
-        {onToggleSoloElegibles && (
-          <button
-            type="button"
-            onClick={onToggleSoloElegibles}
-            className={`px-4 py-2 rounded-full border font-semibold uppercase tracking-wide transition-colors ${
-              soloElegibles ? 'bg-brand border-brand text-white' : 'bg-white border-zinc-200 text-zinc-700 hover:bg-zinc-50'
-            }`}
-          >
-            {soloElegibles ? 'Solo aptas Reforesta' : 'Todas (incl. excluidas)'}
-          </button>
+        {onCambiarElegibilidad && (
+          <div className="inline-flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => onCambiarElegibilidad('aptas')}
+              className={`px-3.5 py-2 rounded-full border font-semibold uppercase tracking-wide transition-colors ${
+                elegibilidad === 'aptas'
+                  ? 'bg-brand border-brand text-white'
+                  : 'bg-white border-zinc-200 text-zinc-700 hover:bg-zinc-50'
+              }`}
+            >
+              Solo aptas ONG
+            </button>
+            <button
+              type="button"
+              onClick={() => onCambiarElegibilidad('excluidas')}
+              className={`px-3.5 py-2 rounded-full border font-semibold uppercase tracking-wide transition-colors ${
+                elegibilidad === 'excluidas'
+                  ? 'bg-rose-700 border-rose-700 text-white'
+                  : 'bg-white border-zinc-200 text-zinc-700 hover:bg-zinc-50'
+              }`}
+            >
+              Solo excluidas
+            </button>
+          </div>
         )}
       </div>
 

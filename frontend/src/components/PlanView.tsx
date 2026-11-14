@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { Convocatoria } from '@/types/convocatoria';
-import { formatoEuros } from '@/lib/territorio';
+import { formatoEuros, formatoImporte } from '@/lib/territorio';
 import { aperturaISO, diasHastaApertura, esProxima, plazoSinFijar } from '@/lib/plazo';
 import { esCitaLiteral, limpiarJustificacion } from '@/lib/texto';
 
@@ -38,7 +38,7 @@ function Descripcion({ c, aviso }: { c: Convocatoria; aviso?: React.ReactNode })
       </span>
       <span className="text-sm font-semibold text-zinc-900 leading-snug line-clamp-2 group-hover:text-emerald-800">{c.titulo}</span>
       <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-zinc-600">
-        <strong className="text-zinc-900">{formatoEuros(c.cuantiaMaximaProyecto)}</strong>
+        <strong className="text-zinc-900">{formatoImporte(c.cuantiaMaximaProyecto)}</strong>
         <span>· {c.porcentajeCofinanciacion === 0 ? '100% financiado' : `aportas ${c.porcentajeCofinanciacion}%`}</span>
         <span>· encaje <strong className="text-zinc-900">{c.matchingGlobal}%</strong></span>
         {!c.elegible && <span className="rounded-full bg-rose-600 px-2 py-0.5 text-[10px] font-bold uppercase text-white">Excluida</span>}
@@ -82,7 +82,13 @@ export function PlanView({ convocatorias, onSeleccionar }: PlanViewProps) {
   const cargaMax = porColumna.reduce((mejor, l, i) => (l.length > porColumna[mejor].length ? i : mejor), 0);
   const empezarYa = abiertas.filter((c) => c.diasRestantes <= PREPARACION_DIAS).length;
   const en7 = abiertas.filter((c) => c.diasRestantes <= 7).length;
-  const dinero = abiertas.reduce((a, c) => a + c.cuantiaMaximaProyecto, 0);
+  const visiblesEnHorizonte = [...abiertas, ...proximas, ...sinPlazo];
+  const dinero = visiblesEnHorizonte.reduce((a, c) => a + c.cuantiaMaximaProyecto, 0);
+  const fueraDeHorizonte = convocatorias.filter(
+    (c) =>
+      (!esProxima(c) && !plazoSinFijar(c) && c.diasRestantes > rango) ||
+      (esProxima(c) && diasHastaApertura(c) > rango)
+  );
 
   const fechaColumna = (i: number) => {
     const d = new Date(hoy);
@@ -118,7 +124,13 @@ export function PlanView({ convocatorias, onSeleccionar }: PlanViewProps) {
           <div>
             <span className="font-serif text-3xl font-bold text-zinc-900">{formatoEuros(dinero)}</span>
             <span className="block text-xs font-bold uppercase tracking-wide text-zinc-900">En juego</span>
-            <span className="block text-xs text-zinc-500">{abiertas.length} abiertas en {rango} días</span>
+            <span className="block text-xs text-zinc-500">
+              {abiertas.length} abiertas · {proximas.length} por abrir
+              {sinPlazo.length > 0 ? ` · ${sinPlazo.length} sin plazo` : ''}
+              {fueraDeHorizonte.length > 0
+                ? ` (+${fueraDeHorizonte.length} fuera de ${rango === 365 ? '1 año' : `${rango} d`})`
+                : ''}
+            </span>
           </div>
         </div>
         <div className="inline-flex rounded-full border border-zinc-200 bg-white p-1">
@@ -246,7 +258,7 @@ export function PlanView({ convocatorias, onSeleccionar }: PlanViewProps) {
                     <span className="text-sm font-semibold text-zinc-900 line-clamp-1">{c.titulo}</span>
                   </span>
                   <span className="shrink-0 text-right text-xs text-zinc-600">
-                    <strong className="block text-sm text-zinc-900">{formatoEuros(c.cuantiaMaximaProyecto)}</strong>
+                    <strong className="block text-sm text-zinc-900">{formatoImporte(c.cuantiaMaximaProyecto)}</strong>
                     encaje {c.matchingGlobal}%
                   </span>
                 </button>

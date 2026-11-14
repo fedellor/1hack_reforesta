@@ -43,6 +43,8 @@ export const PROVINCIAS_POR_COMUNIDAD: Record<string, string[]> = {
 export const formatoEuros = (n: number) =>
   new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(n);
 
+export const formatoImporte = (n: number) => (n > 0 ? formatoEuros(n) : 'Según bases');
+
 export const COMUNIDADES = [
   'Andalucía', 'Aragón', 'Principado de Asturias', 'Illes Balears', 'Canarias', 'Cantabria',
   'Castilla-La Mancha', 'Castilla y León', 'Cataluña', 'Comunitat Valenciana', 'Extremadura',

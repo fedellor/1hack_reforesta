@@ -259,12 +259,26 @@ def process_candidate(
         existing_clause=l2.plazo_solicitud_detectado or candidate.plazo_texto_original,
         existing_end_date=candidate.fecha_fin_solicitud,
     )
+    resolved_end_str = extracted_end_date or candidate.fecha_fin_solicitud
+    resolved_anio_hint = candidate.anio_convocatoria
+    # Detect explicitly closed past-year titles without explicit deadline (e.g. "Cerrada Ayudas ... 2025")
+    if not resolved_end_str:
+        m_past_closed = re.search(
+            r"\b(?:cerrad[oa]|plazo\s+cerrado|finalizad[oa])\b[^0-9]{0,60}\b(20(?:1[6-9]|2[0-5]))\b",
+            f"{candidate.titulo} {candidate.texto[:300]}",
+            re.IGNORECASE,
+        )
+        if m_past_closed:
+            past_yr = int(m_past_closed.group(1))
+            resolved_anio_hint = resolved_anio_hint or past_yr
+            if past_yr < settings.get_today().year:
+                resolved_end_str = f"{past_yr}-12-31"
     resolved_dates = compute_dates_and_status(
         fecha_publicacion=candidate.fecha_publicacion,
         fecha_inicio_solicitud=candidate.fecha_inicio_solicitud,
-        fecha_fin_solicitud=extracted_end_date or candidate.fecha_fin_solicitud,
+        fecha_fin_solicitud=resolved_end_str,
         plazo_texto_original=plazo_str,
-        anio_hint=candidate.anio_convocatoria,
+        anio_hint=resolved_anio_hint,
         ccaa_codigo=geo.ccaa_codigo,
     )
 

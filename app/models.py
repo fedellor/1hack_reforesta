@@ -311,12 +311,23 @@ class Opportunity(SQLModel, table=True):
         fin_pct = self.porcentaje_max_financiacion if self.porcentaje_max_financiacion is not None else 80.0
         porcentaje_cofinanciacion = max(0, round(100.0 - fin_pct))
 
-        presupuesto = int(self.presupuesto_total or 100000)
-        cuantia_max = int(
-            self.importe_max_beneficiario
-            or self.importe_max_proyecto
-            or min(presupuesto, 120000)
-        )
+        presupuesto = int(self.presupuesto_total or 0)
+        raw_proy = int(self.importe_max_proyecto or 0)
+        if self.importe_max_beneficiario:
+            cuantia_max = int(self.importe_max_beneficiario)
+        elif raw_proy > 0:
+            # EU consortium calls (Horizon Europe RIA/IA) publish full multi-partner consortium totals (3M-12M EUR).
+            # Cap single-NGO partner grant to a realistic tranche (max 350k EUR) so map & forecast totals remain realistic.
+            if (
+                self.tipo_oportunidad == "PROGRAMA_UE" or str(self.id).startswith("eu-")
+            ) and raw_proy >= 1_000_000:
+                cuantia_max = min(int(round(raw_proy * 0.05)), 350_000)
+            else:
+                cuantia_max = raw_proy
+        elif presupuesto > 0:
+            cuantia_max = min(presupuesto, 120_000)
+        else:
+            cuantia_max = 0
 
         elig, merged_dealbreakers = self._evaluate_reforesta_eligibility()
         elegible = elig.elegible

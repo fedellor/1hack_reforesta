@@ -4,7 +4,16 @@ import React from 'react';
 import dynamic from 'next/dynamic';
 import { Convocatoria } from '@/types/convocatoria';
 import { ArrowRight } from 'lucide-react';
-import { COMUNIDADES, ESTATAL, PROVINCIAS_POR_COMUNIDAD, TODOS, filtrarPorTerritorio, formatoEuros, perteneceAComunidad } from '@/lib/territorio';
+import {
+  COMUNIDADES,
+  ESTATAL,
+  PROVINCIAS_POR_COMUNIDAD,
+  TODOS,
+  filtrarPorTerritorio,
+  formatoEuros,
+  formatoImporte,
+  perteneceAComunidad,
+} from '@/lib/territorio';
 
 // Leaflet necesita window: carga solo en cliente
 const LeafletMap = dynamic(() => import('@/components/LeafletMap'), {
@@ -22,10 +31,17 @@ function Lista({ items, vacio, onSeleccionar }: { items: Convocatoria[]; vacio: 
       {items.slice(0, 3).map((c) => (
         <li key={c.id}>
           <button onClick={() => onSeleccionar(c)} className="w-full py-3 flex items-start justify-between gap-4 text-left hover:text-emerald-800">
-            <span className="text-sm leading-snug line-clamp-2">{c.titulo}</span>
+            <span className="text-sm leading-snug line-clamp-2">
+              {c.titulo}
+              {!c.elegible && (
+                <span className="ml-2 inline-block px-1.5 py-0.5 text-[10px] font-semibold uppercase rounded bg-rose-100 text-rose-800">
+                  Excluida
+                </span>
+              )}
+            </span>
             <span className="text-right shrink-0">
               <span className="block text-sm font-bold text-brand">{c.matchingGlobal}%</span>
-              <span className="block text-xs text-zinc-500">{formatoEuros(c.cuantiaMaximaProyecto)}</span>
+              <span className="block text-xs text-zinc-500">{formatoImporte(c.cuantiaMaximaProyecto)}</span>
             </span>
           </button>
         </li>
@@ -110,6 +126,7 @@ export function MapView({
           <div>
             <dt className="text-xs uppercase tracking-wide text-zinc-500">Fondos</dt>
             <dd className="mt-1 font-serif text-2xl font-bold text-zinc-900">{formatoEuros(total)}</dd>
+            <dd className="text-[11px] text-zinc-400">máx. accesible</dd>
           </div>
           <div>
             <dt className="text-xs uppercase tracking-wide text-zinc-500">Convocatorias</dt>

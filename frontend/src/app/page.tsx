@@ -79,7 +79,7 @@ export default function Home() {
     ambito: 'todos',
     provincia: '',
     tipoFuente: 'todos',
-    soloElegibles: true, // Por defecto ocultamos exclusiones para ahorrar tiempo
+    elegibilidad: 'aptas',
     minMatching: 0,
     soloUrgentes: false,
     minCuantia: 0,
@@ -98,9 +98,8 @@ export default function Home() {
     }
   };
 
-  // Filtrado y ordenación reactiva
-  // Filtros comunes SIN territorio (el mapa se colorea con esta lista)
-  const baseFiltrada = useMemo(() => {
+  // Filtrado común previo a elegibilidad y territorio (alimenta conteos coherentes)
+  const sinElegibilidad = useMemo(() => {
     const hayBusqueda = Boolean(filtros.busqueda.trim());
     const puntajes = new Map<string, number>();
 
@@ -117,11 +116,6 @@ export default function Home() {
 
       // Sección Empresas = solo mecenazgo privado (RSC)
       if (seccion === 'empresas' && c.tipoFuente !== 'privada_rsc') return false;
-
-      // Filtro de elegibilidad (dealbreakers)
-      if (filtros.soloElegibles && !c.elegible) {
-        return false;
-      }
 
       // Ventana temporal, encaje, urgencia y cuantía (no aplican al canal de empresas)
       if (seccion === 'empresas') return true;
@@ -140,14 +134,27 @@ export default function Home() {
       }
       return b.matchingGlobal - a.matchingGlobal;
     });
-  }, [convocatorias, filtros, seccion, soloNuevas, idsNuevas, verDescartadas]);
+  }, [convocatorias, filtros.busqueda, filtros.minMatching, filtros.soloUrgentes, filtros.minCuantia, seccion, soloNuevas, idsNuevas, verDescartadas]);
+
+  // Filtros comunes SIN territorio (el mapa se colorea con esta lista)
+  const baseFiltrada = useMemo(() => {
+    return sinElegibilidad.filter((c) =>
+      filtros.elegibilidad === 'aptas' ? c.elegible : !c.elegible
+    );
+  }, [sinElegibilidad, filtros.elegibilidad]);
+
+  const conteoElegibilidad = useMemo(() => {
+    const enTerritorio = filtrarPorTerritorio(sinElegibilidad, filtros.ambito, filtros.provincia);
+    const aptas = enTerritorio.filter((c) => c.elegible).length;
+    return { aptas, excluidas: enTerritorio.length - aptas };
+  }, [sinElegibilidad, filtros.ambito, filtros.provincia]);
 
   const empresasCerradas = useMemo(() => {
     return historico
       .filter((c) => c.estado === 'CERRADA' && c.tipoFuente === 'privada_rsc')
-      .filter((c) => !filtros.soloElegibles || c.elegible)
+      .filter((c) => (filtros.elegibilidad === 'aptas' ? c.elegible : !c.elegible))
       .filter((c) => !filtros.busqueda.trim() || puntajeBusqueda(c, filtros.busqueda) > 0);
-  }, [historico, filtros.soloElegibles, filtros.busqueda]);
+  }, [historico, filtros.elegibilidad, filtros.busqueda]);
 
   const convocatoriasFiltradas = useMemo(
     () => filtrarPorTerritorio(baseFiltrada, filtros.ambito, filtros.provincia),
@@ -210,13 +217,14 @@ export default function Home() {
           filtros={filtros}
           setFiltros={setFiltros}
           totalResultados={convocatoriasFiltradas.length}
+          conteoElegibilidad={conteoElegibilidad}
           onResetFiltros={() =>
             setFiltros({
               busqueda: '',
               ambito: TODOS,
               provincia: '',
               tipoFuente: 'todos',
-              soloElegibles: true,
+              elegibilidad: 'aptas',
               minMatching: 0,
               soloUrgentes: false,
               minCuantia: 0,
@@ -293,8 +301,8 @@ export default function Home() {
             cerradas={empresasCerradas}
             onSeleccionar={abrir}
             programas={programas}
-            soloElegibles={filtros.soloElegibles}
-            onToggleSoloElegibles={() => setFiltros((p) => ({ ...p, soloElegibles: !p.soloElegibles }))}
+            elegibilidad={filtros.elegibilidad}
+            onCambiarElegibilidad={(elegibilidad) => setFiltros((p) => ({ ...p, elegibilidad }))}
           />
         )}
       </main>

@@ -144,9 +144,11 @@ Enlace oficial: ${c.urlBasesPdf}`;
               <div>
                 <span className="text-[11px] uppercase font-semibold text-zinc-400 block">Cuantía Máx.</span>
                 <span className="text-sm font-bold text-zinc-900">
-                  {new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(
-                    c.cuantiaMaximaProyecto
-                  )}
+                  {c.cuantiaMaximaProyecto > 0
+                    ? new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(
+                        c.cuantiaMaximaProyecto
+                      )
+                    : 'Según bases'}
                 </span>
                 <span className="text-[11px] text-zinc-500 block">por proyecto</span>
               </div>

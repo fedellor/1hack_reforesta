@@ -159,9 +159,11 @@ export function Embudo({
   const real = embudo !== null && embudo.detectadas > 0;
   const detectadas = real ? Math.max(embudo.detectadas, convocatorias.length) : convocatorias.length;
   const aptas = convocatorias.filter((c) => c.elegible);
+  const fondosAptas = aptas.reduce((a, c) => a + c.cuantiaMaximaProyecto, 0);
   const en30 = aptas.filter(
     (c) => c.estado !== 'PROXIMA' && !plazoSinFijar(c) && c.diasRestantes <= 30
   );
+  const fondosEn30 = en30.reduce((a, c) => a + c.cuantiaMaximaProyecto, 0);
   const altoEncaje = aptas.filter((c) => c.matchingGlobal >= 80);
   const fondos = altoEncaje.reduce((a, c) => a + c.cuantiaMaximaProyecto, 0);
   const descartadas = Math.max(0, detectadas - aptas.length);
@@ -176,12 +178,12 @@ export function Embudo({
     {
       n: aptas.length,
       etiqueta: 'Aptas para Reforesta',
-      nota: 'cumplen NIF G80428204 y fines ESAL',
+      nota: fondosAptas > 0 ? `${formatoEuros(fondosAptas)} accesibles` : 'cumplen NIF G80428204 y fines ESAL',
     },
     {
       n: en30.length,
       etiqueta: 'Cierran en ≤ 30 días',
-      nota: 'prioridad de presentación',
+      nota: fondosEn30 > 0 ? `${formatoEuros(fondosEn30)} en cierre inmediato` : 'prioridad de presentación',
     },
     {
       n: altoEncaje.length,

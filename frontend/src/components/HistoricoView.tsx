@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import { Search, History } from 'lucide-react';
 import { Convocatoria } from '@/types/convocatoria';
-import { COMUNIDADES, ESTATAL, TODOS, filtrarPorTerritorio, formatoEuros } from '@/lib/territorio';
+import { COMUNIDADES, ESTATAL, TODOS, filtrarPorTerritorio, formatoImporte } from '@/lib/territorio';
 import { puntajeBusqueda } from '@/lib/search';
 
 interface HistoricoViewProps {
@@ -139,7 +139,7 @@ export function HistoricoView({ historico, disponible, onSeleccionar }: Historic
                       <span className="block text-xs text-zinc-500 truncate">{c.organismo}</span>
                     </span>
                     <span className="text-right text-xs text-zinc-500 whitespace-nowrap">
-                      <span className="font-semibold text-zinc-800">{formatoEuros(c.cuantiaMaximaProyecto)}</span> · {c.matchingGlobal}%
+                      <span className="font-semibold text-zinc-800">{formatoImporte(c.cuantiaMaximaProyecto)}</span> · {c.matchingGlobal}%
                     </span>
                   </button>
                 </li>

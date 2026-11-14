@@ -19,6 +19,7 @@ interface FilterBarProps {
   filtros: FiltrosState;
   setFiltros: React.Dispatch<React.SetStateAction<FiltrosState>>;
   totalResultados?: number;
+  conteoElegibilidad?: { aptas: number; excluidas: number };
   onResetFiltros?: () => void;
 }
 
@@ -26,6 +27,7 @@ export function FilterBar({
   filtros,
   setFiltros,
   totalResultados,
+  conteoElegibilidad,
   onResetFiltros,
 }: FilterBarProps) {
   const chip = (activo: boolean) =>
@@ -85,20 +87,33 @@ export function FilterBar({
             ))}
           </select>
 
-          {/* Toggle Solo Elegibles */}
-          <button
-            type="button"
-            onClick={() =>
-              setFiltros((prev) => ({ ...prev, soloElegibles: !prev.soloElegibles }))
-            }
-            className={`px-5 py-2.5 rounded-full border font-semibold uppercase text-xs tracking-wide transition-colors shadow-2xs cursor-pointer ${
-              filtros.soloElegibles
-                ? 'bg-brand border-brand text-white'
-                : 'bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-50'
-            }`}
-          >
-            {filtros.soloElegibles ? 'Solo aptas ONG' : 'Todas (incl. excluidas)'}
-          </button>
+          {/* Botones separados de Elegibilidad: Solo aptas ONG vs Solo excluidas */}
+          <div className="inline-flex items-center rounded-full border border-zinc-200 bg-white p-0.5 shadow-2xs">
+            <button
+              type="button"
+              onClick={() => setFiltros((prev) => ({ ...prev, elegibilidad: 'aptas' }))}
+              className={`px-4 py-2 rounded-full font-semibold uppercase text-xs tracking-wide transition-colors cursor-pointer ${
+                filtros.elegibilidad === 'aptas'
+                  ? 'bg-brand text-white shadow-2xs'
+                  : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50'
+              }`}
+            >
+              Solo aptas ONG
+              {conteoElegibilidad ? ` (${conteoElegibilidad.aptas})` : ''}
+            </button>
+            <button
+              type="button"
+              onClick={() => setFiltros((prev) => ({ ...prev, elegibilidad: 'excluidas' }))}
+              className={`px-4 py-2 rounded-full font-semibold uppercase text-xs tracking-wide transition-colors cursor-pointer ${
+                filtros.elegibilidad === 'excluidas'
+                  ? 'bg-rose-700 text-white shadow-2xs'
+                  : 'text-zinc-600 hover:text-rose-700 hover:bg-rose-50/60'
+              }`}
+            >
+              Solo excluidas
+              {conteoElegibilidad ? ` (${conteoElegibilidad.excluidas})` : ''}
+            </button>
+          </div>
 
           {/* Encaje alto */}
           <button
