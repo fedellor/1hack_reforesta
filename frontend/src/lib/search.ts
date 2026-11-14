@@ -133,6 +133,14 @@ const GRUPOS_EQUIVALENTES: string[][] = [
     'pais vasco',
     'euskadi',
   ],
+  [
+    'aei',
+    'agencia estatal de investigacion',
+  ],
+  [
+    'fbbva',
+    'fundacion bbva',
+  ],
 ];
 
 /**
@@ -310,7 +318,7 @@ function construirCampos(c: Convocatoria): CamposIndexados {
 
   const codigo = normalizarTexto(`${c.codigoOficial} ${c.id}`);
   const codigoCompacto = compactarCodigo(`${c.codigoOficial} ${c.id}`);
-  const titulo = normalizarTexto(c.titulo);
+  const titulo = normalizarTexto(`${c.titulo} ${c.tituloOriginal || ''}`);
   const organismo = normalizarTexto(c.organismo);
   const territorio = normalizarTexto(
     [

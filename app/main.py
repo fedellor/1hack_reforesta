@@ -68,7 +68,7 @@ app = FastAPI(
     description=(
         "Backend API en tiempo real para centralizar subvenciones, ayudas, licitaciones públicas, "
         "programas europeos (LIFE, Horizon, Interreg, FEADER) y convocatorias privadas/fundaciones "
-        "de reforestación, gestión forestal y prevención/restauración de incendios en España (2020–2026)."
+        "de reforestación, gestión forestal y prevención/restauración de incendios en España (histórico desde 2016)."
     ),
     lifespan=lifespan,
 )
@@ -388,7 +388,7 @@ def get_map_summary(
     estado: str = Query(default="ACTIVA", description="ACTIVA | CERRADA | TODAS"),
     relevancia: str | None = Query(default=None, description="DIRECTA | INDIRECTA_ELEGIBLE"),
     categoria: str | None = Query(default=None, description="Filtrar por categoría temática"),
-    anio: int | None = Query(default=None, description="Filtrar por año de convocatoria (2020-2026)"),
+    anio: int | None = Query(default=None, description="Filtrar por año de convocatoria (desde 2016)"),
     incluir_nacionales_ue: bool = Query(
         default=True,
         description="Si es true, añade al resumen de cada CCAA el contador de ayudas Estatales (ES), Privadas Nacionales y Europeas (EU) aplicables en todo el territorio",
@@ -530,9 +530,9 @@ def list_opportunities(
         default=None,
         description="Si es true, devuelve únicamente convocatorias con pago anticipado sin exigencia de aval",
     ),
-    anio: int | None = Query(default=None, description="Año de convocatoria (2020-2026)"),
-    anio_desde: int | None = Query(default=None, description="Año inicial para rango histórico (ej. 2020)"),
-    anio_hasta: int | None = Query(default=None, description="Año final para rango histórico (ej. 2026)"),
+    anio: int | None = Query(default=None, description="Año de convocatoria (desde 2016, ej. 2026, 2027)"),
+    anio_desde: int | None = Query(default=None, description="Año inicial para rango histórico (ej. 2016)"),
+    anio_hasta: int | None = Query(default=None, description="Año final para rango histórico (sin límite fijo, ej. 2027)"),
     fecha_desde: date | None = Query(default=None, description="Fecha publicación desde (YYYY-MM-DD)"),
     fecha_hasta: date | None = Query(default=None, description="Fecha publicación hasta (YYYY-MM-DD)"),
     presupuesto_min: float | None = Query(default=None, description="Presupuesto total mínimo en EUR"),
@@ -546,7 +546,7 @@ def list_opportunities(
     limit: int = Query(default=50, ge=1, le=200),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
-    """Indexed SQL filter, search, prioritization and pagination across active and historical (2020-2026) calls."""
+    """Indexed SQL filter, search, prioritization and pagination across active and historical (desde 2016) calls."""
     stmt = select(Opportunity)
 
     if estado and estado.upper() != "TODAS":
@@ -706,7 +706,7 @@ def get_predictive_recurrence_calendar(
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     """
-    Predictive Annual Recurrence Calendar (2020-2026):
+    Predictive Annual Recurrence Calendar (desde 2016):
     Forecasts opening months and 45-day preparation windows for recurring forest/environmental calls
     so Reforesta can prepare technical memories before 10-day bulletin windows open.
     """
@@ -807,9 +807,9 @@ def get_opportunity_detail(
     return opp.to_api_dict()
 
 
-@app.get("/api/v1/stats/historical", tags=["Estadísticas e Histórico (2020-2026)"])
+@app.get("/api/v1/stats/historical", tags=["Estadísticas e Histórico (desde 2016)"])
 def get_historical_stats(session: Session = Depends(get_session)) -> dict[str, Any]:
-    """Return cached multi-year series (2020-2026), category breakdowns, and filter audit stats."""
+    """Return cached multi-year series (from 2016 to latest observed/closing year), category breakdowns, and filter audit stats."""
     cached = query_cache.get("stats:historical")
     if cached is not None:
         return cached
@@ -817,8 +817,13 @@ def get_historical_stats(session: Session = Depends(get_session)) -> dict[str, A
     all_opps = session.exec(select(Opportunity)).all()
     last_run = session.exec(select(IngestionRun).order_by(IngestionRun.id.desc())).first()
 
+    max_db_year = max(
+        [settings.get_today().year]
+        + [o.anio_convocatoria for o in all_opps]
+        + [o.fecha_fin_solicitud.year for o in all_opps if o.fecha_fin_solicitud]
+    )
     by_year: dict[int, dict[str, Any]] = {}
-    for yr in range(settings.ingest_start_year, settings.ingest_end_year + 1):
+    for yr in range(settings.ingest_start_year, max_db_year + 1):
         by_year[yr] = {"anio": yr, "total": 0, "activas": 0, "cerradas": 0, "presupuesto_eur": 0.0}
 
     by_category: dict[str, int] = {}
@@ -845,7 +850,7 @@ def get_historical_stats(session: Session = Depends(get_session)) -> dict[str, A
         by_relevance[o.relevancia_tipo] = by_relevance.get(o.relevancia_tipo, 0) + 1
 
     payload = {
-        "rango_historico": f"{settings.ingest_start_year}-{settings.ingest_end_year}",
+        "rango_historico": f"{settings.ingest_start_year}-{max_db_year}",
         "total_oportunidades": len(all_opps),
         "presupuesto_acumulado_eur": round(sum(o.presupuesto_total or 0.0 for o in all_opps), 2),
         "serie_anual": [by_year[k] for k in sorted(by_year.keys())],

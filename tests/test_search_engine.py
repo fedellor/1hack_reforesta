@@ -10,7 +10,12 @@ def _sample_miteco_activa() -> dict:
     return {
         "id": "bdns-923290",
         "codigoOficial": "BDNS-923290",
-        "titulo": "Ayudas MITECO 2026 (Línea A) para Proyectos de Protección del Medio Ambiente",
+        "titulo": "Ayudas MITECO 2026 (Línea A): Actividades de Interés General en Investigación Científica y Técnica y Protección del Medio Ambiente",
+        "tituloOriginal": (
+            "AYUDAS CONCURRENCIA COMPETITIVA LÍNEA A DESARROLLO ACTIVIDADES INTERÉS GENERAL "
+            "CONSIDERADAS INTERÉS SOCIAL, EN EL ÁMBITO DE LA INVESTIGACIÓN CIENTÍFICA Y TÉCNICA Y "
+            "PROTECCIÓN MEDIO AMBIENTE EN MATERIAS DE COMPETENCIA ESTATAL. ANUALIDAD 2026."
+        ),
         "organismo": "MINISTERIO PARA LA TRANSICIÓN ECOLÓGICA Y EL RETO DEMOGRÁFICO (MITECO)",
         "tipoFuente": "publica_estatal",
         "ambitoTerritorial": "Estatal",
@@ -144,3 +149,23 @@ def test_api_convocatorias_q_param_returns_miteco_and_madrid() -> None:
         r_empty = client.get("/api/convocatorias", params={"estado": "TODAS", "q": "xyznonexistentterm999"})
         assert r_empty.status_code == 200
         assert r_empty.json()["total"] == 0
+
+
+def test_miteco_exact_pasted_official_and_web_titles_match() -> None:
+    activa = _sample_miteco_activa()
+    q_bdns = (
+        "AYUDAS CONCURRENCIA COMPETITIVA LÍNEA A DESARROLLO ACTIVIDADES INTERÉS GENERAL "
+        "CONSIDERADAS INTERÉS SOCIAL, EN EL ÁMBITO DE LA INVESTIGACIÓN CIENTÍFICA Y TÉCNICA Y "
+        "PROTECCIÓN MEDIO AMBIENTE EN MATERIAS DE COMPETENCIA ESTATAL. ANUALIDAD 2026."
+    )
+    q_web = "Ayudas para actividades de interés general en investigación científica y técnica y protección del medio ambiente, 2026."
+
+    assert score_convocatoria_dict(activa, q_bdns) > 200
+    assert score_convocatoria_dict(activa, q_web) > 100
+
+    with TestClient(app) as client:
+        for query in (q_bdns, q_web):
+            r = client.get("/api/convocatorias", params={"estado": "TODAS", "q": query})
+            assert r.status_code == 200
+            data = r.json()
+            assert any(c["id"] == "bdns-923290" for c in data["convocatorias"]), f"No devolvió bdns-923290 para '{query}'"

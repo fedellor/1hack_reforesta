@@ -3,12 +3,14 @@ import asyncio
 from datetime import date, timedelta
 import json
 import logging
+import re
 import ssl
 from typing import Any
 import xml.etree.ElementTree as ET
 import httpx
 from app.ingestors.web_monitors import (
     PRIVATE_FOUNDATION_SOURCES,
+    PUBLIC_PORTAL_SOURCES,
     enrich_candidate_from_linked_pdf,
     poll_web_source,
 )
@@ -145,6 +147,7 @@ SOURCES_REGISTRY: list[dict[str, Any]] = [
     {"id": "es-bdns-pap", "nivel": "ESTADO", "nombre": "Portal de Administración Presupuestaria BDNS API (pap.hacienda.gob.es)", "tipo": "API_REST", "url": "https://www.pap.hacienda.gob.es/bdnstrans/ge/es/convocatorias", "idiomas": ["es", "ca", "gl", "eu"]},
     {"id": "es-boe-api", "nivel": "ESTADO", "nombre": "BOE - Boletín Oficial del Estado (Buscador y API Datos Abiertos)", "tipo": "API_REST_XML_JSON", "url": "https://www.boe.es/", "idiomas": ["es"]},
     {"id": "es-miteco", "nivel": "ESTADO", "nombre": "MITECO - Ministerio para la Transición Ecológica y el Reto Demográfico", "tipo": "MINISTERIO", "url": "https://www.miteco.gob.es/", "idiomas": ["es"]},
+    {"id": "es-aei-investigacion", "nivel": "ESTADO", "nombre": "AEI - Agencia Estatal de Investigación (Convocatorias Ambientales y Transición Ecológica)", "tipo": "WEB_OFICIAL", "url": "https://www.aei.gob.es/convocatorias/buscador-convocatorias", "idiomas": ["es", "ca", "gl", "eu"]},
     {"id": "es-fundacion-biodiversidad", "nivel": "ESTADO", "nombre": "Fundación Biodiversidad F.S.P. (MITECO)", "tipo": "FUNDACION_SECTOR_PUBLICO", "url": "https://www.fundacion-biodiversidad.es/", "idiomas": ["es"]},
     {"id": "es-placsp", "nivel": "ESTADO", "nombre": "PLACSP - Plataforma de Contratación del Sector Público (Licitaciones CPV Forestal/Incendios Estatal + Agregadas Locales)", "tipo": "ATOM_CODICE", "url": "https://contrataciondelestado.es/", "idiomas": ["es", "ca", "gl", "eu"]},
     # 3. 19 CCAA / CIUDADES AUTÓNOMAS
@@ -198,7 +201,7 @@ async def fetch_live_bdns_candidates(
     """
     Query the official BDNS / SNPSAP API concurrently across forestry/biodiversity terms
     spanning State, CCAA, Diputaciones, Concellos, Ayuntamientos and Ajuntaments,
-    including both open calls (`abierto=true`), recent calls, and historical archive (2020-2026).
+    including open calls (`abierto=true`), recent calls, and historical archive (desde 2016).
     """
     search_terms = keywords or [
         "reforestación",
@@ -221,6 +224,14 @@ async def fetch_live_bdns_candidates(
         "desbroce",
         "sumideros de carbono",
         "viveros forestales",
+        "protección medio ambiente",
+        "medio ambiente",
+        "transición ecológica",
+        "investigación científica",
+        "cambio climático",
+        "despoblación",
+        "interés social",
+        "parques nacionales",
     ]
     candidates: list[RawCandidate] = []
     seen_codes: set[str] = set()
@@ -260,6 +271,7 @@ async def fetch_live_bdns_candidates(
         term: str,
         only_open: bool = False,
         fecha_desde: str | None = None,
+        fecha_hasta: str | None = None,
         page: int = 0,
         page_size: int | None = None,
     ) -> list[dict[str, Any]]:
@@ -275,6 +287,8 @@ async def fetch_live_bdns_candidates(
                 params["abierto"] = "true"
             else:
                 params["fechaDesde"] = fecha_desde or recent_desde
+                if fecha_hasta:
+                    params["fechaHasta"] = fecha_hasta
             data = await _get_json_with_retry(client, BDNS_SEARCH_URL, params=params, attempts=3)
             if not data:
                 return []
@@ -390,29 +404,62 @@ async def fetch_live_bdns_candidates(
             logger.debug("BDNS detail enrichment for '%s' skipped: %s", num_conv, exc)
 
     async with _make_async_client(timeout=timeout, headers=headers) as client:
-        open_queries = [_query_term(client, t, only_open=True, page_size=100) for t in search_terms[:16]]
+        open_queries = [_query_term(client, t, only_open=True, page_size=100) for t in search_terms]
         recent_queries = [_query_term(client, t, only_open=False) for t in search_terms]
         hist_queries: list[Any] = []
         if include_historical and keywords is None:
             hist_terms = [
+                "protección medio ambiente",
+                "concurrencia competitiva línea a",
                 "reforestación",
+                "restauración forestal",
+                "biodiversidad",
+                "incendios forestales",
+                "investigación científica",
+                "cambio climático",
                 "repoblación",
                 "selvícola",
                 "silvícola",
-                "restauración forestal",
-                "incendios forestales",
                 "montes",
                 "forestal",
-                "biodiversidad",
                 "arbolado",
+                "transición ecológica",
+                "interés social",
+                "despoblación",
             ]
+            # Split into disjoint multi-year cohorts from 2016 onward (no upper ceiling)
+            # so older editions (2016-2021) are not crowded out by 100-item page limits.
+            for ht in hist_terms[:10]:
+                hist_queries.append(
+                    _query_term(
+                        client,
+                        ht,
+                        only_open=False,
+                        fecha_desde="01/01/2016",
+                        fecha_hasta="31/12/2018",
+                        page=0,
+                        page_size=100,
+                    )
+                )
+            for ht in hist_terms[:12]:
+                hist_queries.append(
+                    _query_term(
+                        client,
+                        ht,
+                        only_open=False,
+                        fecha_desde="01/01/2019",
+                        fecha_hasta="31/12/2021",
+                        page=0,
+                        page_size=100,
+                    )
+                )
             for idx_h, ht in enumerate(hist_terms):
                 hist_queries.append(
-                    _query_term(client, ht, only_open=False, fecha_desde="01/01/2020", page=0, page_size=100)
+                    _query_term(client, ht, only_open=False, fecha_desde="01/01/2022", page=0, page_size=100)
                 )
-                if idx_h < 4:
+                if idx_h < 8:
                     hist_queries.append(
-                        _query_term(client, ht, only_open=False, fecha_desde="01/01/2020", page=1, page_size=100)
+                        _query_term(client, ht, only_open=False, fecha_desde="01/01/2022", page=1, page_size=100)
                     )
 
         raw_batches = await asyncio.gather(*(open_queries + recent_queries + hist_queries))
@@ -486,23 +533,55 @@ async def fetch_live_bdns_candidates(
                     to_enrich.append((cand, num_conv, is_from_open_query or bool(item.get("abierto"))))
 
         if to_enrich:
-            # Phase 1: Always enrich open & recent (>= 2026) calls first so dates/PDFs never drop under 429 load
-            # Phase 2: Enrich top remaining 2020-2025 historical items cleanly after a brief pause
-            to_enrich.sort(
-                key=lambda triple: (1 if triple[2] else 0, int(triple[1]) if triple[1].isdigit() else 0),
-                reverse=True,
-            )
-            priority_items = [
-                (c, n)
-                for c, n, is_open in to_enrich
-                if is_open or (n.isdigit() and int(n) >= 875000)
-            ][:140]
-            priority_ids = {n for _, n in priority_items}
-            hist_items = [(c, n) for c, n, _ in to_enrich if n not in priority_ids][:140]
+            # Phase 1: Enrich all open, recent (>= 2025) and NGO-strategic calls first
+            # Phase 2: Round-robin enrich historical cohorts (2016-2024) so every year gets beneficiaries & PDFs
+            def _cand_year(c: RawCandidate, num: str) -> int:
+                f_str = str(c.fecha_publicacion or "")[:4]
+                if f_str.isdigit():
+                    return int(f_str)
+                return 2026 if (num.isdigit() and int(num) >= 875000) else 2021
+
+            priority_items: list[tuple[RawCandidate, str]] = []
+            hist_buckets: dict[int, list[tuple[RawCandidate, str]]] = {}
+            for cand, num_conv, is_open in to_enrich:
+                yr_c = _cand_year(cand, num_conv)
+                t_low = f"{cand.titulo} {cand.organo_convocante}".lower()
+                is_strategic_ngo = any(
+                    k in t_low for k in ("sin ánimo de lucro", "interés social", "miteco", "biodiversidad", "transición ecológica")
+                )
+                if is_open or yr_c >= 2025 or is_strategic_ngo:
+                    priority_items.append((cand, num_conv))
+                else:
+                    hist_buckets.setdefault(yr_c, []).append((cand, num_conv))
+
+            priority_items.sort(key=lambda pair: int(pair[1]) if pair[1].isdigit() else 0, reverse=True)
+            priority_items = priority_items[:260]
+            seen_prio = {n for _, n in priority_items}
+
+            hist_items: list[tuple[RawCandidate, str]] = []
+            year_keys = sorted(hist_buckets.keys(), reverse=True)
+            for k in year_keys:
+                hist_buckets[k].sort(key=lambda pair: int(pair[1]) if pair[1].isdigit() else 0, reverse=True)
+            idx_rr = 0
+            while len(hist_items) < 380 and year_keys:
+                added_any = False
+                for yk in year_keys:
+                    bucket = hist_buckets[yk]
+                    if idx_rr < len(bucket):
+                        pair = bucket[idx_rr]
+                        if pair[1] not in seen_prio:
+                            hist_items.append(pair)
+                            seen_prio.add(pair[1])
+                            added_any = True
+                            if len(hist_items) >= 380:
+                                break
+                if not added_any:
+                    break
+                idx_rr += 1
 
             await asyncio.gather(*[_enrich_bdns_detail(client, c, n) for c, n in priority_items])
             if hist_items:
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.4)
                 await asyncio.gather(*[_enrich_bdns_detail(client, c, n) for c, n in hist_items])
 
     return candidates
@@ -518,6 +597,27 @@ async def fetch_live_boe_candidates(
     headers = {"Accept": "application/json", "User-Agent": "1hack_reforesta/2.0"}
     today = date.today()
     sem = asyncio.Semaphore(5)
+    # Keep BOE Sections 1 (General/Urgency Decrees), 3 (Subsidies/Grants), and 5A (Public Procurement).
+    # Drop Sections 2/2A/2B (Civil Service/HR), 4 (Justice), 5B/5C (Water concessions, Costas, Mining, Notices).
+    skip_boe_section_codes = {"2", "2A", "2B", "4", "5B", "5C", "T"}
+    skip_boe_title_re = re.compile(
+        r"\b(?:"
+        r"declaraci[oó]n\s+(?:de\s+)?impacto\s+ambiental|informe\s+de\s+impacto\s+ambiental|"
+        r"declaraci[oó]n\s+ambiental\s+estrat[eé]gica|evaluaci[oó]n\s+de\s+impacto\s+ambiental|"
+        r"autorizaci[oó]n\s+administrativa\s+(?:previa|de\s+construcci[oó]n)|"
+        r"parque\s+e[oó]lico|planta\s+(?:solar\s+)?fotovoltaica|m[oó]dulos?\s+fotovoltaicos?|"
+        r"hibridaci[oó]n.*fotovoltaic|nudo\s+de\s+transici[oó]n\s+justa|capacidad\s+de\s+acceso.*red\s+de\s+transporte|"
+        r"contadores\s+inteligentes|productos\s+petrol[ií]feros|residuos\s+radioactivos|"
+        r"exploraci[oó]n\s+minera|f[aá]brica\s+m[oó]vil\s+de\s+explosivos|aparatos\s+radiactivos|"
+        r"concesi[oó]n\s+de\s+aguas|aprovechamiento\s+de\s+[\d.,]+\s*l/s|extinci[oó]n\s+del\s+derecho|"
+        r"autorizaci[oó]n\s+de\s+vertido|c[aá]non(?:es)?\s+de\s+regulaci[oó]n|tarifas?\s+de\s+utilizaci[oó]n\s+del\s+agua|"
+        r"dominio\s+p[uú]blico\s+mar[ií]timo[-\s]?terrestre|demarcaci[oó]n\s+de\s+costas|pantal[aá]n\b|"
+        r"libre\s+designaci[oó]n|provisi[oó]n\s+de\s+puestos\s+de\s+trabajo|concurso\s+espec[ií]fico|"
+        r"admitidas\s+y\s+excluidas|proceso\s+selectivo\s+para\s+ingreso|"
+        r"deslinde\s+de\s+(?:los\s+)?terrenos|corta\s+de\s+\d+\s+(?:chopos|[aá]rboles)"
+        r")\b",
+        re.IGNORECASE,
+    )
 
     def _abs_boe_url(raw_url: str) -> str:
         u = raw_url.strip()
@@ -546,6 +646,12 @@ async def fetch_live_boe_candidates(
                     if isinstance(secciones, dict):
                         secciones = [secciones]
                     for sec in secciones:
+                        sec_code = str(sec.get("codigo") or "").strip().upper()
+                        sec_name = str(sec.get("nombre") or "").strip().lower()
+                        if sec_code in skip_boe_section_codes or any(
+                            k in sec_name for k in ("autoridades y personal", "justicia", "otros anuncios")
+                        ):
+                            continue
                         dept_list = sec.get("departamento", [])
                         if isinstance(dept_list, dict):
                             dept_list = [dept_list]
@@ -565,6 +671,8 @@ async def fetch_live_boe_candidates(
                                     ident = str(it.get("identificador", "")).strip()
                                     titulo = str(it.get("titulo", "")).strip()
                                     if not ident or not titulo:
+                                        continue
+                                    if skip_boe_title_re.search(titulo):
                                         continue
                                     url_pdf_obj = it.get("url_pdf", {})
                                     url_pdf_raw = (
@@ -620,6 +728,7 @@ async def fetch_live_eu_sedia_candidates(
         "LIFE Nature OR habitat restoration OR riparian restoration OR urban greening",
         "agroforestry OR carbon sink OR carbon farming OR Natura 2000",
         "Interreg OR Iberian OR dehesa OR forest management",
+        "biodiversity conservation OR ecosystem restoration OR soil mission OR climate research",
     ]
     sem = asyncio.Semaphore(5)
     query_blob = json.dumps(
@@ -996,26 +1105,49 @@ async def fetch_live_private_foundation_candidates(timeout: float = 5.0) -> list
     )
 
 
+async def fetch_live_public_portal_candidates(timeout: float = 6.5) -> list[RawCandidate]:
+    """
+    Poll official Spanish ministerial and public R&D portals (MITECO Línea A / Biodiversidad / ESAL /
+    LIFE / PRTR, Fundación Biodiversidad WP REST API, and AEI) to ensure no flagship call is missed.
+    """
+    return await _gather_web_monitors(
+        sources=PUBLIC_PORTAL_SOURCES,
+        timeout=timeout,
+        user_agent="1hack_reforesta/2.0 (Public Portal Monitor)",
+        max_concurrency=6,
+    )
+
+
 async def enrich_candidates_with_linked_pdfs(
     candidates: list[RawCandidate],
     timeout: float = 5.0,
-    max_downloads: int = 15,
+    max_downloads: int = 30,
     api_key_override: str | None = None,
 ) -> int:
     """
-    Follow linked PDFs for sparse extract candidates (< 900 chars) concurrently, extract full
-    text + CPVs + budgets + deadlines (with OCR fallback), and return the count of enriched records.
+    Follow linked PDFs for sparse extracts (< 900 chars) and private/biodiversity foundation calls
+    concurrently, extracting full text + CPVs + budgets + deadlines (with OCR fallback).
     """
-    targets: list[RawCandidate] = []
+    foundation_targets: list[RawCandidate] = []
+    other_targets: list[RawCandidate] = []
     for cand in candidates:
-        if len(targets) >= max_downloads:
-            break
-        if cand.fuente != "FUENTES_PDF" and len(cand.texto or "") < 900 and (
+        has_doc = bool(
             cand.url_bases_reguladoras
             or cand.url_boletin_extracto
             or (cand.url_ficha_oficial and ".pdf" in cand.url_ficha_oficial.lower())
-        ):
-            targets.append(cand)
+        )
+        if cand.fuente == "FUENTES_PDF" or not has_doc:
+            continue
+        is_found_pdf = cand.fuente in ("FUNDACION_PRIVADA", "FUNDACION_BIODIVERSIDAD") and (
+            (cand.url_bases_reguladoras and ".pdf" in cand.url_bases_reguladoras.lower())
+            or (cand.url_ficha_oficial and ".pdf" in cand.url_ficha_oficial.lower())
+        )
+        if is_found_pdf:
+            foundation_targets.append(cand)
+        elif len(cand.texto or "") < 900:
+            other_targets.append(cand)
+
+    targets = (foundation_targets + other_targets)[:max_downloads]
 
     if not targets:
         return 0

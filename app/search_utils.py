@@ -40,6 +40,8 @@ _GRUPOS_EQUIVALENTES: list[list[str]] = [
     ["cataluna", "catalunya"],
     ["illes balears", "islas baleares", "baleares"],
     ["pais vasco", "euskadi"],
+    ["aei", "agencia estatal de investigacion"],
+    ["fbbva", "fundacion bbva"],
 ]
 
 _EXPANSIONES_ORIGEN: dict[str, list[str]] = {
@@ -162,7 +164,9 @@ def score_convocatoria_dict(conv: dict[str, Any], query: str | None) -> int:
 
     codigo = normalize_search_text(f"{conv.get('codigoOficial', '')} {cid}")
     codigo_compacto = codigo.replace(" ", "")
-    titulo = normalize_search_text(conv.get("titulo"))
+    titulo = normalize_search_text(
+        f"{conv.get('titulo') or ''} {conv.get('tituloOriginal') or ''}"
+    )
     organismo = normalize_search_text(conv.get("organismo"))
     territorio = normalize_search_text(
         " ".join(

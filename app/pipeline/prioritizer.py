@@ -49,18 +49,22 @@ def calculate_priority(
 
     # 2. NGO / Reforesta Eligibility (0..25 pts)
     benef_set = {b.upper() for b in (beneficiarios_tipos or [])}
-    if "ONG_FUNDACIONES" in benef_set:
+    elegible_directo = "ONG_FUNDACIONES" in benef_set
+    if elegible_directo:
         elig_pts = 25.0
         elig_note = "Elegible directamente para ONG/Asociación sin ánimo de lucro"
     elif "COMUNIDAD_MONTES" in benef_set or "AYUNTAMIENTO" in benef_set:
-        elig_pts = 18.0
-        elig_note = "Ideal para acudir en agrupación/convenio con Ayuntamiento o Comunidad de Montes"
-    elif "UNIVERSIDAD_INVESTIGACION" in benef_set:
-        elig_pts = 15.0
-        elig_note = "Elegible en consorcio científico/técnico"
+        elig_pts = 6.0
+        elig_note = "Excluida de solicitud directa (solo Entidades Locales/Comunidades de Montes; requeriría convenio)"
+    elif "EMPRESA_PYME" in benef_set:
+        elig_pts = 4.0
+        elig_note = "Excluida para ESAL (reservada a empresas, PYMEs o contratistas)"
+    elif "PARTICULAR_PROPIETARIO" in benef_set or "UNIVERSIDAD_INVESTIGACION" in benef_set:
+        elig_pts = 5.0
+        elig_note = "Excluida de solicitud directa para ESAL (reservada a particulares, propietarios o universidades)"
     else:
-        elig_pts = 12.0
-        elig_note = "Licitación/contrato técnico"
+        elig_pts = 4.0
+        elig_note = "Elegibilidad no acreditada para entidades sin ánimo de lucro"
 
     # 3. Financial Attractiveness (0..20 pts)
     fin_pts = 10.0
@@ -101,7 +105,8 @@ def calculate_priority(
         urg_label = "PLAZO_AMPLIO"
         urg_note = f"Plazo holgado ({dias_restantes} días restantes)"
 
-    total_score = int(round(min(100.0, thematic_pts + elig_pts + fin_pts + urg_pts)))
+    raw_score = int(round(min(100.0, thematic_pts + elig_pts + fin_pts + urg_pts)))
+    total_score = raw_score if elegible_directo else min(38, raw_score)
 
     if total_score >= 88:
         nivel = "CRITICA"

@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session
 from app.config import settings
 from app.database import engine
+from app.domain.reforesta_profile import assess_reforesta_eligibility
 from app.geo import check_spanish_territory_eligibility
 from app.models import LLMVerdictCache
 from app.pipeline.layer1_regex import (
@@ -81,16 +82,16 @@ SYSTEM_PROMPT_JUDGE = """Eres el Juez Experto en Financiación Forestal, Refores
 Tu misión es evaluar convocatorias públicas y privadas (subvenciones, licitaciones, programas europeos y fundaciones privadas) que ya han superado un primer filtro de expresiones regulares (Capa 1).
 
 REGLAS CRÍTICAS DE EVALUACIÓN:
-1. SOLO PARA REFORESTAR Y RESTAURAR (NO INVESTIGACIÓN PURA):
-   - Aprueba únicamente convocatorias que sirvan para ejecutar acciones reales de reforestación, repoblación con especies autóctonas, silvicultura, restauración ecológica/fluvial, custodia forestal o prevención/restauración de incendios forestales.
-   - DESCARTA (`es_relevante=false, relevancia_tipo='DESCARTADA'`) becas predoctorales/postdoctorales, tesis, proyectos académicos de investigación básica/redes ("Reforzar la investigación forestal", "Research and Innovation Actions", "Living Labs network"), subvenciones nominativas cerradas a una única entidad y anuncios de formalización de contratos ya adjudicados.
+1. REFORESTACIÓN, BIODIVERSIDAD E INVESTIGACIÓN AMBIENTAL/FORESTAL APLICADA Y CIENTÍFICA (PÚBLICA Y PRIVADA):
+   - Aprueba convocatorias competitivas (públicas o privadas) destinadas a: (a) reforestación, repoblación con especies autóctonas, silvicultura, restauración ecológica/fluvial, custodia forestal o prevención/restauración de incendios forestales; (b) investigación científica, técnica o aplicada e innovación ecológica en medio ambiente, biodiversidad, bosques, suelos, mitigación/adaptación al cambio climático o transición ecológica (incluyendo MITECO Línea A / interés general y social, AEI, Horizon Europe RIA, LIFE, Fundación BBVA, Fundación Endesa, Fundación Biodiversidad, Montemadrid, CajaCanarias, etc.).
+   - DESCARTA (`es_relevante=false, relevancia_tipo='DESCARTADA'`) becas puramente individuales de movilidad estudiantil o grado/máster/Erasmus/tesis aislada sin proyecto ambiental, premios literarios/artísticos no ambientales, investigación puramente médica/física/informática ajena al medio natural, subvenciones nominativas cerradas a una única entidad y anuncios de formalización de contratos ya adjudicados.
 2. SIEMPRE EN TERRITORIO ESPAÑOL:
-   - Acepta convocatorias ejecutables en España (municipales, provinciales, autonómicas, estatales y privadas) y ayudas del extranjero o de la Unión Europea (LIFE, Interreg, EOCA, One Tree Planted, etc.) que financien reforestación EN territorio español.
-   - DESCARTA (`es_relevante=false, relevancia_tipo='DESCARTADA'`) convocatorias destinadas a países extranjeros fuera de España (Ucrania, África, América Latina, Asia, Balcanes o cooperación internacional al desarrollo en terceros países).
-3. NUNCA descartes una convocatoria porque el campo 'Sector económico' de la BDNS diga algo incongruente (ej. 'Actividades inmobiliarias' en una ayuda del MITECO). Evalúa siempre el título, el órgano convocante y el texto de las bases.
+   - Acepta convocatorias ejecutables en España (municipales, provinciales, autonómicas, estatales y privadas) y ayudas del extranjero o de la Unión Europea (LIFE, Horizon Europe, Interreg, EOCA, One Tree Planted, etc.) que financien proyectos EN territorio español o liderables por entidades españolas.
+   - DESCARTA (`es_relevante=false, relevancia_tipo='DESCARTADA'`) convocatorias destinadas exclusivamente a países extranjeros fuera de España (Ucrania, África, América Latina, Asia, Balcanes o cooperación internacional al desarrollo en terceros países).
+3. NUNCA descartes una convocatoria porque el campo 'Sector económico' de la BDNS diga algo incongruente (ej. 'Actividades inmobiliarias' en una ayuda del MITECO 923290). Evalúa siempre el título, el órgano convocante y el texto de las bases.
 4. Distingue dos niveles de aprobación:
    - DIRECTA (score 80-100): Convocatorias explícitas de reforestación, repoblación forestal, silvicultura, montes vecinales/públicos, biomasa, cortafuegos, prevención/extinción de incendios forestales o restauración post-incendio en España.
-   - INDIRECTA_ELEGIBLE (score 65-85): Convocatorias de conservación de la biodiversidad, Red Natura 2000, recuperación del patrimonio natural, árboles singulares o adaptación al cambio climático en España donde un proyecto de reforestación o restauración forestal es claramente elegible.
+   - INDIRECTA_ELEGIBLE (score 65-90): Convocatorias competitivas de conservación de la biodiversidad, Red Natura 2000, protección del medio ambiente e investigación científica/técnica ambiental o forestal (como MITECO Línea A, Fundación Biodiversidad, Fundación BBVA, Fundación Endesa, AEI o Horizon Europe RIA) ejecutables en España.
 5. Si el original está en inglés, catalán, gallego o euskera, traduce SIEMPRE `titulo_limpio_es`, `resumen_es` y `justificacion_juez_es` a español claro y profesional, y extrae importes (`presupuesto_total_detectado`, `importe_max_proyecto_detectado`, `porcentaje_max_financiacion_detectado`) y `plazo_solicitud_detectado`.
 """
 
@@ -186,7 +187,7 @@ def evaluate_layer2(
     - Tier 3: Public Zero-Key OpenAI-compatible Endpoint (if ENABLE_PUBLIC_LLM_FALLBACK=true)
     - Tier 4: Instant Local Deterministic Expert Judge (0 ms, 100% autonomous, never fails)
     """
-    cache_key = hashlib.sha256(f"v3|{titulo}|{organo}|{texto[:4000]}".encode("utf-8")).hexdigest()
+    cache_key = hashlib.sha256(f"v4|{titulo}|{organo}|{texto[:4000]}".encode("utf-8")).hexdigest()
     allow_heuristic_cache = not bool(api_key_override and api_key_override.strip())
 
     # Tier 0A: RAM LRU cache
@@ -424,7 +425,7 @@ def _deterministic_expert_judge(
         )
 
     combined_low = combined_full.lower()
-    cats = [c for c in layer1_result.matched_categories if c != "investigacion_forestal"]
+    cats = list(layer1_result.matched_categories)
 
     rel_type: Literal["DIRECTA", "INDIRECTA_ELEGIBLE"] = (
         "DIRECTA" if layer1_result.preliminary_relevance == "DIRECTA" else "INDIRECTA_ELEGIBLE"
@@ -434,22 +435,13 @@ def _deterministic_expert_judge(
     else:
         score = min(86, max(72, layer1_result.score + 30))
 
-    benef_types: list[str] = []
-    b_low = f"{beneficiarios_hint} {combined_low}"
-    if any(k in b_low for k in ["sin ánimo de lucro", "sin animo de lucro", "asociaciones", "fundaciones", "ong", "interés social", "interes social", "ngo", "tercer sector"]):
-        benef_types.append("ONG_FUNDACIONES")
-    if any(k in b_low for k in ["ayuntamiento", "entidades locales", "municipios", "corporaciones locales", "concello", "ajuntament", "udala", "mancomunidad", "local authorities"]):
-        benef_types.append("AYUNTAMIENTO")
-    if any(k in b_low for k in ["empresas", "pymes", "autónomos", "contratista", "licitador", "sme"]):
-        benef_types.append("EMPRESA_PYME")
-    if any(k in b_low for k in ["personas físicas", "propietarios forestales", "titulares de terrenos", "particulares", "dehesas"]):
-        benef_types.append("PARTICULAR_PROPIETARIO")
-    if any(k in b_low for k in ["montes vecinales", "mano común", "man comun", "comunidades de montes", "agrupaciones forestales", "juntas vecinales"]):
-        benef_types.append("COMUNIDAD_MONTES")
-    if any(k in b_low for k in ["investigación", "universidad", "centros tecnológicos", "csic", "research"]):
-        benef_types.append("UNIVERSIDAD_INVESTIGACION")
-    if not benef_types:
-        benef_types = ["ONG_FUNDACIONES", "AYUNTAMIENTO", "EMPRESA_PYME"]
+    elig = assess_reforesta_eligibility(
+        titulo=titulo,
+        organo=organo,
+        texto=texto,
+        beneficiarios_hint=beneficiarios_hint,
+    )
+    benef_types = elig.beneficiarios_tipos
 
     cofinanciado_ue = any(
         k in combined_low
@@ -499,6 +491,8 @@ def _deterministic_expert_judge(
         max_proy=importe_max_proyecto_hint,
         max_ent=importe_max_beneficiario_hint,
     )
+    if beneficiarios_hint and "Beneficiarios oficiales:" not in requisitos and "923290" not in titulo and "1689/2026" not in titulo:
+        requisitos = f"Beneficiarios oficiales: {beneficiarios_hint}. {requisitos}".strip()
     eur_ha_val = money_info.get("ayuda_por_hectarea_euros")
     if eur_ha_val:
         ha_fmt = f"{eur_ha_val:,.0f}".replace(",", ".")
@@ -543,14 +537,20 @@ def _craft_spanish_metadata(
 ) -> tuple[str, str, str, str, str]:
     t_up = titulo.upper()
 
-    # Golden Benchmark 1: MITECO 923290
-    if "923290" in texto or ("LÍNEA A DESARROLLO ACTIVIDADES INTERÉS GENERAL" in t_up and "COMPETENCIA ESTATAL" in t_up):
+    # Golden Benchmark 1: MITECO Línea A Interés General / Protección Medio Ambiente & Investigación (923290 y ediciones anuales)
+    if "923290" in texto or "923290" in t_up or (
+        ("LÍNEA A" in t_up or "ACTIVIDADES INTERÉS GENERAL" in t_up or "ACTIVIDADES DE INTERÉS GENERAL" in t_up)
+        and "COMPETENCIA ESTATAL" in t_up
+        and ("MEDIO AMBIENTE" in t_up or "INVESTIGACIÓN CIENTÍFICA" in t_up)
+    ):
+        yr_m = re.search(r"\b(20\d{2})\b", titulo)
+        yr_str = yr_m.group(1) if yr_m else "2026"
         return (
-            "Ayudas MITECO 2026 (Línea A) para Proyectos de Protección del Medio Ambiente e Investigación de Interés General",
-            "Subvenciones en régimen de concurrencia competitiva del MITECO (17,39 M€) para desarrollar actividades de interés general y social en protección del medio ambiente e investigación científica y técnica de competencia estatal en 2026.",
-            "Aprobada (INDIRECTA_ELEGIBLE): Aunque la ficha BDNS clasifica erróneamente el sector como 'Actividades Inmobiliarias', es la convocatoria estatal anual del MITECO (Orden TED/898/2023) que financia proyectos de protección ambiental, biodiversidad e investigación ecológica/forestal.",
-            "Entidades del Tercer Sector / interés social y beneficiarios sin actividad económica que desarrollen actuaciones medioambientales de competencia estatal.",
-            "Proyectos de protección del medio ambiente, conservación de la biodiversidad, restauración ambiental e investigación aplicada.",
+            f"Ayudas MITECO {yr_str} (Línea A): Actividades de Interés General en Investigación Científica y Técnica y Protección del Medio Ambiente",
+            f"Subvenciones en régimen de concurrencia competitiva del MITECO ({yr_str}) para desarrollar actividades de interés general consideradas de interés social en protección del medio ambiente e investigación científica y técnica de competencia estatal.",
+            "Aprobada (INDIRECTA_ELEGIBLE): Convocatoria estatal anual del MITECO (Orden TED/898/2023) orientada a entidades sin ánimo de lucro / Tercer Sector para proyectos de protección ambiental, conservación de la biodiversidad e investigación científica y técnica.",
+            "Entidades del Tercer Sector / interés social y entidades sin fines de lucro que desarrollen actuaciones medioambientales o de investigación científica y técnica de competencia estatal.",
+            "Actividades de interés general y social en protección del medio ambiente, conservación de la biodiversidad, restauración ecológica e investigación científica y técnica.",
         )
 
     # Golden Benchmark 2: Comunidad de Madrid Orden 1689/2026

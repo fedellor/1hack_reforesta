@@ -7,7 +7,7 @@ from sqlmodel import Field, SQLModel
 
 
 class Opportunity(SQLModel, table=True):
-    """Unified model for grants, subsidies, public tenders, EU calls and private funds (2020-2026)."""
+    """Unified model for grants, subsidies, public tenders, EU calls and private funds (desde 2016)."""
 
     __tablename__ = "opportunities"
     __table_args__ = (
@@ -119,6 +119,7 @@ class Opportunity(SQLModel, table=True):
             importe_max_proyecto=din["importe_max_proyecto"],
             nivel_territorial=self.nivel_territorial,
         )
+        elig, merged_dealbreakers = self._evaluate_reforesta_eligibility()
         return {
             "id": self.id,
             "codigo_oficial": self.codigo_oficial,
@@ -182,12 +183,14 @@ class Opportunity(SQLModel, table=True):
                 "etiqueta_front": din["etiqueta_front"],
             },
             "beneficiarios": {
-                "tipos": self.beneficiarios_tipos or [],
+                "tipos": self.beneficiarios_tipos or elig.beneficiarios_tipos,
+                "elegible_reforesta": elig.elegible,
+                "motivo_elegibilidad": elig.motivo_elegibilidad,
                 "descripcion_requisitos": self.requisitos_resumen,
                 "gastos_subvencionables": self.gastos_subvencionables,
                 "criterios_valoracion": self.criterios_valoracion or [],
                 "citas_bases": self.citas_bases or [],
-                "dealbreakers": self.dealbreakers or [],
+                "dealbreakers": merged_dealbreakers,
             },
             "fechas": {
                 "anio_convocatoria": self.anio_convocatoria,
@@ -214,6 +217,46 @@ class Opportunity(SQLModel, table=True):
                 "fecha_ingesta": self.fecha_ingesta.isoformat() if self.fecha_ingesta else None,
             },
         }
+
+    def _evaluate_reforesta_eligibility(self):
+        from app.domain.reforesta_profile import assess_reforesta_eligibility
+
+        elig = assess_reforesta_eligibility(
+            titulo=self.titulo_original or self.titulo_limpio,
+            organo=self.organo_convocante,
+            texto=self.resumen or "",
+            beneficiarios_hint="",
+            tipo_oportunidad=self.tipo_oportunidad,
+            nivel_territorial=self.nivel_territorial,
+            ccaa_codigo=self.ccaa_codigo,
+            ccaa_nombre=self.ccaa_nombre,
+            requisitos_resumen=self.requisitos_resumen or "",
+            codigo_oficial=self.codigo_oficial,
+            justificacion_juez=self.justificacion_juez or "",
+        )
+        stored_types = self.beneficiarios_tipos or []
+        # Preserve ingestion-verified NGO eligibility from deep PDF/full text when no conflicting ban exists
+        if (
+            not elig.elegible
+            and "ONG_FUNDACIONES" in stored_types
+            and elig.beneficiarios_tipos == ["NO_ESPECIFICADO"]
+            and not any(
+                any(k in db.lower() for k in ("domicilio", "excluyen", "licitación", "reservada"))
+                for db in (self.dealbreakers or [])
+            )
+        ):
+            from app.domain.reforesta_profile import ReforestaEligibility
+
+            elig = ReforestaEligibility(
+                elegible=True,
+                beneficiarios_tipos=stored_types,
+                motivo_elegibilidad=(
+                    f"Apta para Asociación Reforesta ({', '.join(stored_types)}). {self.justificacion_juez}"
+                ).strip(),
+                dealbreakers=[],
+            )
+        merged_dealbreakers = list(dict.fromkeys([*(elig.dealbreakers or []), *(self.dealbreakers or [])]))
+        return elig, merged_dealbreakers
 
     def _default_matching_lineas(self) -> dict[str, int]:
         cats = set(self.categorias or [])
@@ -248,7 +291,14 @@ class Opportunity(SQLModel, table=True):
             "PROVINCIA": "publica_autonomica",
             "MUNICIPIO": "publica_autonomica",
         }
-        tipo_fuente = tipo_fuente_map.get(self.nivel_territorial, "publica_autonomica")
+        if (
+            self.nivel_territorial == "PRIVADA"
+            or self.tipo_oportunidad == "CONVOCATORIA_PRIVADA"
+            or self.fuente == "FUNDACION_PRIVADA"
+        ):
+            tipo_fuente = "privada_rsc"
+        else:
+            tipo_fuente = tipo_fuente_map.get(self.nivel_territorial, "publica_autonomica")
 
         dias = self.dias_restantes if self.dias_restantes is not None else 0
         if dias <= 12:
@@ -268,17 +318,9 @@ class Opportunity(SQLModel, table=True):
             or min(presupuesto, 120000)
         )
 
-        elegible = "ONG_FUNDACIONES" in (self.beneficiarios_tipos or []) or self.tipo_oportunidad != "LICITACION"
-        if elegible:
-            motivo_elegibilidad = (
-                f"Elegible para Reforesta ({', '.join(self.beneficiarios_tipos or ['ONG_FUNDACIONES'])}). "
-                f"{self.justificacion_juez}"
-            )
-        else:
-            motivo_elegibilidad = (
-                "Contrato/convocatoria orientada principalmente a empresas o entes locales; "
-                "Reforesta puede concurrir en agrupación/UTE o como asistencia técnica."
-            )
+        elig, merged_dealbreakers = self._evaluate_reforesta_eligibility()
+        elegible = elig.elegible
+        motivo_elegibilidad = elig.motivo_elegibilidad
 
         acciones = [
             s.strip()
@@ -371,6 +413,7 @@ class Opportunity(SQLModel, table=True):
             "id": self.id,
             "codigoOficial": self.codigo_oficial,
             "titulo": self.titulo_limpio,
+            "tituloOriginal": self.titulo_original or self.titulo_limpio,
             "organismo": self.organo_convocante,
             "tipoFuente": tipo_fuente,
             "ambitoTerritorial": ambito_territorial,
@@ -394,7 +437,7 @@ class Opportunity(SQLModel, table=True):
             "dinero": front_meta["dinero"],
             "elegible": elegible,
             "motivoElegibilidad": motivo_elegibilidad,
-            "dealbreakers": self.dealbreakers or [],
+            "dealbreakers": merged_dealbreakers,
             "matchingGlobal": self.prioridad_score or self.relevancia_score,
             "matchingLineas": self.matching_lineas or self._default_matching_lineas(),
             "citasBasesJustificacion": citas,

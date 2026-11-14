@@ -25,9 +25,9 @@ class Settings(BaseSettings):
     openrouter_model: str = "google/gemini-2.0-flash-lite-preview-02-05:free"
     enable_public_llm_fallback: bool = False  # Optional zero-key public LLM endpoint
 
-    # Live Database & Ingestion Settings (2020-2026)
-    ingest_start_year: int = 2020
-    ingest_end_year: int = 2026
+    # Live Database & Ingestion Settings (desde 2016, sin límite superior rígido)
+    ingest_start_year: int = 2016
+    ingest_end_year: int = 2028
     ingest_concurrency: int = 12
     layer1_threshold: int = 25
     include_catalog_templates: bool = False  # Production uses ONLY real live sources + ./fuentes/*.pdf

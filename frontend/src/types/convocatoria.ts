@@ -14,6 +14,7 @@ export interface Convocatoria {
   id: string;
   codigoOficial: string;          // Ej: "BDNS 923290" u "Orden 1689/2026"
   titulo: string;
+  tituloOriginal?: string;
   organismo: string;              // Ej: "MITECO", "Comunidad de Madrid", "Fundación Santander"
   tipoFuente: TipoFuente;
   ambitoTerritorial: string;      // "Estatal", "Comunidad de Madrid", "Galicia", "Castilla y León", etc.
@@ -77,5 +78,5 @@ export interface FiltrosState {
   minCuantia: number;
   provincia: string;   // '' = sin provincia elegida
   ventanaDias: number; // 0 = sin límite; 30 = solo convocatorias que cierran en los próximos 30 días
-  anio: number;        // 0 = todos los años (usado en Histórico 2020-2026)
+  anio: number;        // 0 = todos los años (usado en Histórico desde 2016)
 }

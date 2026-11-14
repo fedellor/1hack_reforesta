@@ -1,5 +1,5 @@
 """Pipeline Orchestrator: Raw Candidate -> Layer 1 -> Layer 2 Judge -> Geo & Date Resolution -> Dedup/Amendments -> Priority & DB Upsert."""
-from dataclasses import dataclass, field
+from dataclasses import dataclass, replace, field
 from datetime import date, datetime, timezone
 from difflib import SequenceMatcher
 import re
@@ -8,6 +8,7 @@ import unicodedata
 from sqlmodel import Session, select
 from app.config import settings
 from app.database import query_cache
+from app.domain.reforesta_profile import assess_reforesta_eligibility
 from app.geo import resolve_geography
 from app.models import Opportunity
 from app.pipeline.date_resolver import add_business_days, compute_dates_and_status, parse_spanish_date
@@ -249,6 +250,8 @@ def process_candidate(
         titulo=candidate.titulo,
         nuts_code=candidate.nuts_code,
     )
+    if candidate.fuente == "FUNDACION_PRIVADA" or candidate.tipo_oportunidad == "CONVOCATORIA_PRIVADA":
+        geo = replace(geo, nivel_territorial="PRIVADA")
 
     # Step 4: Date & Status Resolution (Ley 39/2015 LPACAP Art. 30 with regional CCAA calendar)
     plazo_str, extracted_end_date = extract_deadline_clause_and_date(
@@ -286,13 +289,31 @@ def process_candidate(
         else candidate.porcentaje_financiacion
     )
 
-    # Step 5: Materialize Strategic Priority Score & Treasury Viability
+    # Step 5: Strict Eligibility Verification for Asociación Reforesta & Strategic Prioritization
+    requisitos_final = l2.requisitos_resumen_es
+    if candidate.beneficiarios_hint and "Beneficiarios oficiales:" not in requisitos_final:
+        requisitos_final = f"Beneficiarios oficiales: {candidate.beneficiarios_hint}. {requisitos_final}".strip()
+
+    elig = assess_reforesta_eligibility(
+        titulo=candidate.titulo,
+        organo=candidate.organo_convocante,
+        texto=candidate.texto,
+        beneficiarios_hint=candidate.beneficiarios_hint,
+        tipo_oportunidad=candidate.tipo_oportunidad,
+        nivel_territorial=geo.nivel_territorial,
+        ccaa_codigo=geo.ccaa_codigo,
+        ccaa_nombre=geo.ccaa_nombre,
+        requisitos_resumen=requisitos_final,
+        codigo_oficial=candidate.codigo_oficial,
+        justificacion_juez=l2.justificacion_juez_es,
+    )
+
     prio = calculate_priority(
         estado=resolved_dates.estado,
         dias_restantes=resolved_dates.dias_restantes,
         relevancia_tipo=l2.relevancia_tipo,
         relevancia_score=l2.score_relevancia,
-        beneficiarios_tipos=l2.beneficiarios_tipos or [],
+        beneficiarios_tipos=elig.beneficiarios_tipos,
         porcentaje_financiacion=pct_final,
         presupuesto_total=presupuesto_final,
         importe_max_proyecto=max_proy_final,
@@ -300,12 +321,13 @@ def process_candidate(
     )
 
     texto_low = f"{candidate.titulo} {candidate.texto[:5000]}".lower()
-    modalidad_pago, pago_anticipado_sin_aval, orografia, citas, dealbreakers = _resolve_treasury_and_terrain(
+    modalidad_pago, pago_anticipado_sin_aval, orografia, citas, treasury_dealbreakers = _resolve_treasury_and_terrain(
         candidate=candidate,
         texto_low=texto_low,
         nivel_territorial=geo.nivel_territorial,
         porcentaje_financiacion=pct_final,
     )
+    dealbreakers = list(dict.fromkeys([*elig.dealbreakers, *treasury_dealbreakers]))
 
     # Step 6: Build Opportunity model
     opp = Opportunity(
@@ -317,7 +339,7 @@ def process_candidate(
         dias_restantes=resolved_dates.dias_restantes,
         prioridad_score=prio.prioridad_score,
         prioridad_nivel=prio.prioridad_nivel,
-        estado_interno="priorizada" if prio.prioridad_score >= 82 and resolved_dates.estado == "ACTIVA" else "nueva",
+        estado_interno="priorizada" if elig.elegible and prio.prioridad_score >= 82 and resolved_dates.estado == "ACTIVA" else "nueva",
         relevancia_tipo=l2.relevancia_tipo,
         relevancia_score=l2.score_relevancia,
         score_capa1=l1.score,
@@ -345,9 +367,9 @@ def process_candidate(
         moneda="EUR",
         cofinanciado_ue=l2.cofinanciado_ue or candidate.cofinanciado_ue,
         fondo_ue=l2.fondo_ue or candidate.fondo_ue,
-        beneficiarios_tipos=l2.beneficiarios_tipos,
+        beneficiarios_tipos=elig.beneficiarios_tipos,
         sector_economico_original=candidate.sector_economico_original,
-        requisitos_resumen=l2.requisitos_resumen_es,
+        requisitos_resumen=requisitos_final,
         gastos_subvencionables=l2.gastos_subvencionables_es,
         criterios_valoracion=candidate.criterios_valoracion,
         citas_bases=citas,
@@ -786,6 +808,29 @@ def upsert_opportunity(session: Session, opp: Opportunity) -> Opportunity:
             new_val = getattr(opp, text_attr) or ""
             if len(new_val) > len(old_val):
                 setattr(existing, text_attr, new_val)
+
+        # Preserve curated active window from local fuentes/ PDFs when an API omits dates
+        if opp.archivo_fuente_local and opp.estado in ("ACTIVA", "PROXIMA"):
+            if existing.estado == "CERRADA" and opp.fecha_fin_solicitud is not None:
+                existing.estado = opp.estado
+                existing.fecha_fin_solicitud = opp.fecha_fin_solicitud
+                existing.dias_restantes = opp.dias_restantes
+                if opp.fecha_inicio_solicitud is not None:
+                    existing.fecha_inicio_solicitud = opp.fecha_inicio_solicitud
+                if opp.plazo_texto_original:
+                    existing.plazo_texto_original = opp.plazo_texto_original
+            existing.archivo_fuente_local = opp.archivo_fuente_local
+
+        # Prefer specific PDF links over generic portal URLs when enriching
+        for url_attr in ("url_bases_reguladoras", "url_boletin_extracto"):
+            cur_u = (getattr(existing, url_attr) or "").lower()
+            new_u = getattr(opp, url_attr) or ""
+            if new_u and (
+                not cur_u
+                or (".pdf" in new_u.lower() or "iddocumento=" in new_u.lower())
+                and not (".pdf" in cur_u or "iddocumento=" in cur_u)
+            ):
+                setattr(existing, url_attr, new_u)
 
         # Preserve existing non-null financial/date/link details; fill missing gaps from new source
         for opt_attr in [

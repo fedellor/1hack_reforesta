@@ -248,3 +248,131 @@ def test_language_detection_accuracy():
     assert detect_language("Subvencions de la Generalitat de Catalunya per a la gestió forestal i prevenció d'incendis forestals") == "ca"
     assert detect_language("Orde pola que se regulan subvencións da Xunta de Galicia en montes veciñais e lumes forestais") == "gl"
     assert detect_language("Bizkaiko Foru Aldundia: baso-berritze eta baso-suteen diru-laguntzak") == "eu"
+
+
+@pytest.mark.parametrize(
+    "titulo,organo,texto,sector",
+    [
+        (
+            "AYUDAS CONCURRENCIA COMPETITIVA LÍNEA A DESARROLLO ACTIVIDADES INTERÉS GENERAL CONSIDERADAS INTERÉS SOCIAL, EN EL ÁMBITO DE LA INVESTIGACIÓN CIENTÍFICA Y TÉCNICA Y PROTECCIÓN MEDIO AMBIENTE EN MATERIAS DE COMPETENCIA ESTATAL. ANUALIDAD 2026.",
+            "MINISTERIO PARA LA TRANSICIÓN ECOLÓGICA Y EL RETO DEMOGRÁFICO",
+            "Orden TED/898/2023. Actividades de interés general en investigación científica y técnica y protección del medio ambiente, 2026.",
+            "ACTIVIDADES INMOBILIARIAS",
+        ),
+        (
+            "AYUDAS CONCURRENCIA COMPETITIVA LÍNEA A DESARROLLO ACTIVIDADES INTERÉS GENERAL CONSIDERADAS INTERÉS SOCIAL, EN EL ÁMBITO DE LA INVESTIGACIÓN CIENTÍFICA Y TÉCNICA Y PROTECCIÓN MEDIO AMBIENTE EN MATERIAS DE COMPETENCIA ESTATAL. ANUALIDAD 2025.",
+            "MINISTERIO PARA LA TRANSICIÓN ECOLÓGICA Y EL RETO DEMOGRÁFICO",
+            "Convocatoria estatal MITECO 2025 para investigación y protección del medio ambiente.",
+            None,
+        ),
+        (
+            "Ayudas a Proyectos de Investigación Científica en Ecología y Biología de la Conservación",
+            "Fundación BBVA",
+            "Convocatoria competitiva en España sobre ecología terrestre, biodiversidad y restauración de ecosistemas.",
+            None,
+        ),
+        (
+            "Presenta tu candidatura: II Convocatoria de Proyectos de Biodiversidad Fundación Endesa",
+            "Fundación Endesa",
+            "Bases legales II Convocatoria dotada con 200.000 euros para proyectos de conservación de la biodiversidad en España.",
+            None,
+        ),
+        (
+            "Convocatoria Emprendimiento Verde para entidades sin ánimo de lucro",
+            "Fundación Endesa",
+            "Ayudas para conservación de ecosistemas y transición ecológica.",
+            None,
+        ),
+        (
+            "Proyectos estratégicos orientados a la Transición Ecológica y a la Transición Digital",
+            "Agencia Estatal de Investigación (AEI)",
+            "I+D+i en mitigación del cambio climático, gestión forestal sostenible, incendios y biodiversidad.",
+            None,
+        ),
+        (
+            "Research and Innovation Actions: Restoring forest biodiversity and soil resilience in Mediterranean ecosystems",
+            "European Commission - Horizon Europe",
+            "Grants executable in Spain for scientific research and ecological restoration.",
+            None,
+        ),
+        (
+            "Abiertas Ayudas a Proyectos de Investigación 2026",
+            "Fundación CajaCanarias",
+            "Proyectos de investigación científica en medio ambiente, cambio climático y biodiversidad en Canarias.",
+            None,
+        ),
+    ],
+)
+def test_layer1_and_layer2_accept_public_and_private_environmental_research(
+    titulo: str,
+    organo: str,
+    texto: str,
+    sector: str | None,
+):
+    from app.pipeline.layer2_judge import evaluate_layer2
+
+    full_text = f"{texto}\nSector económico: {sector}" if sector else texto
+    r1 = evaluate_layer1(titulo=titulo, organo=organo, texto=full_text)
+    assert r1.passed is True, f"Rejected environmental research grant in Layer 1: {titulo} ({r1.rejection_reason})"
+    r2 = evaluate_layer2(titulo=titulo, organo=organo, texto=full_text, layer1_result=r1, use_persistent_cache=False)
+    assert r2.es_relevante is True, f"Rejected environmental research grant in Layer 2: {titulo} ({r2.justificacion_juez_es})"
+
+
+def test_layer1_still_rejects_non_environmental_research():
+    r1 = evaluate_layer1(
+        titulo="Premios de Investigación Matemática Vicent Caselles 2025",
+        organo="Fundación BBVA",
+        texto="Premios para investigación científica en matemáticas puras y estadística.",
+    )
+    assert r1.passed is False
+
+
+@pytest.mark.parametrize(
+    ("titulo", "organo", "texto"),
+    [
+        (
+            "Anuncio de la Confederación Hidrográfica del Tajo sobre solicitud de concesión de aguas públicas",
+            "Ministerio para la Transición Ecológica y el Reto Demográfico",
+            "Información pública de expediente de aprovechamiento de 12,5 l/s para riego.",
+        ),
+        (
+            "Resolución de la Dirección General de Calidad y Evaluación Ambiental por la que se formula declaración de impacto ambiental del proyecto Parque Eólico Las Lomas",
+            "Ministerio para la Transición Ecológica y el Reto Demográfico",
+            "Declaración de impacto ambiental favorable para planta fotovoltaica e hibridación.",
+        ),
+        (
+            "BECAS PARA PRÁCTICAS DE ESTUDIANTES DEL MITECO",
+            "Ministerio para la Transición Ecológica y el Reto Demográfico",
+            "Becas de formación práctica para estudiantes universitarios.",
+        ),
+        (
+            "Resolución de la Consejería de Transición Ecológica por la que se convoca el Concurso de Pieza Única de Artesanía Artística",
+            "Consejería de Transición Ecológica",
+            "Premios y talleres de artesanía artística y promoción comercial.",
+        ),
+        (
+            "Ayudas para la creación de la Cátedra de Cambio Climático",
+            "Gobierno de Canarias",
+            "Convenio para la creación de la Cátedra de Cambio Climático en la universidad.",
+        ),
+        (
+            "202604306014_Dir 22.2.c_Subvención nominativa",
+            "Diputación Provincial",
+            "Subvención concedida al amparo del artículo 22.2.c LGS.",
+        ),
+        (
+            "Ayudas para ahorro y eficiencia energética en pymes",
+            "Consejería de Transición Ecológica y Energía",
+            "Subvenciones orientadas a ahorro y eficiencia energética en instalaciones industriales.",
+        ),
+        (
+            "Mantenimiento de los medios y equipos que componen el sistema de defensa contra incendios en los edificios de la AEAT",
+            "Ministerio de Hacienda - AEAT",
+            "Mantenimiento de equipos de protección contra incendios en edificios administrativos.",
+        ),
+    ],
+)
+def test_layer1_rejects_administrative_boe_bdns_non_grant_noise(titulo: str, organo: str, texto: str):
+    r1 = evaluate_layer1(titulo=titulo, organo=organo, texto=texto)
+    assert r1.passed is False, f"False positive passed Layer 1: {titulo} (score={r1.score}, cats={r1.matched_categories})"
+

@@ -176,6 +176,11 @@ PRIVATE_ENTITY_KEYWORDS = [
     "fundacion iberdrola",
     "fundacion endesa",
     "fundacion naturgy",
+    "fundacion ibercaja",
+    "fundacion moeve",
+    "fundacion cepsa",
+    "fundacion bbk",
+    "grupo sylvestris",
     "fundacion aquae",
     "fundacion daniel y nina carasso",
     "fundacion carasso",
@@ -470,8 +475,17 @@ def check_spanish_territory_eligibility(
 
     m_foreign = _FOREIGN_TERRITORY_ONLY_RE.search(combined)
     if m_foreign:
-        # Allow only if Spain / Iberian Peninsula / cross-border Spain programme is explicitly targeted in title/region
-        if not _SPAIN_EXPLICIT_ELIGIBILITY_RE.search(f"{titulo} {region_hint}"):
+        # Reject immediately if the foreign country/region is targeted in the title or without explicit Spain eligibility
+        foreign_in_title = bool(_FOREIGN_TERRITORY_ONLY_RE.search(titulo))
+        spain_in_header_or_bases = bool(
+            _SPAIN_EXPLICIT_ELIGIBILITY_RE.search(f"{titulo} {region_hint} {organo}")
+            or re.search(
+                r"\b(?:actuaciones\s+en\s+espa[ñn]a|en\s+territorio\s+espa[ñn]ol|ejecutable[s]?\s+en\s+espa[ñn]a|proyectos?\s+en\s+espa[ñn]a)\b",
+                texto[:4000],
+                re.IGNORECASE,
+            )
+        )
+        if foreign_in_title or not spain_in_header_or_bases:
             return False, f"Excluida por ámbito territorial fuera de España ({m_foreign.group(0)})"
 
     return True, None

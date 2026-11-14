@@ -1,8 +1,12 @@
-"""Predictive Recurrence Calendar (2020-2026) and Direct Exporters (CSV, iCal .ics, Markdown Dossier)."""
+"""Predictive Recurrence Calendar (empirical pattern mining since 2016) and Direct Exporters (CSV, iCal .ics, Markdown Dossier)."""
+from collections import Counter
 import csv
 from datetime import date, datetime, timedelta, timezone
 import io
+import re
+import statistics
 from typing import Any
+import unicodedata
 from app.config import settings
 from app.models import Opportunity
 
@@ -22,15 +26,122 @@ MESES_ES = {
 }
 
 
+def _strip_accents(txt: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFKD", txt) if not unicodedata.combining(c))
+
+
+_REC_STOPWORDS = {
+    "de", "del", "la", "las", "el", "los", "un", "una", "para", "por", "con", "sin",
+    "y", "e", "o", "en", "a", "al", "se", "su", "sus", "que", "segun", "anualidad",
+    "ano", "ejercicio", "convocatoria", "convocan", "ayudas", "subvenciones",
+    "subvencions", "axudas", "extracto", "orden", "resolucion", "decreto", "bases",
+    "reguladoras", "regimen", "concurrencia", "competitiva", "publicas", "publica",
+    "destinadas", "concesion", "para", "sobre",
+}
+
+
+def _recurrence_family_signature(opp: Opportunity) -> tuple[str, str]:
+    """Derive a year-agnostic recurring program key & clean label from title + organo + CCAA."""
+    t_norm = _strip_accents((opp.titulo_limpio or opp.titulo_original or "").lower())
+    t_norm = re.sub(r"\b(?:20\d{2}|19\d{2}|n[ºo°]?\s*\d+/\d+)\b", " ", t_norm)
+    t_norm = re.sub(r"\b[ivx]+\s+(?:edicion|convocatoria)\b", " ", t_norm)
+    tokens = [
+        tok for tok in re.findall(r"[a-z]{3,}", t_norm)
+        if tok not in _REC_STOPWORDS
+    ][:6]
+
+    org_norm = _strip_accents((opp.organo_convocante or "").lower())
+    org_tokens = [
+        tok for tok in re.findall(r"[a-z]{3,}", org_norm)
+        if tok not in {"consejeria", "conselleria", "ministerio", "departamento", "generalitat", "junta", "xunta", "gobierno", "direccion", "general"}
+    ][:3]
+
+    fam_key = f"{opp.ccaa_codigo}|{'-'.join(org_tokens)}|{'-'.join(tokens[:4])}"
+    clean_base = re.sub(r"\b20\d{2}\b", "", opp.titulo_limpio or opp.titulo_original or "")
+    clean_base = re.sub(r"\s+", " ", clean_base).strip(" -.,:()")
+    return fam_key, clean_base[:140]
+
+
+def _discover_dynamic_recurring_programs(
+    opps: list[Opportunity],
+    already_matched_ids: set[str],
+    ccaa_filter: str | None,
+) -> list[dict[str, Any]]:
+    """
+    Mine real annual recurring call families empirically across the full 2016+ database
+    whenever at least 2 distinct annual editions are observed for the same program line.
+    """
+    buckets: dict[str, list[Opportunity]] = {}
+    labels: dict[str, str] = {}
+
+    for o in opps:
+        if o.id in already_matched_ids:
+            continue
+        fam_key, label = _recurrence_family_signature(o)
+        if len(fam_key.split("|")[-1]) < 8 or not label:
+            continue
+        buckets.setdefault(fam_key, []).append(o)
+        if fam_key not in labels or len(label) < len(labels[fam_key]):
+            labels[fam_key] = label
+
+    discovered: list[tuple[tuple[bool, int, int], dict[str, Any]]] = []
+    ccaa_up = ccaa_filter.upper() if ccaa_filter and ccaa_filter.upper() not in ("TODAS", "ALL") else None
+
+    for fam_key, group in buckets.items():
+        years = sorted({o.anio_convocatoria for o in group})
+        if len(years) < 2:
+            continue
+        sample = max(group, key=lambda x: (x.anio_convocatoria, x.prioridad_score or 0))
+        if ccaa_up and sample.ccaa_codigo not in (ccaa_up, "ES", "EU"):
+            continue
+
+        pub_months = [o.fecha_publicacion.month for o in group if o.fecha_publicacion]
+        mes_hab = Counter(pub_months).most_common(1)[0][0] if pub_months else 3
+        budgets = [o.presupuesto_total for o in group if o.presupuesto_total and o.presupuesto_total > 0]
+        max_proys = [o.importe_max_proyecto for o in group if o.importe_max_proyecto and o.importe_max_proyecto > 0]
+        elig_flags = [
+            o._evaluate_reforesta_eligibility()[0].elegible
+            for o in sorted(group, key=lambda x: x.anio_convocatoria, reverse=True)
+        ]
+        group_elig = elig_flags[0] and (sum(1 for f in elig_flags if f) * 2 >= len(elig_flags))
+
+        prog_hash = abs(hash(fam_key)) % 100000
+        prog_dict = {
+            "programa_id": f"MINED-{sample.ccaa_codigo}-{prog_hash}",
+            "nombre_programa": f"{labels[fam_key]} ({sample.ccaa_nombre or sample.ccaa_codigo})",
+            "organo_convocante": sample.organo_convocante,
+            "nivel_territorial": sample.nivel_territorial,
+            "ccaa_codigo": sample.ccaa_codigo,
+            "mes_apertura_habitual": mes_hab,
+            "plazo_tipico": sample.plazo_texto_original or "Según convocatoria anual en boletín oficial / BDNS",
+            "presupuesto_tipico_eur": round(statistics.median(budgets), 2) if budgets else None,
+            "importe_max_proyecto_tipico_eur": round(statistics.median(max_proys), 2) if max_proys else None,
+            "porcentaje_financiacion_tipico": sample.porcentaje_max_financiacion,
+            "modalidad_pago_habitual": sample.modalidad_pago or "mixto",
+            "keywords_match": [],
+            "matched_opps_override": group,
+            "origen_patron": "MINERIA_HISTORICA_BD",
+            "elegible_reforesta": group_elig,
+            "checklist_preparacion_previa": [
+                f"Revisar requisitos de elegibilidad en la última edición ({years[-1]}) antes de redactar memoria.",
+                f"Patrón histórico detectado en {len(years)} anualidades ({min(years)}–{max(years)}).",
+                "Preparar documentación administrativa y certificados tributarios antes del mes habitual de apertura.",
+            ],
+        }
+        discovered.append(((group_elig, len(years), len(group)), prog_dict))
+
+    discovered.sort(key=lambda pair: pair[0], reverse=True)
+    return [p for _, p in discovered[:12]]
+
+
 def build_predictive_calendar(
     opps: list[Opportunity],
     ccaa_filter: str | None = None,
     today: date | None = None,
 ) -> dict[str, Any]:
     """
-    Build the Predictive Annual Recurrence Calendar based on the 2020-2026 historical corpus.
-    Solves Reforesta's #1 operational bottleneck: short application windows (10-15 business days)
-    by alerting which recurring calls are open now or entering their pre-publication preparation window.
+    Build the Predictive Annual Recurrence Calendar mining historical editions since 2016
+    (10+ year horizon without arbitrary end-year caps) alongside curated strategic flagships.
     """
     ref_today = today or settings.get_today()
     current_month = ref_today.month
@@ -48,7 +159,8 @@ def build_predictive_calendar(
             "importe_max_proyecto_tipico_eur": 150000.0,
             "porcentaje_financiacion_tipico": 85.0,
             "modalidad_pago_habitual": "anticipo",
-            "keywords_match": ["923290", "línea a", "orden ted/898/2023", "interés general"],
+            "elegible_reforesta": True,
+            "keywords_match": ["923290", "848938", "782254", "712977", "línea a", "orden ted/898/2023"],
             "checklist_preparacion_previa": [
                 "Certificado vigente de inscripción en Registro Nacional de Asociaciones / Utilidad Pública",
                 "Memoria técnica de proyecto de ámbito supraautonómico o interés general estatal",
@@ -67,7 +179,8 @@ def build_predictive_calendar(
             "importe_max_proyecto_tipico_eur": 30000.0,
             "porcentaje_financiacion_tipico": 100.0,
             "modalidad_pago_habitual": "anticipo",
-            "keywords_match": ["1689/2026", "comunidad de madrid", "sin ánimo de lucro", "red natura 2000"],
+            "elegible_reforesta": True,
+            "keywords_match": ["1689/2026", "madrid 2026 a entidades sin ánimo de lucro", "esal para conservación"],
             "checklist_preparacion_previa": [
                 "Acuerdos previos de disponibilidad de terrenos en ZEC/ZEPA de la Comunidad de Madrid",
                 "Cartografía SIG de parcelas y listado de especies autóctonas / Árboles Singulares",
@@ -87,7 +200,8 @@ def build_predictive_calendar(
             "importe_max_proyecto_tipico_eur": 1500000.0,
             "porcentaje_financiacion_tipico": 90.0,
             "modalidad_pago_habitual": "anticipo",
-            "keywords_match": ["fundación biodiversidad", "bioeconomía"],
+            "elegible_reforesta": True,
+            "keywords_match": ["bioeconomía forestal", "restauración y resiliencia", "fundación biodiversidad"],
             "checklist_preparacion_previa": [
                 "Acuerdo de agrupación con universidad/centro de investigación (requisito habitual de consorcio Científico-ONG)",
                 "Plan de medición de indicadores de biodiversidad y absorción de carbono (MITECO)",
@@ -163,7 +277,8 @@ def build_predictive_calendar(
             "importe_max_proyecto_tipico_eur": 90000.0,
             "porcentaje_financiacion_tipico": 100.0,
             "modalidad_pago_habitual": "mixto",
-            "keywords_match": ["xunta de galicia", "medio rural", "man común", "concellos"],
+            "elegible_reforesta": False,
+            "keywords_match": ["xunta de galicia", "montes veciñais", "man común"],
             "checklist_preparacion_previa": [
                 "Instrumento de ordenación o gestión forestal (IOGF) aprobado o en trámite",
                 "Acuerdo de la Asamblea General de la Comunidad de Montes o convenio con Concello",
@@ -199,23 +314,19 @@ def build_predictive_calendar(
         ]
 
     enriched_programs: list[dict[str, Any]] = []
-    for prog in recurring_programs:
-        kws = prog["keywords_match"]
-        matched_opps = [
-            o
-            for o in opps
-            if any(
-                kw in o.titulo_original.lower()
-                or kw in o.organo_convocante.lower()
-                or kw in o.id.lower()
-                or kw in o.codigo_oficial.lower()
-                for kw in kws
-            )
-        ]
-        matched_opps.sort(key=lambda x: x.anio_convocatoria, reverse=True)
-        active_now = [o for o in matched_opps if o.estado == "ACTIVA"]
+    curated_matched_ids: set[str] = set()
 
-        mes_hab = prog["mes_apertura_habitual"]
+    def _enrich_program(prog: dict[str, Any], matched_opps: list[Opportunity], origen_patron: str) -> dict[str, Any]:
+        matched_opps.sort(key=lambda x: (x.anio_convocatoria, x.fecha_publicacion or date(x.anio_convocatoria, 1, 1)), reverse=True)
+        active_now = [o for o in matched_opps if o.estado == "ACTIVA"]
+        distinct_years = sorted({o.anio_convocatoria for o in matched_opps}, reverse=True)
+
+        pub_months = [o.fecha_publicacion.month for o in matched_opps if o.fecha_publicacion]
+        mes_hab = (
+            Counter(pub_months).most_common(1)[0][0]
+            if len(pub_months) >= 3
+            else prog["mes_apertura_habitual"]
+        )
         months_until = (mes_hab - current_month) % 12
 
         if active_now:
@@ -245,55 +356,97 @@ def build_predictive_calendar(
         mes_prep_inicio = ((mes_hab - 2 - 1) % 12) + 1
         mes_prep_fin = ((mes_hab - 1 - 1) % 12) + 1
 
-        enriched_programs.append(
-            {
-                "programa_id": prog["programa_id"],
-                "nombre_programa": prog["nombre_programa"],
-                "organo_convocante": prog["organo_convocante"],
-                "nivel_territorial": prog["nivel_territorial"],
-                "ccaa_codigo": prog["ccaa_codigo"],
-                "frecuencia": "ANUAL_RECURRENTE",
-                "mes_apertura_habitual": mes_hab,
-                "mes_apertura_nombre": MESES_ES[mes_hab],
-                "ventana_preparacion_recomendada": f"{MESES_ES[mes_prep_inicio]} - {MESES_ES[mes_prep_fin]}",
-                "estado_ciclo_actual": estado_ciclo,
-                "alerta_tactica_reforesta": alerta_accion,
-                "plazo_tipico": prog["plazo_tipico"],
-                "condiciones_economicas_tipicas": {
-                    "presupuesto_linea_eur": prog["presupuesto_tipico_eur"],
-                    "importe_max_proyecto_eur": prog["importe_max_proyecto_tipico_eur"],
-                    "porcentaje_financiacion": prog["porcentaje_financiacion_tipico"],
-                    "modalidad_pago": prog["modalidad_pago_habitual"],
-                },
-                "checklist_preparacion_previa": prog["checklist_preparacion_previa"],
-                "convocatoria_activa_actual": (
-                    {
-                        "id": active_now[0].id,
-                        "codigo_oficial": active_now[0].codigo_oficial,
-                        "titulo_limpio": active_now[0].titulo_limpio,
-                        "dias_restantes": active_now[0].dias_restantes,
-                        "fecha_fin_solicitud": (
-                            active_now[0].fecha_fin_solicitud.isoformat()
-                            if active_now[0].fecha_fin_solicitud
-                            else None
-                        ),
-                        "prioridad_score": active_now[0].prioridad_score,
-                    }
-                    if active_now
-                    else None
-                ),
-                "historico_ediciones_detectadas": [
-                    {
-                        "id": o.id,
-                        "anio": o.anio_convocatoria,
-                        "codigo_oficial": o.codigo_oficial,
-                        "estado": o.estado,
-                        "presupuesto_eur": o.presupuesto_total,
-                    }
-                    for o in matched_opps[:5]
-                ],
-            }
+        observed_budgets = [o.presupuesto_total for o in matched_opps if o.presupuesto_total and o.presupuesto_total > 0]
+        typical_budget = (
+            round(statistics.median(observed_budgets), 2)
+            if len(observed_budgets) >= 2
+            else prog["presupuesto_tipico_eur"]
         )
+
+        sample_elig = prog.get("elegible_reforesta")
+        if sample_elig is None and matched_opps:
+            elig_flags = [o._evaluate_reforesta_eligibility()[0].elegible for o in matched_opps]
+            # Require majority OR latest edition eligibility to avoid 1 legacy outlier flipping a municipal/company series
+            sample_elig = elig_flags[0] and (sum(1 for f in elig_flags if f) * 2 >= len(elig_flags))
+        elif sample_elig is None:
+            sample_elig = prog["programa_id"] not in ("REC-XUNTA-MONTES-INCENDIOS",)
+
+        return {
+            "programa_id": prog["programa_id"],
+            "nombre_programa": prog["nombre_programa"],
+            "organo_convocante": prog["organo_convocante"],
+            "nivel_territorial": prog["nivel_territorial"],
+            "ccaa_codigo": prog["ccaa_codigo"],
+            "elegible_reforesta": bool(sample_elig),
+            "frecuencia": "ANUAL_RECURRENTE",
+            "mes_apertura_habitual": mes_hab,
+            "mes_apertura_nombre": MESES_ES[mes_hab],
+            "ventana_preparacion_recomendada": f"{MESES_ES[mes_prep_inicio]} - {MESES_ES[mes_prep_fin]}",
+            "estado_ciclo_actual": estado_ciclo,
+            "alerta_tactica_reforesta": alerta_accion,
+            "plazo_tipico": prog["plazo_tipico"],
+            "condiciones_economicas_tipicas": {
+                "presupuesto_linea_eur": typical_budget,
+                "importe_max_proyecto_eur": prog["importe_max_proyecto_tipico_eur"],
+                "porcentaje_financiacion": prog["porcentaje_financiacion_tipico"],
+                "modalidad_pago": prog["modalidad_pago_habitual"],
+            },
+            "checklist_preparacion_previa": prog["checklist_preparacion_previa"],
+            "patron_empirico": {
+                "origen_patron": origen_patron,
+                "ediciones_observadas": len(matched_opps),
+                "anios_detectados": distinct_years,
+                "rango_anios": f"{min(distinct_years)}-{max(distinct_years)}" if distinct_years else "Sin histórico en BD",
+                "confianza_recurrencia": "ALTA" if len(distinct_years) >= 3 else ("MEDIA" if len(distinct_years) == 2 else "REFERENCIA_HISTORICA"),
+            },
+            "convocatoria_activa_actual": (
+                {
+                    "id": active_now[0].id,
+                    "codigo_oficial": active_now[0].codigo_oficial,
+                    "titulo_limpio": active_now[0].titulo_limpio,
+                    "dias_restantes": active_now[0].dias_restantes,
+                    "fecha_fin_solicitud": (
+                        active_now[0].fecha_fin_solicitud.isoformat()
+                        if active_now[0].fecha_fin_solicitud
+                        else None
+                    ),
+                    "prioridad_score": active_now[0].prioridad_score,
+                }
+                if active_now
+                else None
+            ),
+            "historico_ediciones_detectadas": [
+                {
+                    "id": o.id,
+                    "anio": o.anio_convocatoria,
+                    "codigo_oficial": o.codigo_oficial,
+                    "estado": o.estado,
+                    "presupuesto_eur": o.presupuesto_total,
+                    "elegible": o._evaluate_reforesta_eligibility()[0].elegible,
+                }
+                for o in matched_opps
+            ],
+        }
+
+    for prog in recurring_programs:
+        kws = prog["keywords_match"]
+        matched_opps = [
+            o
+            for o in opps
+            if any(
+                kw in o.titulo_original.lower()
+                or kw in o.organo_convocante.lower()
+                or kw in o.id.lower()
+                or kw in o.codigo_oficial.lower()
+                for kw in kws
+            )
+        ]
+        curated_matched_ids.update(o.id for o in matched_opps)
+        enriched_programs.append(_enrich_program(prog, matched_opps, "PROGRAMA_ESTRATEGICO_VERIFICADO"))
+
+    for dyn_prog in _discover_dynamic_recurring_programs(opps, curated_matched_ids, ccaa_filter):
+        dyn_opps = list(dyn_prog.pop("matched_opps_override", []))
+        enriched_programs.append(_enrich_program(dyn_prog, dyn_opps, "MINERIA_HISTORICA_BD"))
 
     return {
         "fecha_referencia": ref_today.isoformat(),

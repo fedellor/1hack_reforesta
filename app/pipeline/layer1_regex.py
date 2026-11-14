@@ -168,20 +168,32 @@ PATTERNS_BIODIVERSITY_ENV: list[tuple[str, re.Pattern[str]]] = [
 ]
 
 # Pure Research / Academic R&D / Networking Exclusion (Reject unless concrete physical planting/reforestation is present)
+PATTERNS_ENV_RESEARCH: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"\b(?:proyectos?\s+de\s+)?investigaci[oó]n\s+cient[ií]fica\s+y\s+t[eé]cnica.*(?:medio\s+ambiente|ecolog[ií]a|ecol[oó]gic\w*|biodiversidad|forestal|clim[aá]tic\w*)", re.IGNORECASE), "investigación científica y técnica ambiental"),
+    (re.compile(r"(?:medio\s+ambiente|ecolog[ií]a|ecol[oó]gic\w*|biodiversidad|forestal|cambio\s+clim[aá]tico).*investigaci[oó]n\s+cient[ií]fica", re.IGNORECASE), "investigación científica ambiental"),
+    (re.compile(r"\b(?:proyectos?\s+de\s+investigaci[oó]n|i\+d\+i)\b.*\b(?:medio\s+ambiente|ecolog[ií]a|ecol[oó]gic\w*|biodiversidad|forestal|clim[aá]tic\w*|ecosistemas?|suelos?|desertificaci[oó]n|restauraci[oó]n|naturaleza|patrimonio\s+natural|sostenibilidad)\b", re.IGNORECASE), "investigación/I+D+i ambiental"),
+    (re.compile(r"\bactividades?\s+de\s+inter[eé]s\s+general\b.*\b(?:medio\s+ambiente|investigaci[oó]n\s+cient[ií]fica)\b", re.IGNORECASE), "actividades de interés general ambiental/investigación"),
+    (re.compile(r"\binvestigaci[oó]n\s+(?:forestal|ecol[oó]gica|ambiental|en\s+biodiversidad|clim[aá]tica)\b", re.IGNORECASE), "investigación forestal/ecológica"),
+    (re.compile(r"(?<!ministerio para la )(?<!consejer[ií]a de )(?<!departamento de )(?<!secretar[ií]a de estado de )\btransici[oó]n\s+ecol[oó]gica\b", re.IGNORECASE), "transición ecológica"),
+    (re.compile(r"\bconservaci[oó]n\s+de\s+(?:los\s+)?ecosistemas\b", re.IGNORECASE), "conservación de ecosistemas"),
+    (re.compile(r"\bconservaci[oó]n\s+de\s+la\s+biodiversidad\b", re.IGNORECASE), "conservación de la biodiversidad"),
+    (re.compile(r"\bemprendimiento\s+verde\b", re.IGNORECASE), "emprendimiento verde"),
+    (re.compile(r"(?<!c[aá]tedra de )(?<!oficina espa[ñn]ola de )\bcambio\s+clim[aá]tico\b|\bdescarbonizaci[oó]n\b|\btransformaci[oó]n\s+clim[aá]tica\b", re.IGNORECASE), "cambio climático"),
+    (re.compile(r"\bbioeconom[ií]a\b.*(?:forestal|biodiversidad|ecosistem\w*|feder|verde|sostenib\w*)|(?:forestal|biodiversidad|ecosistem\w*|feder).*\bbioeconom[ií]a\b", re.IGNORECASE), "bioeconomía forestal/biodiversidad"),
+    (re.compile(r"\bproyectos?\s+innovadores\b.*\b(?:transformaci[oó]n\s+territorial|reto\s+demogr[aá]fico|despoblaci[oó]n|entidades\s+sin\s+[aá]nimo\s+de\s+lucro)\b", re.IGNORECASE), "reto demográfico / proyectos innovadores ESAL"),
+    (re.compile(r"\bresearch\s+and\s+innovation\s+actions?\b.*\b(?:forest\w*|biodiversity|ecosystem\w*|climate|soil\w*|nature|wildfire\w*)\b", re.IGNORECASE), "Horizon RIA ambiental/forestal"),
+    (re.compile(r"\b(?:forest\w*|biodiversity|ecosystem\w*|climate|soil\w*|wildfire\w*).*\bresearch\s+and\s+innovation\s+actions?\b", re.IGNORECASE), "Horizon RIA ambiental/forestal"),
+    (re.compile(r"\b(?:strengthening\s+)?forest\s+research\b|\bmis[ió]n\s+suelos\b|\bsoil\s+mission\b", re.IGNORECASE), "forest/soil research"),
+]
+
 PURE_RESEARCH_EXCLUSION_PATTERN = re.compile(
     r"\b("
-    r"reforzar\s+la\s+investigaci[oó]n(?:\s+forestal)?|strengthening\s+forest\s+research|"
-    r"forest\s+research\s+(?:for|to\s+support)|apoyar\s+la\s+investigaci[oó]n\s+forestal|"
-    r"becas?\s+(?:de\s+investigaci[oó]n|predoctoral\w*|postdoctoral\w*|fpu\b|fpi\b|doctorado|formaci[oó]n)|"
-    r"contratos?\s+(?:predoctoral\w*|postdoctoral\w*|de\s+investigaci[oó]n)|"
+    r"becas?\s+(?:predoctoral\w*|postdoctoral\w*|fpu\b|fpi\b|erasmus\b|grado\b|m[aá]ster\b)|"
+    r"contratos?\s+(?:predoctoral\w*|postdoctoral\w*)|"
     r"formaci[oó]n\s+de\s+personal\s+investigador|tesis\s+doctoral\w*|doctorado\s+industrial|"
-    r"proyectos?\s+de\s+investigaci[oó]n\s+(?:b[aá]sica|fundamental|acad[eé]mica|universitaria|cient[ií]fica)|"
-    r"ayudas?\s+.*\s+proyectos?\s+de\s+investigaci[oó]n\s+cient[ií]fica|"
-    r"grupos?\s+de\s+investigaci[oó]n|estancias?\s+de\s+investigaci[oó]n|"
-    r"congreso[s]?\s+cient[ií]fico\w*|jornadas?\s+de\s+investigaci[oó]n|premio[s]?\s+de\s+investigaci[oó]n|"
-    r"innovaci[oó]n\s+t[eé]cnica\s+para\s+proteger|creaci[oó]n\s+de\s+redes\s+para\s+ampliar\s+los\s+laboratorios\s+vivientes|"
-    r"living\s+labs?\s+network\w*|research\s+and\s+innovation\s+actions?|"
-    r"coordination\s+and\s+support\s+actions?|doctoral\s+network\w*|postdoctoral\s+fellowship\w*"
+    r"estancias?\s+de\s+investigaci[oó]n|bolsas?\s+de\s+viaje|"
+    r"congreso[s]?\s+cient[ií]fico\w*|jornadas?\s+de\s+investigaci[oó]n|"
+    r"doctoral\s+network\w*|postdoctoral\s+fellowship\w*"
     r")\b",
     re.IGNORECASE,
 )
@@ -202,14 +214,16 @@ ORGANO_BOOST_PATTERN = re.compile(
     r"\b("
     r"miteco|transici[oó]n\s+ecol[oó]gica|medio\s+ambiente|medi\s+ambient|medio\s+rural|"
     r"montes|pol[ií]tica\s+forestal|biodiversidad|parques\s+nacionales|oapn|"
+    r"aei|agencia\s+estatal\s+de\s+investigaci[oó]n|cdti|csic|inia|ciemat|"
     r"confederaci[oó]n\s+hidrogr[aá]fica|confederaci[oó]\s+hidrogr[aà]fica|desarrollo\s+rural|ingurumena|"
     r"tragsa\w*|geacam|vaersa|sarga|seaga|hazi|cesefor|ctfc|infoca\w*|pladiga|"
     r"feader|prtr|nextgeneration\w*|mecanismo\s+de\s+recuperaci[oó]n|"
     r"cinea|programa\s+life|life\s+programme|horizon\s+europe|interreg|"
     r"fundaci[oó]n\s+la\s+caixa|fundaci[oó]n\s+banco\s+santander|fundaci[oó]n\s+bbva|"
     r"fundaci[oó]n\s+repsol|motor\s+verde|fundaci[oó]n\s+iberdrola|fundaci[oó]n\s+endesa|"
-    r"fundaci[oó]n\s+naturgy|afundaci[oó]n|retree|bosques\s+sostenibles|sylvestris|"
-    r"eoca|one\s+tree\s+planted"
+    r"fundaci[oó]n\s+naturgy|fundaci[oó]n\s+montemadrid|fundaci[oó]n\s+cajacanarias|"
+    r"fundaci[oó]n\s+caja\s+de\s+burgos|fundaci[oó]n\s+tatiana|afundaci[oó]n|"
+    r"retree|bosques\s+sostenibles|sylvestris|eoca|one\s+tree\s+planted"
     r")\b",
     re.IGNORECASE,
 )
@@ -246,6 +260,19 @@ def extract_cpv_codes(text: str) -> list[str]:
     return sorted({m.split("-")[0] for m in INLINE_CPV_PATTERN.findall(text or "")})
 
 
+# Title-only noise exclusions (phrases that routinely appear legitimately inside PDFs,
+# legal bases or sidebar cards — e.g. "mediante convenio de colaboración" or "proyectos ganadores")
+TITLE_HARD_EXCLUSION_PATTERN = re.compile(
+    r"\b("
+    r"convenio\s+(?:de\s+)?colaboraci[oó]n|"
+    r"convenio\s+(?:entre|con\s+(?:la\s+)?(?:asociaci[oó]n|fundaci[oó]n|organizaci[oó]n|comunidad|ayuntamiento|diputaci[oó]n|universidad))|"
+    r"proyectos?\s+ganadores?|"
+    r"eficiencia\s+energ[eé]tica\s+con\b|movilidad\s+sostenible\s+con\b|reformas?\s+sostenibles?\s+con\b|"
+    r"hispaled|koiki|gne\s+finance|aventura\s+digital|lorem\s+ips\w*|test\s+iframe"
+    r")\b",
+    re.IGNORECASE,
+)
+
 # Unconditional hard exclusions (rejected even if an agency or generic fire/forestry word appears)
 HARD_EXCLUSION_PATTERN = re.compile(
     r"\b("
@@ -254,13 +281,13 @@ HARD_EXCLUSION_PATTERN = re.compile(
     r"subvenci[oó]n(?:es)?\s+directa[s]?|concesi[oó]n\s+directa\s+de\s+(?:una\s+)?subvenci[oó]n|"
     r"autoriza\s+la\s+concesi[oó]n\s+directa|concesi[oó]n\s+directa\s+de\s+ayudas?|ayudas?\s+\d{4}\s+directas?\s+a\s+(?:empresas|explotaciones)|"
     r"dir_22\.2\.a|subvenci[oó]n\s+federaci[oó]n|ayuda\s+excepcional\s+a\s+la\s+asociaci[oó]n|subv\.\s+seo/birdlife|"
-    r"convenio\s+(?:de\s+)?colaboraci[oó]n|convenio\s+diputaci[oó]n|aprobaci[oó]n\s+del\s+convenio|"
-    r"convenio\s+(?:entre|con\s+la\s+asociaci[oó]n|con\s+la\s+fundaci[oó]n|con\s+la\s+organizaci[oó]n|con\s+la\s+comunidad|para\s+(?:la\s+)?concesi[oó]n)|"
+    r"convenio\s+diputaci[oó]n|aprobaci[oó]n\s+del\s+convenio|"
+    r"convenio\s+para\s+(?:la\s+)?(?:creaci[oó]n|concesi[oó]n)|"
     r"cuota\s+anual|aportaci[oó]n\s+al\s+csic|"
     r"trabajos?\s+(?:de\s+)?fin\s+de\s+(?:grado|m[aá]ster|estudios)|beca[s]?\s+de\s+colaboraci[oó]n|beca\s+red\s+natura|"
     r"miradas\s+veterinarias|escuela\s+de\s+animaci[oó]n|casa\s+penya|actividades\s+de\s+educaci[oó]n\s+ambiental\s+en\s+el\s+municipio|"
     r"sector\s+tur[ií]stico|explotaciones?\s+agr[ií]colas?\s+(?:y\s+|,\s*)?ganaderas?|vi[ñn]edo\s+secano|pr[eé]stamos?\s+bonificados?|"
-    r"control\s+de\s+la\s+poblaci[oó]n|buena\s+gobernanza|"
+    r"control\s+de\s+la\s+poblaci[oó]n\s+de\s+especies\s+cineg[eé]ticas|"
     r"subvenciones?\s+no\s+dinerarias?\s+para\s+la\s+redacci[oó]n|obras?\s+de\s+sellado\s+y\s+restauraci[oó]n|"
     r"colectivos?\s+de\s+inter[eé]s\s+vecinal|"
     r"convocatoria\s+de\s+(?:la\s+)?(?:junta|asamblea)\s+general|comunidad\s+de\s+regantes|"
@@ -273,10 +300,8 @@ HARD_EXCLUSION_PATTERN = re.compile(
     r"restoration\s+of\s+marine\s+habitats?|marine\s+and\s+coastal\s+ecosystems|blue\s+forest|"
     r"atlantic\s+and\s+arctic\s+sea\s+basin|biotecnolog[ií]a\s+para\s+ccu|"
     r"preparedness\s+for\s+large[-\s]?scale\s+cross[-\s]?border\s+disasters?|"
-    r"eficiencia\s+energ[eé]tica\s+con\b|movilidad\s+sostenible\s+con\b|reformas?\s+sostenibles?\s+con\b|te\s+contamos\s+m[aá]s|"
-    r"hispaled|koiki|gne\s+finance|aventura\s+digital|bases\s+legales\s+ii\s+convocatoria|presenta\s+tu\s+candidatura|"
-    r"premios?\s+fronteras\s+del\s+conocimiento|premios?\s+de\s+inform[aá]tica|red\s+leonardo|"
-    r"lorem\s+ips\w*|test\s+iframe|proyectos?\s+ganadores?|"
+    r"te\s+contamos\s+m[aá]s|"
+    r"premios?\s+de\s+inform[aá]tica\s+bbva|"
     r"AYUD0580T01|da[ñn]os\s+ocasionados\s+por\s+especies\s+de\s+la\s+fauna\s+silvestre|"
     r"ganado\s+(?:bovino|ovino|caprino|porcino)|repoblaci[oó]n\s+en\s+explotaciones?\s+de\s+ganado|destinad[oa]s?\s+a\s+(?:los\s+|las\s+)?ganaderos\b|"
     r"subv\.?\s*nom\.|subvenciones?\s+nominativ\w*|becas?\s+(?:de\s+)?(?:aella|deportistas)|"
@@ -300,10 +325,21 @@ HARD_EXCLUSION_PATTERN = re.compile(
     r"inventario\s+espa[ñn]ol\s+de\s+zonas\s+h[uú]medas|inclusi[oó]n\s+en\s+el\s+inventario|"
     r"mantenimiento\s+de\s+las?\s+instalaciones?\s+del\b|"
     r"residuos?\s+peligrosos|tratamiento\s+de\s+residuos|ecoparque\b|vigilancia\s+ambiental\s+de\s+las?\s+instalaciones|buques?\s+de\s+la\s+armada|aguas\s+de\s+saneamiento|"
-    r"suelo\s+t[eé]cnico|esc[eé]nico|ferias\s+y\s+congresos|carnaval|"
+    r"suelo\s+(?:t[eé]cnico|esc[eé]nico)|ferias\s+y\s+congresos|carnaval|"
     r"desarrollo\s+de\s+(?:una\s+)?plataforma\b|datos\s+espaciales|"
     r"mantenimiento\s+y\s+conservaci[oó]n\s+de\s+(?:las?\s+)?zonas\s+verdes|zonas\s+verdes\s+y\s+espacios\s+exteriores|"
     r"adquisici[oó]n\s+d[eu]n?h?a?\s+rozadoira|suministro\s+de\s+(?:maquinaria|veh[ií]culos|autobombas|motobombas|camiones|rozadoiras)|"
+    r"becas?\s+(?:para\s+)?pr[aá]cticas\s+de\s+estudiantes|creaci[oó]n\s+de\s+(?:la\s+)?c[aá]tedra\b|artesan[ií]a\s+art[ií]stica|concurso\s+de\s+pieza\s+[uú]nica|dir\.?\s*22\.2(?:\.[a-z])?\b|"
+    r"concesi[oó]n\s+de\s+aguas(?:\s+(?:p[uú]blicas|subterr[aá]neas|superficiales|mixtas))?|aprovechamiento\s+de\s+[\d.,]+\s*l/s|extinci[oó]n\s+del\s+derecho|"
+    r"autorizaci[oó]n\s+de\s+vertido|aguas\s+regeneradas|c[aá]non(?:es)?\s+de\s+regulaci[oó]n|tarifas?\s+de\s+utilizaci[oó]n\s+del\s+agua|modificaci[oó]n\s+de\s+caracter[ií]sticas\s+de\s+concesi[oó]n|"
+    r"ocupaci[oó]n\s+(?:de(?:l)?\s+)?dominio\s+p[uú]blico\s+mar[ií]timo|demarcaci[oó]n\s+de\s+costas|pantal[aá]n\b|embarcadero\b|clases\s+de\s+surf|"
+    r"declaraci[oó]n\s+(?:de\s+)?impacto\s+ambiental|informe\s+de\s+impacto\s+ambiental|declaraci[oó]n\s+ambiental\s+estrat[eé]gica|autorizaci[oó]n\s+administrativa\s+de\s+construcci[oó]n|"
+    r"parque\s+e[oó]lico|planta\s+(?:solar\s+)?fotovoltaica|m[oó]dulos?\s+fotovoltaicos?|capacidad\s+de\s+acceso.*red\s+de\s+transporte|"
+    r"contadores\s+inteligentes|(?:conducci[oó]n|red|distribuidora)\s+de\s+gas\s+natural|productos\s+petrol[ií]feros|residuos\s+radioactivos|"
+    r"exploraci[oó]n\s+minera|f[aá]brica\s+m[oó]vil\s+de\s+explosivos|cogeneraci[oó]n|aparatos?\s+radiactivos|rayos\s+x\b|"
+    r"libre\s+designaci[oó]n|provisi[oó]n\s+de\s+puestos\s+de\s+trabajo|relaci[oó]n\s+definitiva\s+de\s+personas\s+admitidas\s+y\s+excluidas|proceso\s+selectivo\s+para\s+ingreso|"
+    r"corta\s+de\s+\d+\s+(?:chopos|[aá]rboles)|cambio\s+de\s+cultivo|plan\s+de\s+cortas\s+para|deslinde\s+de\s+(?:los\s+)?terrenos|"
+    r"sistema\s+de\s+defensa\s+contra\s+incendios\s+en\s+(?:los\s+)?edificios?|equipos?\s+(?:de\s+protecci[oó]n\s+)?contra\s+incendios\s+en\s+edificios?|"
     r"promoting\s+sustainable\s+forestry\s+in\s+(?:romania|bulgaria|greece|poland|brazil|vietnam)\b"
     r")",
     re.IGNORECASE,
@@ -314,6 +350,7 @@ NEGATIVE_NOISE_PATTERN = re.compile(
     r"\b("
     r"extinci[oó]n\s+de\s+condominio|extinci[oó]n\s+de\s+contrato|monte\s+de\s+piedad|"
     r"extintor(?:es)?\s+port[aá]til\w*|recarga\s+de\s+extintores|"
+    r"ahorro\s+y\s+eficiencia\s+energ[eé]tica|transici[oó]n\s+energ[eé]tica|"
     r"detecci[oó]n\s+de\s+incendios\s+en\s+(?:edificio|colegio|hospital|oficina|pabell[oó]n|nave|parking|garaje)|"
     r"protecci[oó]n\s+pasiva\s+contra\s+incendios\s+en\s+edificio\w*|boca[s]?\s+de\s+incendio\s+equipad\w*|"
     r"c[eé]sped\s+artificial|campo\s+de\s+f[uú]tbol|pista\s+de\s+p[aá]del|"
@@ -404,7 +441,9 @@ def evaluate_layer1(
         )
 
     # 0C. Unconditional Hard Exclusions (closed contract awards, nominative single-beneficiary grants, marine/EV noise)
-    hard_excl = [m.group(0) for m in HARD_EXCLUSION_PATTERN.finditer(combined)]
+    # Plus title-scoped checks so legal-bases PDF boilerplate ("mediante convenio de colaboración", "proyectos ganadores") never rejects genuine calls.
+    title_excl = [m.group(0) for m in TITLE_HARD_EXCLUSION_PATTERN.finditer(titulo or "")]
+    hard_excl = title_excl + [m.group(0) for m in HARD_EXCLUSION_PATTERN.finditer(combined)]
     if hard_excl:
         return Layer1Result(
             passed=False,
@@ -477,6 +516,13 @@ def evaluate_layer1(
             score += 25
             categories.add(cat)
             matched_terms.extend(sorted({m.lower() for m in matches})[:3])
+
+    # 4B. Check Block 4 (Environmental, Forestry, Ecological & Climate Scientific/Technical Research)
+    research_hits = [label for pat, label in PATTERNS_ENV_RESEARCH if pat.search(content_only)]
+    if research_hits:
+        score += 35
+        categories.add("investigacion_ambiental")
+        matched_terms.extend(research_hits[:4])
 
     # 5. Check Issuing Body & Strategic Agency boost across organo + titulo + lead text
     organo_matches = [m.group(0) for m in ORGANO_BOOST_PATTERN.finditer(f"{organo} {titulo} {texto[:2500]}")]

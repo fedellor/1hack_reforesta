@@ -1,4 +1,6 @@
 """Official institutional & statutory profile of Asociación Reforesta (from reforesta.es)."""
+from dataclasses import dataclass
+import re
 from typing import Any
 
 REFORESTA_STATUTORY_FINES: list[dict[str, Any]] = [
@@ -122,3 +124,362 @@ def match_statute_alignment(
         "presencia_territorial_previa": territory_note,
         "elegibilidad_juridica": "Asociación sin ánimo de lucro declarada de Utilidad Pública (NIF G80428204 · Reg. 162965 · 35 años de experiencia desde 1991)",
     }
+
+
+_EXCLUSION_CLAUSE_RE = re.compile(
+    r"(?:no\s+podr[aá]n\s+ser\s+beneficiar[ia]s|quedan\s+excluid[oa]s|se\s+excluye(?:n)?|"
+    r"no\s+ser[aá]n\s+elegibles|est[aá]n\s+excluid[oa]s|excluidas?\s+expresamente)"
+    r"[^.;\n]{0,220}",
+    re.IGNORECASE,
+)
+
+_NGO_BAN_RE = re.compile(
+    r"(?:"
+    r"(?:no\s+podr[aá]n\s+ser\s+beneficiar[ia]s|quedan\s+excluid[oa]s|se\s+excluyen?)\s+"
+    r"(?:las?\s+)?(?:entidades\s+sin\s+[aá]nimo\s+de\s+lucro|asociaciones|fundaciones|ong|esal|entidades\s+privadas)"
+    r"|"
+    r"(?:exclusivamente|solo|solamente|[uú]nicamente)\s+(?:para\s+|dirigid[oa]s?\s+a\s+)?"
+    r"(?:empresas|pymes|aut[oó]nomos|sociedades\s+mercantiles|ayuntamientos|entidades\s+locales|"
+    r"corporaciones\s+locales|concellos|universidades|propietarios\s+forestales|comunidades\s+de\s+montes|"
+    r"titulares\s+de\s+explotaciones|agricultores|ganaderos|personas\s+f[ií]sicas)"
+    r")",
+    re.IGNORECASE,
+)
+
+_DOMICILE_OUTSIDE_MADRID_RE = re.compile(
+    r"(?:domicilio\s+social(?:\s+(?:y|o)\s+fiscal)?|sede\s+social|domicilio\s+fiscal|"
+    r"radicad[oa]s?(?:\s+legalmente)?|inscrit[oa]s?\s+en\s+el\s+registro(?:\s+de\s+asociaciones)?)"
+    r"\s+(?:en|de)\s+(?:la\s+(?:comunidad|regi[oó]n)\s+(?:aut[oó]noma\s+)?de\s+)?"
+    r"(andaluc[ií]a|arag[oó]n|asturias|principado\s+de\s+asturias|ill?es?\s+balears?|baleares|"
+    r"canarias|cantabria|castilla[\s\-]+la\s+mancha|castilla\s+y\s+le[oó]n|"
+    r"catalu[nñ]a|catalunya|comunitat\s+valenciana|comunidad\s+valenciana|extremadura|"
+    r"galicia|la\s+rioja|regi[oó]n\s+de\s+murcia|murcia|navarra|comunidad\s+foral\s+de\s+navarra|"
+    r"pa[ií]s\s+vasco|euskadi|ceuta|melilla|bizkaia|gipuzkoa|[aá]lava|"
+    r"a\s+coru[nñ]a|lugo|ourense|pontevedra|barcelona|girona|lleida|tarragona|"
+    r"sevilla|m[aá]laga|granada|c[oó]rdoba|c[aá]diz|huelva|ja[eé]n|almer[ií]a|"
+    r"valencia|alicante|castell[oó]n|zaragoza|huesca|teruel|badajoz|c[aá]ceres)\b",
+    re.IGNORECASE,
+)
+
+_NGO_POSITIVE_PATTERNS = (
+    re.compile(r"sin\s+[aá]nimo\s+de\s+lucro", re.IGNORECASE),
+    re.compile(r"sin\s+fin(?:es)?\s+de\s+lucro", re.IGNORECASE),
+    re.compile(r"\besal\b", re.IGNORECASE),
+    re.compile(r"tercer\s+sector", re.IGNORECASE),
+    re.compile(r"inter[eé]s\s+social", re.IGNORECASE),
+    re.compile(r"entidad(?:es)?\s+no\s+lucrativ[ao]s?", re.IGNORECASE),
+    re.compile(r"organizaciones?\s+no\s+gubernamentales?", re.IGNORECASE),
+    re.compile(r"\bongs?\b", re.IGNORECASE),
+    re.compile(r"\b(?:non[\s\-]?profit|not[\s\-]?for[\s\-]?profit|ngos?)\b", re.IGNORECASE),
+    re.compile(
+        r"asociaciones?\s+(?:privadas?|sin|de\s+utilidad\s+p[uú]blica|ecologistas?|ambientales?|ciudadanas?|forestales?|y\s+fundaciones)",
+        re.IGNORECASE,
+    ),
+    re.compile(r"custodia\s+del\s+territorio|entidades?\s+de\s+custodia", re.IGNORECASE),
+    re.compile(r"personas\s+jur[ií]dicas\s+que\s+no\s+desarrollan\s+actividad\s+econ[oó]mica", re.IGNORECASE),
+    re.compile(r"entidades?\s+sociales?(?:\s+del|\s+y\s+ambientales|\s+que|\s+para|\b)", re.IGNORECASE),
+    re.compile(r"orden\s+ted/898/2023|1689/2026|923290", re.IGNORECASE),
+)
+
+_MITECO_LINEA_A_OVERRIDE_RE = re.compile(
+    r"(?:923290|orden\s+ted/898/2023|concurrencia\s+competitiva\s+l[ií]nea\s+a|"
+    r"actividades\s+(?:de\s+)?inter[eé]s\s+general\s+consideradas\s+(?:de\s+)?inter[eé]s\s+social)",
+    re.IGNORECASE,
+)
+
+_EU_SME_ONLY_RE = re.compile(
+    r"\b(?:eic\s+accelerator|smes?\s+only|only\s+for\s+smes?|exclusively\s+for\s+smes?|startups?\s+only)\b",
+    re.IGNORECASE,
+)
+
+_NON_NGO_ONLY_STARTUP_INDIVIDUAL_RE = re.compile(
+    r"\b(?:startups?|empresas?\s+emergentes?|spin[\s\-]?offs?|aceleradora|tesis\s+doctoral(?:es)?|"
+    r"investigadores\s+individuales|j[oó]venes\s+investigadores|equipos\s+de\s+investigaci[oó]n)\b",
+    re.IGNORECASE,
+)
+
+_TITLE_EXCLUSIVE_RECIPIENT_RE = re.compile(
+    r"\b(?:dirigid[oa]s?\s+(?:exclusivamente\s+)?a|destinad[oa]s?\s+(?:exclusivamente\s+)?a|"
+    r"subvenciones?\s+(?:a|para)|ayudas?\s+(?:p[uú]blicas?\s+)?(?:a|para))\s+"
+    r"(?:las?\s+|los?\s+)?(?:"
+    r"entidades?\s+locales?|ayuntamientos?|municipios?|corporaciones?\s+locales?|concellos?|"
+    r"empresas?|pymes?|aut[oó]nomos?|sociedades?\s+mercantiles?|"
+    r"centros?\s+(?:escolares?|educativos?|docentes?)|colegios?|institutos?|"
+    r"propietarios?\s+forestales?|agricultores?|ganaderos?|comunidades?\s+de\s+montes|cazadores"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+@dataclass(frozen=True)
+class ReforestaEligibility:
+    """Strict eligibility assessment for Asociación Reforesta (ESAL, NIF G80428204, domicilio ES-MD)."""
+
+    elegible: bool
+    beneficiarios_tipos: list[str]
+    motivo_elegibilidad: str
+    dealbreakers: list[str]
+
+
+def assess_reforesta_eligibility(
+    titulo: str,
+    organo: str = "",
+    texto: str = "",
+    beneficiarios_hint: str = "",
+    tipo_oportunidad: str = "SUBVENCION",
+    nivel_territorial: str = "ESTADO",
+    ccaa_codigo: str = "ES",
+    ccaa_nombre: str = "",
+    requisitos_resumen: str = "",
+    codigo_oficial: str = "",
+    justificacion_juez: str = "",
+) -> ReforestaEligibility:
+    """
+    Evaluate whether Asociación Reforesta (Asociación privada sin ánimo de lucro,
+    Utilidad Pública, sede Tres Cantos - Madrid) can apply directly.
+
+    Never scans `organo` for beneficiary category (avoiding false positives from
+    "Fundación Biodiversidad" grants meant for municipalities or companies) and
+    strips negative exclusion clauses before detecting positive NGO eligibility.
+    """
+    raw_body = f"{titulo}\n{texto}\n{requisitos_resumen}\n{codigo_oficial}"
+    cleaned_body = _EXCLUSION_CLAUSE_RE.sub(" ", raw_body)
+
+    # BDNS 923290 carries a ministerial entry quirk listing "PERSONAS FÍSICAS QUE NO DESARROLLAN ACTIVIDAD ECONÓMICA"
+    # despite Orden TED/898/2023 restricting Línea A to Tercer Sector / interés social entities.
+    is_miteco_linea_a = bool(_MITECO_LINEA_A_OVERRIDE_RE.search(raw_body))
+
+    b_pos_text = f"{beneficiarios_hint} {cleaned_body}".lower()
+    b_raw_text = f"{beneficiarios_hint} {raw_body}".lower()
+
+    benef_types: list[str] = []
+
+    has_ngo_marker = is_miteco_linea_a or any(
+        pat.search(f"{beneficiarios_hint}\n{cleaned_body}") for pat in _NGO_POSITIVE_PATTERNS
+    )
+    is_eu_open = (
+        tipo_oportunidad == "PROGRAMA_UE"
+        or (nivel_territorial == "UE" and ("life" in b_raw_text or "horizon" in b_raw_text or "interreg" in b_raw_text))
+    ) and not _EU_SME_ONLY_RE.search(b_raw_text)
+
+    if is_eu_open:
+        has_ngo_marker = True
+
+    # Corporate/foundation grants mentioning NGOs/social entities/territorial conservation
+    # without startup/company/academic-only restriction qualify for ESAL unless banned below.
+    if (
+        not has_ngo_marker
+        and tipo_oportunidad == "CONVOCATORIA_PRIVADA"
+        and not _NON_NGO_ONLY_STARTUP_INDIVIDUAL_RE.search(b_raw_text)
+        and not _NGO_BAN_RE.search(b_raw_text)
+        and not any(k in b_pos_text for k in ("pyme", "autónomos", "sociedades mercantiles", "contratista"))
+        and any(
+            k in b_pos_text
+            for k in (
+                "entidades sociales",
+                "proyecto ambiental",
+                "proyectos ambientales",
+                "conservación",
+                "biodiversidad",
+                "reforestación",
+                "renaturalización",
+                "emprendimiento verde",
+                "valor social",
+                "sostenibilidad",
+                "medioambiente",
+                "medio ambiente",
+                "clima",
+                "climática",
+            )
+        )
+    ):
+        has_ngo_marker = True
+
+    # If the title itself explicitly addresses a non-NGO audience without mentioning associations/ESAL/ONG,
+    # reject NGO eligibility even if BDNS checked "PERSONAS JURÍDICAS QUE NO DESARROLLAN ACTIVIDAD ECONÓMICA".
+    if (
+        not is_miteco_linea_a
+        and _TITLE_EXCLUSIVE_RECIPIENT_RE.search(titulo or "")
+        and not re.search(
+            r"sin\s+[aá]nimo\s+de\s+lucro|sin\s+fin(?:es)?\s+de\s+lucro|\besal\b|asociaci[oó]n|asociaciones|fundaci[oó]n|fundaciones|tercer\s+sector|\bong\b",
+            titulo or "",
+            re.IGNORECASE,
+        )
+    ):
+        has_ngo_marker = False
+
+    if has_ngo_marker:
+        benef_types.append("ONG_FUNDACIONES")
+
+    if any(
+        k in b_pos_text
+        for k in (
+            "ayuntamiento",
+            "entidades locales",
+            "municipios",
+            "corporaciones locales",
+            "diputaci",
+            "cabildo",
+            "consell",
+            "concello",
+            "ajuntament",
+            "udala",
+            "mancomunidad",
+            "administraciones públicas",
+            "local authorities",
+        )
+    ):
+        benef_types.append("AYUNTAMIENTO")
+
+    if any(
+        k in b_pos_text
+        for k in (
+            "empresas",
+            "pyme",
+            "pymes",
+            "autónomos",
+            "personas jurídicas que desarrollan actividad económica",
+            "personas físicas que desarrollan actividad económica",
+            "gran empresa",
+            "startups",
+            "startup",
+            "emprendedores",
+            "sociedades mercantiles",
+            "contratista",
+            "licitador",
+            "sme",
+            "explotaciones agrarias",
+        )
+    ):
+        benef_types.append("EMPRESA_PYME")
+
+    if not is_miteco_linea_a and any(
+        k in b_pos_text
+        for k in (
+            "personas físicas que no desarrollan actividad económica",
+            "propietarios forestales",
+            "titulares de terrenos",
+            "particulares",
+            "agricultores",
+            "ganaderos",
+            "silvicultores",
+            "becas individuales",
+            "dehesas",
+        )
+    ):
+        benef_types.append("PARTICULAR_PROPIETARIO")
+
+    if any(
+        k in b_pos_text
+        for k in (
+            "montes vecinales",
+            "mano común",
+            "man comun",
+            "man común",
+            "comunidades de montes",
+            "agrupaciones de propietarios forestales",
+            "agrupaciones forestales",
+            "juntas vecinales",
+            "sofor",
+        )
+    ):
+        benef_types.append("COMUNIDAD_MONTES")
+
+    if any(
+        k in b_pos_text
+        for k in (
+            "universidad",
+            "organismos públicos de investigación",
+            "centros de investigación",
+            "centros tecnológicos",
+            "equipos de investigación",
+            "investigadores",
+            "centros educativos",
+            "colegios",
+            "institutos",
+            "csic",
+            "opis",
+        )
+    ):
+        benef_types.append("UNIVERSIDAD_INVESTIGACION")
+
+    # Apply explicit bans & restrictions for Asociación Reforesta
+    ngo_banned = bool(_NGO_BAN_RE.search(f"{beneficiarios_hint}\n{raw_body}")) and not is_miteco_linea_a
+    if ngo_banned and not has_ngo_marker:
+        benef_types = [b for b in benef_types if b != "ONG_FUNDACIONES"]
+
+    dealbreakers: list[str] = []
+
+    domicile_match = None
+    if ccaa_codigo not in ("ES", "EU", "ES-MD"):
+        domicile_match = _DOMICILE_OUTSIDE_MADRID_RE.search(raw_body)
+
+    if domicile_match:
+        req_place = domicile_match.group(1).strip()
+        benef_clean = benef_types or ["ESPECIFICO_TERRITORIAL"]
+        msg = f"Exige domicilio o sede social en {req_place} (Reforesta tiene domicilio social en Tres Cantos, Madrid)."
+        dealbreakers.append(msg)
+        return ReforestaEligibility(
+            elegible=False,
+            beneficiarios_tipos=benef_clean,
+            motivo_elegibilidad=f"Excluida para Reforesta: {msg}",
+            dealbreakers=dealbreakers,
+        )
+
+    if ngo_banned and ("ONG_FUNDACIONES" not in benef_types or _EXCLUSION_CLAUSE_RE.search(raw_body)):
+        # Re-check whether ban specifically excludes NGOs even if text mentioned NGO inside exclusion clause
+        excl_chunks = " ".join(_EXCLUSION_CLAUSE_RE.findall(raw_body)).lower()
+        if any(k in excl_chunks for k in ("sin ánimo de lucro", "sin animo de lucro", "asociaciones", "fundaciones", "esal")):
+            benef_clean = [b for b in benef_types if b != "ONG_FUNDACIONES"] or ["EXCLUIDO_ESAL"]
+            msg = "Las bases excluyen expresamente a asociaciones o entidades sin ánimo de lucro."
+            dealbreakers.append(msg)
+            return ReforestaEligibility(
+                elegible=False,
+                beneficiarios_tipos=benef_clean,
+                motivo_elegibilidad=f"Excluida para Reforesta: {msg}",
+                dealbreakers=dealbreakers,
+            )
+
+    if tipo_oportunidad == "LICITACION" and not has_ngo_marker:
+        msg = (
+            "Licitación de contratación pública (LCSP): orientada a contratistas/empresas; "
+            "Reforesta no es elegible como beneficiaria de subvención directa (solo UTE o asistencia técnica)."
+        )
+        dealbreakers.append(msg)
+        return ReforestaEligibility(
+            elegible=False,
+            beneficiarios_tipos=benef_types or ["EMPRESA_PYME"],
+            motivo_elegibilidad=f"Excluida por requisitos de contratación: {msg}",
+            dealbreakers=dealbreakers,
+        )
+
+    if "ONG_FUNDACIONES" not in benef_types:
+        if "EMPRESA_PYME" in benef_types:
+            msg = "Reservada a empresas, PYMEs, autónomos o startups con actividad económica (no elegible para ESAL sin ánimo de lucro)."
+        elif "AYUNTAMIENTO" in benef_types:
+            msg = "Reservada exclusivamente a Ayuntamientos, Entidades Locales o Administraciones Públicas."
+        elif "COMUNIDAD_MONTES" in benef_types:
+            msg = "Reservada exclusivamente a Comunidades de Montes Vecinales en Mano Común (MVMC) o agrupaciones forestales."
+        elif "PARTICULAR_PROPIETARIO" in benef_types:
+            msg = "Reservada a personas físicas, agricultores o propietarios privados de terrenos."
+        elif "UNIVERSIDAD_INVESTIGACION" in benef_types:
+            msg = "Reservada a universidades, organismos públicos de investigación (OPIs), investigadores individuales o centros educativos."
+        else:
+            msg = "No acredita elegibilidad para asociaciones privadas sin ánimo de lucro (ESAL) en BDNS ni en las bases extractadas."
+        dealbreakers.append(msg)
+        return ReforestaEligibility(
+            elegible=False,
+            beneficiarios_tipos=benef_types or ["NO_ESPECIFICADO"],
+            motivo_elegibilidad=f"Excluida para Reforesta: {msg}",
+            dealbreakers=dealbreakers,
+        )
+
+    detail_tail = f" {justificacion_juez}" if justificacion_juez else ""
+    return ReforestaEligibility(
+        elegible=True,
+        beneficiarios_tipos=benef_types,
+        motivo_elegibilidad=(
+            f"Apta para Asociación Reforesta ({', '.join(benef_types)}).{detail_tail}".strip()
+        ),
+        dealbreakers=[],
+    )

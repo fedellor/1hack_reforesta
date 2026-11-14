@@ -16,6 +16,7 @@ from app.ingestors.live_connectors import (
     fetch_live_eu_sedia_candidates,
     fetch_live_placsp_candidates,
     fetch_live_private_foundation_candidates,
+    fetch_live_public_portal_candidates,
 )
 from app.ingestors.multilevel_catalog import get_multilevel_candidates
 from app.models import IngestionRun, Opportunity
@@ -69,19 +70,21 @@ async def run_full_ingestion(
         "eu_sedia_live": 0,
         "ccaa_rss_live": 0,
         "private_foundations_live": 0,
+        "public_portals_live": 0,
         "pdf_links_enriched": 0,
     }
     if include_live_apis:
-        bdns_live, placsp_live, boe_live, eu_live, rss_live, priv_live = await asyncio.gather(
+        bdns_live, placsp_live, boe_live, eu_live, rss_live, priv_live, pub_live = await asyncio.gather(
             fetch_live_bdns_candidates(max_per_keyword=100, timeout=12.0),
             fetch_live_placsp_candidates(timeout=14.0, max_pages=4),
-            fetch_live_boe_candidates(days_back=21, timeout=8.0),
+            fetch_live_boe_candidates(days_back=30, timeout=8.0),
             fetch_live_eu_sedia_candidates(timeout=7.0),
             fetch_live_ccaa_rss_candidates(timeout=5.0),
-            fetch_live_private_foundation_candidates(timeout=5.5),
+            fetch_live_private_foundation_candidates(timeout=6.0),
+            fetch_live_public_portal_candidates(timeout=6.5),
         )
-        live_batch = bdns_live + placsp_live + boe_live + eu_live + rss_live + priv_live
-        enriched_pdfs = await enrich_candidates_with_linked_pdfs(live_batch, timeout=5.0, max_downloads=45)
+        live_batch = bdns_live + placsp_live + boe_live + eu_live + rss_live + priv_live + pub_live
+        enriched_pdfs = await enrich_candidates_with_linked_pdfs(live_batch, timeout=5.0, max_downloads=60)
         live_counts = {
             "bdns_live": len(bdns_live),
             "placsp_live": len(placsp_live),
@@ -89,6 +92,7 @@ async def run_full_ingestion(
             "eu_sedia_live": len(eu_live),
             "ccaa_rss_live": len(rss_live),
             "private_foundations_live": len(priv_live),
+            "public_portals_live": len(pub_live),
             "pdf_links_enriched": enriched_pdfs,
         }
         candidates.extend(live_batch)
