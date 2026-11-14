@@ -33,3 +33,4 @@ data/*.db-shm
 .idea/
 .DS_Store
 Thumbs.db
+informes/

@@ -14,6 +14,7 @@ from app.config import FUENTES_DIR, settings
 from app.database import engine, get_session, init_db, query_cache
 from app.domain.reforesta_profile import get_reforesta_profile
 from app.geo import CCAA_CATALOG
+from app.informe_semanal import construir as construir_informe_semanal, nuevas_desde
 from app.ingestors.fuentes_local import pdf_doc_to_candidate
 from app.ingestors.live_connectors import SOURCES_REGISTRY
 from app.ingestors.runner import (
@@ -264,6 +265,19 @@ def health_check(session: Session = Depends(get_session)) -> dict[str, Any]:
             "madrid_orden_1689_2026_detected": benchmark_madrid,
         },
     }
+
+@app.get("/informe-semanal", response_class=HTMLResponse, tags=["Informes"])
+def informe_semanal(
+    dias: int = Query(default=7, ge=1, le=60, description="Días hacia atrás desde hoy"),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    """Informe HTML de las convocatorias nuevas de los últimos días. Se genera al abrir el enlace, siempre con los datos actuales."""
+    from datetime import timedelta
+
+    hoy = date.today()
+    desde = hoy - timedelta(days=dias)
+    convocatorias = get_frontend_convocatorias(estado="ABIERTAS", ccaa=None, q=None, session=session)["convocatorias"]
+    return HTMLResponse(construir_informe_semanal(nuevas_desde(convocatorias, desde), desde, hoy))
 
 
 @app.get("/api/convocatorias", tags=["Puente Directo Frontend (Next.js roialtra)"])
