@@ -6,7 +6,7 @@ import { Convocatoria } from '@/types/convocatoria';
 import { formatoEuros } from '@/lib/territorio';
 import { diasHastaApertura, esProxima, plazoSinFijar } from '@/lib/plazo';
 import { esCitaLiteral, limpiarJustificacion } from '@/lib/texto';
-import { Programa, nombreMes, recurrenciaDe } from '@/lib/recurrencia';
+import { Programa, recurrenciaDe, textoVentana } from '@/lib/recurrencia';
 
 interface EmpresasViewProps {
   convocatorias: Convocatoria[];
@@ -56,7 +56,7 @@ export function EmpresasView({ convocatorias, onSeleccionar, programas = [] }: E
               </span>
               {rec && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-3 py-1 text-amber-800" title={`Ediciones: ${rec.anios.join(', ')}`}>
-                  <Repeat className="h-3 w-3" /> Se repite · suele salir en {nombreMes(rec.mesApertura)}
+                  <Repeat className="h-3 w-3" /> Se repite · suele salir en {textoVentana(rec)}
                 </span>
               )}
             </div>

@@ -4,11 +4,32 @@ import { SIN_PLAZO } from '@/lib/plazo';
 /** Días de antelación con los que conviene empezar a preparar una memoria (criterio del backend: 45 días). */
 export const PREPARACION_PREVIA_DIAS = 45;
 
+/**
+ * Parecido mínimo entre dos títulos (índice de Jaccard sobre sus palabras) para considerar que son el mismo programa.
+ * Con valores altos un programa se parte cuando el título cambia ligeramente de un año a otro; con valores bajos se mezclan
+ * programas distintos del mismo órgano. 0,55 es un punto prudente; se puede contrastar con `evaluarPrevision`.
+ */
+export const UMBRAL_AGRUPADO = 0.55;
+
 const DIA_MS = 86_400_000;
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 export const nombreMes = (m: number) => MESES[(m + 11) % 12];
 
-export type Confianza = 'alta' | 'media' | 'baja';
+/**
+ * Probabilidad de que el programa salga en su próximo ciclo, por reglas simples (medidas con el histórico, ver `evaluarPrevision`):
+ * - alta: salió el año anterior al ciclo y tiene 3 o más años de edición.
+ * - media: salió el año anterior al ciclo, pero solo tiene 2 años de edición.
+ * - baja: lleva 2 o más años sin salir.
+ * La regularidad del mes NO entra aquí: sirve para estimar cuándo, no si.
+ */
+export type Tramo = 'alta' | 'media' | 'baja';
+
+export const ETIQUETA_TRAMO: Record<Tramo, string> = { alta: 'Alta', media: 'Media', baja: 'Baja' };
+export const ORDEN_TRAMO: Record<Tramo, number> = { alta: 0, media: 1, baja: 2 };
+
+/** Ventana habitual en texto: «marzo» o «marzo – mayo». */
+export const textoVentana = (p: Pick<Programa, 'mesDesde' | 'mesHasta'>) =>
+  p.mesDesde === p.mesHasta ? nombreMes(p.mesDesde) : `${nombreMes(p.mesDesde)} – ${nombreMes(p.mesHasta)}`;
 
 export interface Programa {
   clave: string;
@@ -18,21 +39,26 @@ export interface Programa {
   /** Ediciones detectadas, de la más reciente a la más antigua */
   ediciones: Convocatoria[];
   anios: number[];
-  /** Mes (1-12) en que suele publicarse */
+  /** Mes (1-12) en que más veces se ha publicado */
   mesApertura: number;
+  /** Ventana habitual de publicación: arco de meses más corto que contiene todas las ediciones (circular, 1-12) */
+  mesDesde: number;
+  mesHasta: number;
   /** Duración típica de la ventana de solicitud, en días (null si no hay datos fiables) */
   ventanaDias: number | null;
   cuantiaMedia: number;
-  confianza: Confianza;
-  /** Índice de fiabilidad 0-100: regularidad del mes de publicación ponderada por los años con edición */
-  fiabilidad: number;
+  tramo: Tramo;
   /** Edición abierta ahora, si la hay */
   abierta: Convocatoria | null;
-  /** Próxima publicación prevista (tras la última edición detectada) */
+  /** Primer día de la ventana prevista del próximo ciclo */
   proxima: Date;
-  /** Fecha a partir de la cual conviene empezar a preparar la solicitud */
+  /** Último día de la ventana prevista */
+  proximaFin: Date;
+  /** Fecha a partir de la cual conviene empezar a preparar la solicitud (45 días antes del inicio de la ventana) */
   prepararDesde: Date;
-  /** La fecha prevista ya pasó y no se ha detectado la edición de este año */
+  /** Hoy estamos dentro de la ventana prevista y no se ha detectado la edición: puede salir ya */
+  enVentana: boolean;
+  /** La ventana prevista terminó hace poco y no se ha detectado la edición de este ciclo */
   retrasada: boolean;
 }
 
@@ -45,24 +71,65 @@ const STOP = new Set([
 
 const sinAcentos = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
-/** Identifica el «programa» al que pertenece una convocatoria: mismo órgano y mismo título sin años ni números de orden. */
-export function claveDePrograma(c: Pick<Convocatoria, 'organismo' | 'titulo'>): string {
-  const tema = sinAcentos(c.titulo)
-    .replace(/\b(19|20)\d{2}(\s*[-/]\s*(19|20)?\d{2})?\b/g, ' ')
-    .replace(/\b\d+[/.-]\d+\b/g, ' ')
+/** Palabras significativas del título, sin años, números de orden ni palabras vacías. */
+function tokensTema(titulo: string): Set<string> {
+  return new Set(
+    sinAcentos(titulo)
+      .replace(/\b(19|20)\d{2}(\s*[-/]\s*(19|20)?\d{2})?\b/g, ' ')
+      .replace(/\b\d+[/.-]\d+\b/g, ' ')
+      .replace(/[^a-z\s]/g, ' ')
+      .split(/\s+/)
+      .filter((p) => p.length > 3 && !STOP.has(p))
+  );
+}
+
+/** Órgano convocante, reducido a sus palabras principales. */
+function claveOrganismo(organismo: string): string {
+  return sinAcentos(organismo)
     .replace(/[^a-z\s]/g, ' ')
     .split(/\s+/)
     .filter((p) => p.length > 2 && !STOP.has(p))
-    .slice(0, 9)
+    .slice(0, 4)
     .join(' ');
-  const org = sinAcentos(c.organismo).replace(/[^a-z\s]/g, ' ').split(/\s+/).filter((p) => p.length > 2 && !STOP.has(p)).slice(0, 4).join(' ');
-  return `${org}|${tema}`;
+}
+
+function jaccard(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let comunes = 0;
+  a.forEach((w) => b.has(w) && comunes++);
+  return comunes / (a.size + b.size - comunes);
+}
+
+/**
+ * Agrupa convocatorias en programas: mismo órgano y títulos suficientemente parecidos (enlace por cadena: si A se parece
+ * a B y B a C, los tres son el mismo programa, lo que tolera que el título evolucione poco a poco).
+ */
+function agrupar(todas: Convocatoria[]): Convocatoria[][] {
+  const porOrgano = new Map<string, { c: Convocatoria; t: Set<string> }[]>();
+  for (const c of todas) {
+    if (!c.fechaPublicacion || !c.titulo) continue;
+    const t = tokensTema(c.titulo);
+    if (t.size === 0) continue;
+    const k = claveOrganismo(c.organismo);
+    porOrgano.set(k, [...(porOrgano.get(k) ?? []), { c, t }]);
+  }
+  const grupos: Convocatoria[][] = [];
+  porOrgano.forEach((items) => {
+    const padre = items.map((_, i) => i);
+    const raiz = (x: number): number => (padre[x] === x ? x : (padre[x] = raiz(padre[x])));
+    for (let i = 0; i < items.length; i++) {
+      for (let j = i + 1; j < items.length; j++) {
+        if (jaccard(items[i].t, items[j].t) >= UMBRAL_AGRUPADO) padre[raiz(i)] = raiz(j);
+      }
+    }
+    const g = new Map<number, Convocatoria[]>();
+    items.forEach((it, i) => g.set(raiz(i), [...(g.get(raiz(i)) ?? []), it.c]));
+    g.forEach((v) => grupos.push(v));
+  });
+  return grupos;
 }
 
 const fecha = (iso: string) => new Date(`${iso.slice(0, 10)}T12:00:00`);
-
-/** Distancia circular entre dos meses (0-6). */
-const distMes = (a: number, b: number) => Math.min(Math.abs(a - b), 12 - Math.abs(a - b));
 
 function moda(valores: number[]): number {
   const cuenta = new Map<number, number>();
@@ -84,40 +151,53 @@ const mediana = (xs: number[]) => {
   return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2);
 };
 
+/** Arco circular más corto de meses (1-12) que contiene todos los dados: p. ej. [12, 1, 1] → de diciembre a enero. */
+export function arcoDeMeses(meses: number[]): { desde: number; hasta: number } {
+  const unicos = [...new Set(meses)].sort((a, b) => a - b);
+  if (unicos.length === 1) return { desde: unicos[0], hasta: unicos[0] };
+  // El arco empieza justo después del mayor hueco entre meses consecutivos (contando el salto de diciembre a enero)
+  let mejorHueco = -1;
+  let desde = unicos[0];
+  for (let i = 0; i < unicos.length; i++) {
+    const actual = unicos[i];
+    const siguiente = unicos[(i + 1) % unicos.length];
+    const hueco = (siguiente - actual + 12) % 12;
+    if (hueco > mejorHueco) {
+      mejorHueco = hueco;
+      desde = siguiente;
+    }
+  }
+  const hasta = ((desde + (12 - mejorHueco) - 1) % 12) + 1;
+  return { desde, hasta: hasta === 0 ? 12 : hasta };
+}
+
+/** ¿El mes (1-12) cae dentro del arco [desde, hasta] ampliado en `margen` meses por cada lado? */
+export function mesEnArco(mes: number, desde: number, hasta: number, margen = 0): boolean {
+  const largo = ((hasta - desde + 12) % 12) + 1;
+  const pos = (mes - desde + 12) % 12;
+  return pos < largo || pos < largo + margen || (desde - mes + 12) % 12 <= margen;
+}
+
 /**
  * Agrupa convocatorias (histórico + activas) en programas recurrentes y estima cuándo volverá a abrirse cada uno.
  * Un programa solo es «recurrente» si tiene ediciones en al menos 2 años distintos.
- * Método: mes de publicación más frecuente (moda) + regularidad (cuántas ediciones caen a ±1 mes) → confianza.
+ * - Si saldrá: tramo por reglas simples (recencia y años con edición).
+ * - Cuándo: ventana de meses en que ha salido históricamente.
  */
 export function detectarProgramas(todas: Convocatoria[], hoy: Date = new Date()): Programa[] {
-  const grupos = new Map<string, Convocatoria[]>();
-  for (const c of todas) {
-    if (!c.fechaPublicacion || !c.titulo) continue;
-    const k = claveDePrograma(c);
-    if (k.length < 8) continue;
-    grupos.set(k, [...(grupos.get(k) ?? []), c]);
-  }
-
   const programas: Programa[] = [];
-  grupos.forEach((eds, clave) => {
+  for (const eds of agrupar(todas)) {
     const ediciones = [...eds].sort((a, b) => b.fechaPublicacion.localeCompare(a.fechaPublicacion));
     const anios = [...new Set(ediciones.map((c) => fecha(c.fechaPublicacion).getFullYear()))].sort((a, b) => a - b);
-    if (anios.length < 2) return;
+    if (anios.length < 2) continue;
 
     // Una edición por año basta para estimar el mes: se toma la primera publicada de cada año
     const primeraDelAnio = anios.map((y) => [...ediciones].reverse().find((c) => fecha(c.fechaPublicacion).getFullYear() === y)!);
     const meses = primeraDelAnio.map((c) => fecha(c.fechaPublicacion).getMonth() + 1);
     const mes = moda(meses);
-    const regularidad = meses.filter((m) => distMes(m, mes) <= 1).length / meses.length;
-    const confianza: Confianza = anios.length >= 3 && regularidad >= 0.75 ? 'alta' : anios.length >= 2 && regularidad >= 0.5 ? 'media' : 'baja';
+    const { desde, hasta } = arcoDeMeses(meses);
 
-    // Recencia: si hace años que no sale, la regularidad pasada dice poco de si saldrá. Un año sin edición (p. ej. aún no
-    // ha llegado su mes) no penaliza; dos años penalizan algo; tres o más, mucho.
-    const sinSalir = hoy.getFullYear() - anios[anios.length - 1];
-    const recencia = sinSalir <= 1 ? 1 : sinSalir === 2 ? 0.6 : 0.35;
-    const fiabilidad = Math.round(100 * regularidad * Math.min(1, 0.4 + 0.15 * anios.length) * recencia);
-
-    const dia = mediana(primeraDelAnio.filter((c) => fecha(c.fechaPublicacion).getMonth() + 1 === mes).map((c) => fecha(c.fechaPublicacion).getDate()));
+    const dia = mediana(primeraDelAnio.filter((c) => fecha(c.fechaPublicacion).getMonth() + 1 === desde).map((c) => fecha(c.fechaPublicacion).getDate()));
     const ventanas = ediciones
       .filter((c) => c.diasRestantes < SIN_PLAZO && c.fechaCierre > c.fechaPublicacion)
       .map((c) => Math.round((fecha(c.fechaCierre).getTime() - fecha(c.fechaPublicacion).getTime()) / DIA_MS))
@@ -125,38 +205,49 @@ export function detectarProgramas(todas: Convocatoria[], hoy: Date = new Date())
 
     const abierta = ediciones.find((c) => c.estado === 'ACTIVA' || (c.estado === undefined && c.diasRestantes >= 0 && c.diasRestantes < SIN_PLAZO)) ?? null;
 
-    // Próxima apertura: primer ciclo posterior a la última edición cuya fecha habitual no sea muy antigua.
-    // Pasados 90 días se da por no repetida/no detectada y se salta al ciclo siguiente: avisar de un retraso
-    // de meses sería ruido, sobre todo mientras la ingesta no cubra todas las fuentes.
-    // Si ese ciclo ya pasó (hasta 90 días) y no hay edición detectada, se marca como «retrasada»:
-    // debería haber salido y no consta, así que puede publicarse en cualquier momento.
+    // Próximo ciclo: el primero posterior a la última edición cuya ventana no terminó hace más de 90 días. Si la ventana
+    // ya terminó hace menos de 90 días y no hay edición, se marca «retrasada»; pasado ese plazo se da por no repetida o
+    // no detectada y se salta al ciclo siguiente (avisar de un retraso de meses sería ruido mientras la ingesta sea parcial).
     const ultimoAnio = anios[anios.length - 1];
-    const limite = hoy.getTime() - 90 * DIA_MS;
-    let proxima = new Date(ultimoAnio + 1, mes - 1, Math.min(dia, 28), 12);
-    while (proxima.getTime() < limite) proxima = new Date(proxima.getFullYear() + 1, mes - 1, Math.min(dia, 28), 12);
-    const retrasada = proxima.getTime() < hoy.getTime();
+    const cruza = desde > hasta; // la ventana atraviesa el cambio de año (p. ej. diciembre-enero)
+    const ventanaDeCiclo = (ciclo: number) => ({
+      inicio: new Date(ciclo, desde - 1, Math.min(dia, 28), 12),
+      fin: new Date(cruza ? ciclo + 1 : ciclo, hasta, 0, 12), // último día del mes «hasta»
+    });
+    let ciclo = ultimoAnio + 1;
+    let v = ventanaDeCiclo(ciclo);
+    while (v.fin.getTime() < hoy.getTime() - 90 * DIA_MS) {
+      ciclo++;
+      v = ventanaDeCiclo(ciclo);
+    }
+    const enVentana = hoy.getTime() >= v.inicio.getTime() && hoy.getTime() <= v.fin.getTime();
+    const retrasada = hoy.getTime() > v.fin.getTime();
+
+    const tramo: Tramo = ciclo - ultimoAnio <= 1 ? (anios.length >= 3 ? 'alta' : 'media') : 'baja';
 
     const ref = ediciones[0];
     const cuantias = ediciones.map((c) => c.cuantiaMaximaProyecto).filter((n) => n > 0);
     programas.push({
-      clave,
+      clave: `${claveOrganismo(ref.organismo)}|${ediciones.map((c) => c.id).sort()[0]}`,
       nombre: ref.titulo,
       organismo: ref.organismo,
       ambito: ref.ambitoTerritorial,
       ediciones,
       anios,
       mesApertura: mes,
+      mesDesde: desde,
+      mesHasta: hasta,
       ventanaDias: ventanas.length ? mediana(ventanas) : null,
       cuantiaMedia: cuantias.length ? Math.round(cuantias.reduce((a, b) => a + b, 0) / cuantias.length) : 0,
-      confianza,
-      fiabilidad,
+      tramo,
       abierta,
-      proxima,
-      prepararDesde: new Date(proxima.getTime() - PREPARACION_PREVIA_DIAS * DIA_MS),
-      retrasada,
+      proxima: v.inicio,
+      proximaFin: v.fin,
+      prepararDesde: new Date(v.inicio.getTime() - PREPARACION_PREVIA_DIAS * DIA_MS),
+      enVentana: enVentana && !abierta,
+      retrasada: retrasada && !abierta,
     });
-  });
-
+  }
   return programas.sort((a, b) => a.proxima.getTime() - b.proxima.getTime());
 }
 
@@ -166,8 +257,65 @@ export function previstosEn(programas: Programa[], meses: number, hoy: Date = ne
   return programas.filter((p) => !p.abierta && p.proxima.getTime() <= fin);
 }
 
-/** Texto corto de recurrencia para una convocatoria concreta (p. ej. en tarjetas de empresas). */
+/** Programa recurrente al que pertenece una convocatoria concreta (p. ej. para mostrar «se repite» en las tarjetas de empresas). */
 export function recurrenciaDe(c: Convocatoria, programas: Programa[]): Programa | undefined {
-  const k = claveDePrograma(c);
-  return programas.find((p) => p.clave === k);
+  return programas.find((p) => p.ediciones.some((e) => e.id === c.id));
+}
+
+/** ¿Esta convocatoria es una edición del programa? (mismo órgano y título parecido a alguna edición conocida) */
+function esEdicionDe(p: Programa, c: Convocatoria): boolean {
+  if (claveOrganismo(c.organismo) !== claveOrganismo(p.organismo)) return false;
+  const t = tokensTema(c.titulo);
+  return p.ediciones.some((e) => jaccard(tokensTema(e.titulo), t) >= UMBRAL_AGRUPADO);
+}
+
+export interface AciertoTramo {
+  /** Previsiones hechas */
+  n: number;
+  /** Cuántas se cumplieron: salió una edición en el año previsto */
+  enAnio: number;
+  /** De las que salieron, en cuántas el mes cayó dentro de la ventana prevista (con un mes de margen) */
+  mesEnVentana: number;
+}
+
+export interface Evaluacion {
+  /** Años evaluados (cada uno se predice usando solo lo ocurrido en años anteriores) */
+  anios: number[];
+  total: AciertoTramo;
+  porTramo: Record<Tramo, AciertoTramo>;
+}
+
+/**
+ * Comprueba el método con el propio histórico (backtesting): para cada año completo se hace la previsión con lo que se
+ * sabía a 1 de enero y se compara con lo que salió. Se recalcula con los datos cargados, así que mide lo que hay en cada
+ * momento. Ojo: el histórico solo contiene lo que el radar ha capturado; si faltan convocatorias, el acierto real es mayor.
+ */
+export function evaluarPrevision(todas: Convocatoria[], hoy: Date = new Date()): Evaluacion {
+  const anioDe = (c: Convocatoria) => fecha(c.fechaPublicacion).getFullYear();
+  const validas = todas.filter((c) => c.fechaPublicacion && c.titulo && c.estado === 'CERRADA');
+  const vacio = (): AciertoTramo => ({ n: 0, enAnio: 0, mesEnVentana: 0 });
+  const ev: Evaluacion = { anios: [], total: vacio(), porTramo: { alta: vacio(), media: vacio(), baja: vacio() } };
+  if (validas.length === 0) return ev;
+
+  const minimo = Math.min(...validas.map(anioDe));
+  // Hacen falta al menos 2 años de historia para prever, y el año evaluado debe haber terminado
+  for (let y = minimo + 2; y < hoy.getFullYear(); y++) {
+    const corte = new Date(y, 0, 1, 12);
+    const pasado = todas.filter((c) => c.fechaPublicacion && anioDe(c) < y);
+    const delAnio = todas.filter((c) => c.fechaPublicacion && anioDe(c) === y);
+    const previstos = previstosEn(detectarProgramas(pasado, corte), 12, corte).filter((p) => p.proxima.getFullYear() === y);
+    if (previstos.length === 0) continue;
+    ev.anios.push(y);
+    for (const p of previstos) {
+      const salidas = delAnio.filter((c) => esEdicionDe(p, c));
+      const enAnio = salidas.length > 0;
+      const enVentana = salidas.some((c) => mesEnArco(fecha(c.fechaPublicacion).getMonth() + 1, p.mesDesde, p.mesHasta, 1));
+      for (const t of [ev.total, ev.porTramo[p.tramo]]) {
+        t.n++;
+        if (enAnio) t.enAnio++;
+        if (enAnio && enVentana) t.mesEnVentana++;
+      }
+    }
+  }
+  return ev;
 }
