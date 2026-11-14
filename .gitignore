@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.pytest_cache/
+
+# Environment & Secrets
+.env
+.env.local
+
+# Local Database & Cache
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/cache/
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
